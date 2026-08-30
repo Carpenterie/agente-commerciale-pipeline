@@ -31,6 +31,19 @@ Ogni modulo ha il suo check: `python <modulo>.py` stampa `ok`.
 Il regression si esegue prima di ogni commit che tocca `prompts.py`. Una
 classificazione validata che cambia = ci si ferma e si capisce perché.
 
+## Perché la cache del campione sta in git
+
+`tests/campione_26/cache/` contiene ~110 file JSON: sono le pagine dei 26
+siti del campione, scaricate una volta e congelate. **Non sono spazzatura e
+non vanno cancellate.** Il regression test (`python -m tests.regression`)
+riclassifica quelle 26 aziende partendo da quelle pagine: senza, dovrebbe
+riscaricare i siti — che nel frattempo cambiano — e non confronterebbe più
+mele con mele. Con la cache in git il guardiano gira offline, su qualsiasi
+macchina, a costo zero di rete e con un risultato riproducibile.
+
+La cache di produzione (`/cache/` alla radice) è invece esclusa da git: è
+volatile, cresce a ogni ciclo e il server ha la sua.
+
 ## Come è fatta
 
 `main.py` orchestra: sourcing (`sourcing_maps` + `sourcing_exa`) → `dedup`
