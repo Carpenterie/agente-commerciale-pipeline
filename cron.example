@@ -1,0 +1,11 @@
+# Ciclo mensile: il primo giorno del mese alle 3 del mattino.
+# Mensile e non settimanale perché il sourcing si ripaga a ogni giro ed è
+# l'82% del costo (vedi README, Costi): a cadenza settimanale sarebbero
+# ~66 EUR/mese contro ~18.
+0 3 1 * * cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia RM >> /var/log/pipeline-rm.log 2>&1
+
+# Le altre province, sfalsate di un giorno per non concentrare la spesa.
+0 3 2 * * cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia LT >> /var/log/pipeline-lt.log 2>&1
+0 3 3 * * cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia FR >> /var/log/pipeline-fr.log 2>&1
+0 3 4 * * cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia RI >> /var/log/pipeline-ri.log 2>&1
+0 3 5 * * cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia VT >> /var/log/pipeline-vt.log 2>&1

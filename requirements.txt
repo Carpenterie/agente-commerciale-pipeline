@@ -1,0 +1,12 @@
+crawl4ai>=0.9
+# anthropic 1.x ha rimosso temperature da messages.create; il prototipo validato
+# usa temperature=0 su claude-sonnet-4-6, quindi restiamo sulla serie 0.x.
+anthropic==0.120.2
+python-dotenv>=1.0
+supabase>=2.0
+apify-client>=1.6
+# cryptography 49 non ha wheel per macOS x86_64/py3.12: senza questo pin pip prova
+# a compilarla da sorgente (Rust + openssl) e l installazione fallisce.
+cryptography<49
+# playwright >=1.62 non supporta piu macOS 12: 1.61 e l ultima che funziona su questo Mac
+playwright==1.61.0
