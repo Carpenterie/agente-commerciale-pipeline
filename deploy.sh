@@ -12,22 +12,33 @@ SERVER="${1:?uso: ./deploy.sh utente@server}"
 REMOTA="${2:-/opt/agente-commerciale-pipeline}"
 
 echo "==> gitleaks prima di copiare (obbligo di consegna)"
+# scansione git-aware: guarda i file TRACCIATI, che sono quelli che rsync
+# copia. Con --no-git vedrebbe anche .env (non tracciato, escluso dal
+# rsync) e bloccherebbe ogni deploy per un falso positivo.
 if command -v gitleaks >/dev/null; then
-    gitleaks detect --no-git --source . --redact || {
-        echo "!! gitleaks ha trovato qualcosa: NON procedo"; exit 1; }
+    gitleaks detect --source . --redact || {
+        echo "!! gitleaks ha trovato qualcosa nei file versionati: NON procedo"
+        exit 1; }
 else
-    echo "   gitleaks non installato: scaricalo prima del deploy definitivo"
+    echo "!! gitleaks non installato: NON procedo (e' un obbligo di consegna)"
+    exit 1
 fi
 
 echo "==> rsync verso $SERVER:$REMOTA"
 rsync -az --delete \
     --exclude '.env' \
     --exclude '.venv/' \
-    --exclude 'cache/' \
+    --exclude '/cache/' \
     --exclude '__pycache__/' \
     --exclude '.DS_Store' \
-    --exclude 'tests/campione_26/cache/' \
     ./ "$SERVER:$REMOTA/"
+
+echo "==> prerequisiti di sistema sul server"
+# Ubuntu minimale non ha ensurepip: senza python3-venv il venv si crea
+# vuoto e pip non esiste
+ssh "$SERVER" "export DEBIAN_FRONTEND=noninteractive; \
+    dpkg -s python3-venv >/dev/null 2>&1 || apt-get install -y -qq python3-venv || \
+    apt-get install -y -qq python3.12-venv"
 
 echo "==> setup remoto (venv e dipendenze)"
 ssh "$SERVER" "cd $REMOTA && python3 -m venv .venv 2>/dev/null || true; \
