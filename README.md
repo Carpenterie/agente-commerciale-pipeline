@@ -155,7 +155,12 @@ di sourcing e dai comuni interrogati, non dal mercato reale.
   il nome è stato provato su 5 aziende non agganciate e ne ha recuperata
   1 (Lema Infissi 85, il cui nome in visura è "SOCIETA' A RESPONSABILITA'
   LIMITATA" per esteso): il tasso salirebbe dal 33% al 42%, sotto la
-  soglia che ne giustificava l'adozione. Non implementato.
+  soglia che ne giustificava l'adozione. Provata anche la variante
+  conservativa — togliere le sole forme societarie abbreviate, lasciando
+  il resto del nome — con lo stesso esito: 4 nomi su 5 non contengono
+  alcuna forma societaria, quindi restano invariati e falliscono per un
+  motivo diverso (l'insegna di Maps non è una sottostringa della
+  denominazione registrata). **Non implementato**, il 33% è il limite.
 - **Infissi Torelli è il terzo caso della famiglia Romana/Faler/Torelli** —
   aziende con dichiarazioni di produzione ("realizziamo inferriate, grate,
   persiane blindate") e identità da showroom (250 mq, marchi terzi in
