@@ -123,6 +123,41 @@ Il sourcing resta in `cache/sourcing_<provincia>.json` per 24 ore: due
 rilanci in giornata non lo ripagano. `cache/` non viene sincronizzata, il
 server ha la sua.
 
+## Bozze email
+
+```bash
+python bozze_email.py --classe A --limite 20
+```
+
+Genera le bozze dagli otto testi approvati dal cliente (PDF del 2026-08-31).
+**Non invia nulla e non tocca Gmail**: il §2 del PRD lo mette fuori
+perimetro, il comando produce testo da rileggere.
+
+Un solo testo per azienda, scelto in quest'ordine di precedenza:
+
+| condizione | testo |
+|---|---|
+| segnale `ex_cliente` | *Ci risentiamo* — sa già chi siamo |
+| segnale `annuncio_lavoro` | *Fornitura nei periodi di carico* |
+| impresa edile o costruttore | *Fornitura per cantieri* (+ richiesta del referente) |
+| showroom | *Gamma serramenti in acciaio* |
+| `livello_fornitura = kit` | *Fornitura componenti in acciaio* |
+| serramentista, montatore, artigiano | *Persiane e grate in acciaio* |
+
+Un ex cliente non riceve mai un testo da azienda nuova, e viceversa. Le
+altre due varianti — follow-up a 10 giorni e ricontatto a mesi — si
+chiedono per `testo_id`, non si scelgono da sole.
+
+Tre regole applicate dal codice e verificate dal self-check:
+**l'annuncio di lavoro non compare mai nel testo** (sceglie il messaggio,
+non lo scrive); i campi variabili o si compilano o la frase che li conteneva
+sparisce — mai un `[segnaposto]` in una bozza; nessun claim su tempi,
+certificazioni o risparmi (`config.VIETATE_EMAIL`).
+
+Prima dell'uso vanno compilati `FIRMA_EMAIL` e `SITO_EMAIL` in `config.py`:
+se restano vuoti la bozza chiude senza firma, che è preferibile a un
+segnaposto in chiaro.
+
 ## Studio del territorio
 
 ```bash

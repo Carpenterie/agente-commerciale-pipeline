@@ -163,3 +163,15 @@ FORNITURA_PER_CATEGORIA = {
     "impresa_edile": "prodotto_finito",
     "costruttore": "prodotto_finito",
 }
+
+# --- Bozze email (testi approvati dal cliente, PDF del 2026-08-31) ---
+# La firma e il sito sono dati del MITTENTE: si compilano una volta qui.
+# Se restano vuoti, il generatore chiude senza firma invece di lasciare
+# un segnaposto in chiaro nella bozza.
+FIRMA_EMAIL = ""          # es. "Claudia Rossi — Carpenterie Laziali"
+SITO_EMAIL = ""           # es. "carpenterielaziali.it"
+# Parole che non devono MAI comparire in una bozza: il PDF vieta di citare
+# gli annunci di lavoro, e la guida vieta claim su tempi e certificazioni.
+VIETATE_EMAIL = ("saldator", "annuncio", "assunzione", "cercate", "offerta di lavoro",
+                 "garantiam", "certificat", "risparmi", "sconto", "24 ore",
+                 "48 ore", "consegna rapida", "prezzi imbattibili")
