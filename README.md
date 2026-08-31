@@ -139,6 +139,23 @@ viaggia coi dati e l'app la mostra per forza. Il numero dipende dalle query
 di sourcing e dai comuni interrogati, non dal mercato reale.
 
 ## Limiti noti
+
+- **Il numero di dipendenti esiste solo per chi deposita un bilancio.**
+  Openapi lo espone in `balanceSheets.last.employees`, non come campo
+  anagrafico: ditte individuali e società di persone — buona parte degli
+  artigiani che cerchiamo — non ce l'hanno. Misurato su un ciclo reale:
+  su 12 aziende A/B tentate, 4 agganciate in anagrafica (33%) e 2 con il
+  dato dipendenti, cioè **circa una su sei**. La modulazione organico
+  (§7: fabbro con organico ampio scende di classe) si applica quindi a una
+  minoranza, e la sua assenza non è un errore.
+- **L'aggancio in anagrafica riesce su circa un terzo delle A/B.** Le
+  schede di Google Maps portano insegne commerciali ("Gruben Italia
+  Security"), non ragioni sociali da visura, e `IT-search` cerca per
+  sottostringa sulla denominazione registrata. Un fallback che ripulisce
+  il nome è stato provato su 5 aziende non agganciate e ne ha recuperata
+  1 (Lema Infissi 85, il cui nome in visura è "SOCIETA' A RESPONSABILITA'
+  LIMITATA" per esteso): il tasso salirebbe dal 33% al 42%, sotto la
+  soglia che ne giustificava l'adozione. Non implementato.
 - **Infissi Torelli è il terzo caso della famiglia Romana/Faler/Torelli** —
   aziende con dichiarazioni di produzione ("realizziamo inferriate, grate,
   persiane blindate") e identità da showroom (250 mq, marchi terzi in

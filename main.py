@@ -160,7 +160,7 @@ async def analizza(azienda: dict, crawler, client, totali: dict) -> dict:
 
 
 def arricchisci_ab(azienda: dict, esito: dict, totali: dict,
-                   stat: dict) -> tuple[dict, list]:
+                   stat: dict, provincia: str = "") -> tuple[dict, list]:
     """Segnali di lavoro su TUTTI i TARGET, poi Openapi solo su A e B.
 
     L'ordine conta: il segnale di bisogno decide la classe A, quindi va
@@ -194,24 +194,42 @@ def arricchisci_ab(azienda: dict, esito: dict, totali: dict,
         return {}, segnali
 
     stat["arricchibili"] = stat.get("arricchibili", 0) + 1
-    anagrafica = arricchimento_sicuro(azienda, nome, totali)
-    if anagrafica and anagrafica.get("dipendenti"):
+    anagrafica = arricchimento_sicuro(azienda, nome, totali, provincia)
+    if anagrafica:
         stat["arricchite"] += 1
+        comune_sito = (dati.get("sede_comune") or "").strip()
+        comune_openapi = anagrafica.get("sede_comune", "")
+        stat.setdefault("dettaglio", []).append({
+            "nome": nome, "piva": anagrafica.get("piva", ""),
+            "dipendenti": anagrafica.get("dipendenti"),
+            "anno": anagrafica.get("anno_bilancio"),
+            "sede": f"{comune_openapi} ({anagrafica.get('sede_provincia','')})",
+            "categoria": dati.get("categoria", ""),
+            "comune_sito": comune_sito,
+            "corretto": bool(comune_sito and comune_openapi
+                             and comune_sito.lower() != comune_openapi.lower()),
+        })
+    if anagrafica and anagrafica.get("dipendenti"):
         prima = esito["classe"]
         esito["classe"] = classify.modula_dipendenti(
             esito["classe"], dati.get("categoria", ""), anagrafica["dipendenti"])
         if esito["classe"] != prima:
             stat["scesi_per_organico"] += 1
+            stat.setdefault("declassate", []).append(
+                (nome, dati.get("categoria", ""), anagrafica["dipendenti"],
+                 prima, esito["classe"]))
             print(f"  organico {anagrafica['dipendenti']} dipendenti: "
                   f"{prima} -> {esito['classe']}")
     return anagrafica, segnali
 
 
-def arricchimento_sicuro(azienda: dict, nome: str, totali: dict) -> dict:
-    chiave = (azienda.get("piva") or nome).strip()
-    dati = arricchimento.arricchisci(chiave) or {}
-    if dati:
-        costi.registra_openapi(totali, 1)
+def arricchimento_sicuro(azienda: dict, nome: str, totali: dict,
+                         provincia: str = "") -> dict:
+    """Senza P.IVA servono due chiamate (search + advanced): le registra
+    entrambe, altrimenti il costo del ciclo è sottostimato della metà."""
+    dati = arricchimento.arricchisci(
+        nome, piva=(azienda.get("piva") or "").strip(), provincia=provincia) or {}
+    costi.registra_openapi(totali, dati.get("chiamate", 1) if dati else 1)
     return dati
 
 
@@ -274,7 +292,8 @@ async def esegui(args) -> int:
             print(f"[{i}/{len(schede)}] {azienda.get('nome', '?')[:60]}")
             try:
                 esito = await analizza(azienda, crawler, client, totali)
-                anagrafica, segnali = arricchisci_ab(azienda, esito, totali, stat)
+                anagrafica, segnali = arricchisci_ab(azienda, esito, totali,
+                                                     stat, args.provincia)
                 if esito["segnale_sede"]:
                     segnali = [esito["segnale_sede"], *segnali]
                 if esito["territorio"]:
@@ -312,8 +331,32 @@ async def esegui(args) -> int:
         print(f"  {ruolo:<16} {n}")
     print(f"  saliti in classe A per il segnale: {stat['saliti_ad_A']}")
 
+    # le tre percentuali da dichiarare al cliente
     arricchibili = stat.get("arricchibili", 0)
-    print(f"\nARRICCHIMENTO OPENAPI: {stat['arricchite']}/{arricchibili} riuscite")
+    dettaglio = stat.get("dettaglio", [])
+    con_dip = [d for d in dettaglio if d["dipendenti"] is not None]
+    pct = lambda n, d: f"{100 * n / d:.0f}%" if d else "n/d"  # noqa: E731
+    print("\nARRICCHIMENTO OPENAPI")
+    print(f"  A/B tentate                 {arricchibili:>4}")
+    print(f"  agganciate in anagrafica    {len(dettaglio):>4}   "
+          f"({pct(len(dettaglio), arricchibili)} delle tentate)")
+    print(f"  con numero dipendenti       {len(con_dip):>4}   "
+          f"({pct(len(con_dip), len(dettaglio))} delle agganciate, "
+          f"{pct(len(con_dip), arricchibili)} delle tentate)")
+    if dettaglio:
+        print("  senza dipendenti la modulazione organico non può applicarsi")
+        print(f"  {'azienda':<34}{'P.IVA':<13}{'dip.':<6}{'sede':<24}categoria")
+        for d in dettaglio:
+            dip = f"{d['dipendenti']} ({d['anno']})" if d["dipendenti"] is not None else "-"
+            print(f"  {d['nome'][:32]:<34}{d['piva'] or '-':<13}{dip:<6}"
+                  f"{d['sede'][:22]:<24}{d['categoria']}")
+        corrette = [d for d in dettaglio if d["corretto"]]
+        print(f"\n  sedi corrette da Openapi rispetto al sito: {len(corrette)}")
+        for d in corrette:
+            print(f"    {d['nome'][:34]}: sito diceva '{d['comune_sito']}' "
+                  f"-> anagrafica '{d['sede']}'")
+    for nome, cat, dip, prima, dopo in stat.get("declassate", []):
+        print(f"  DECLASSATA {nome[:34]}: {cat}, {dip} dipendenti, {prima} -> {dopo}")
     if stat["arricchite"] < arricchibili:
         print(f"  {arricchibili - stat['arricchite']} aziende A/B NON arricchite: "
               f"sarebbero costate {(arricchibili - stat['arricchite']) * config.COSTO_OPENAPI_EUR:.2f} EUR "

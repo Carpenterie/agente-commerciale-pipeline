@@ -90,15 +90,16 @@ sourcing_maps.cerca = lambda comuni, log=print: (
 sourcing_exa.cerca = lambda provincia, log=print: [s for s in SCHEDE if s["fonte"] == "exa"]
 fetch.fetch_azienda = _fetch_finto
 classify.classifica = _classifica_finta
-def _arricchisci_finto(chiave, log=print):
-    if "Boom" in chiave:
+def _arricchisci_finto(nome, piva="", provincia="", log=print):
+    if "Boom" in nome:
         raise RuntimeError("crash simulato nell'arricchimento")
     return _ANAGRAFICA
 
 
 _ANAGRAFICA = {
     "piva": "01234567890", "denominazione": "X", "dipendenti": 30,
-    "sede_comune": "Tivoli", "sede_provincia": "RM", "sede_cap": "00019"}
+    "sede_comune": "Tivoli", "sede_provincia": "RM", "sede_cap": "00019",
+    "anno_bilancio": 2024, "chiamate": 2}
 arricchimento.arricchisci = _arricchisci_finto
 segnali_lavoro.cerca = lambda nome, log=print: [
     {"tipo": "annuncio_lavoro", "ruolo": "saldatore", "fonte": "https://indeed.com/x"}]
