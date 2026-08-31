@@ -114,7 +114,8 @@ sys.modules["anthropic"] = types.ModuleType("anthropic")
 sys.modules["anthropic"].Anthropic = _FakeAnthropic
 
 args = types.SimpleNamespace(provincia="RM", limite=None, dry_run=True,
-                             comuni=None, sourcing_fresco=True, gratuite_openapi=30)
+                             comuni=None, sourcing_fresco=True, riusa_sourcing=False,
+                             gratuite_openapi=30)
 # redirect_stdout e non builtins.print: i default `log=print` dei moduli
 # legano il print originale all'import e sfuggirebbero alla cattura
 import contextlib  # noqa: E402
@@ -213,7 +214,8 @@ classify.classifica = _classifica_lombarda
 classify.classe_db = lambda c, conf, off="", seg=None: "C"  # valutata C
 
 args2 = types.SimpleNamespace(provincia="RM", limite=1, dry_run=True,
-                              comuni=None, sourcing_fresco=True, gratuite_openapi=30)
+                              comuni=None, sourcing_fresco=True,
+                              riusa_sourcing=False, gratuite_openapi=30)
 buffer3 = io.StringIO()
 with contextlib.redirect_stdout(buffer3):
     asyncio.run(main.esegui(args2))

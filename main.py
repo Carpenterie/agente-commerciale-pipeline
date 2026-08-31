@@ -47,6 +47,10 @@ def _argomenti():
     p.add_argument("--sourcing-fresco", action="store_true",
                    help="rifà Maps ed Exa anche se il sourcing salvato è "
                         "recente (default: riusa entro 24 ore, non ripaga)")
+    p.add_argument("--riusa-sourcing", action="store_true",
+                   help="riusa il sourcing salvato QUALUNQUE sia la sua età: "
+                        "le aziende su Maps non cambiano in pochi giorni e "
+                        "rifarlo costa ~4,70 USD")
     p.add_argument("--gratuite-openapi", type=int,
                    default=config.CHIAMATE_OPENAPI_GRATUITE_MESE,
                    help="chiamate Openapi gratuite ancora disponibili questo mese")
@@ -60,7 +64,7 @@ CARTELLA_CACHE = Path(__file__).parent / "cache"
 
 
 def raccogli(provincia: str, totali: dict, max_comuni: int | None = None,
-             fresco: bool = False) -> list[dict]:
+             fresco: bool = False, riusa: bool = False) -> list[dict]:
     """Sourcing dalle due fonti validate. Maps per primo: a parità di
     dominio il dedup tiene la scheda coi recapiti (§4).
 
@@ -71,7 +75,7 @@ def raccogli(provincia: str, totali: dict, max_comuni: int | None = None,
     salvato = CARTELLA_CACHE / f"sourcing_{provincia}.json"
     if not fresco and salvato.exists():
         eta_ore = (time.time() - salvato.stat().st_mtime) / 3600
-        if eta_ore < SOURCING_VALIDO_ORE:
+        if eta_ore < SOURCING_VALIDO_ORE or riusa:
             dati = json.loads(salvato.read_text(encoding="utf-8"))
             print(f"sourcing riusato da {salvato.name} "
                   f"({len(dati['schede'])} schede, {eta_ore:.1f} ore fa, "
@@ -254,7 +258,8 @@ async def esegui(args) -> int:
         print(f"ciclo {ciclo_id} avviato")
 
     # 1. sourcing
-    schede = raccogli(args.provincia, totali, args.comuni, args.sourcing_fresco)
+    schede = raccogli(args.provincia, totali, args.comuni, args.sourcing_fresco,
+                      args.riusa_sourcing)
     n_trovate = len(schede)
 
     # 2. dedup interno, poi esclusioni e già-visti (§4: dedup PRIMA, non dopo)
