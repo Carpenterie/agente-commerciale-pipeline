@@ -78,9 +78,16 @@ TESTI = {
         "follow-up a 10 giorni dal primo contatto senza risposta",
         "Re: {oggetto_precedente}",
         "le avevo scritto qualche giorno fa a proposito di persiane, grate, cancelli\n"
-        "e recinzioni in acciaio.\n\n"
+        "e recinzioni in acciaio.\n"
+        "{frase_catalogo}\n"
         "Se non è il momento nessun problema: mi dica solo se preferisce che la\n"
         "ricontatti più avanti, oppure se è meglio lasciar perdere."),
+    "risposta_interesse": (
+        "risposta a chi ha manifestato interesse — SOLO su richiesta esplicita",
+        "Catalogo e prossimi passi",
+        "grazie del riscontro.\n"
+        "{frase_catalogo_esteso}"
+        "{frase_prenotazione}"),
     "ricontatto": (
         "ricontatto a distanza di mesi — massimo due volte, poi stop",
         "Prodotti in acciaio — Carpenterie Laziali",
@@ -102,6 +109,9 @@ TESTI = {
 
 # il follow-up chiude senza sito (è una riga sola, il sito l'ha già visto)
 SENZA_SITO = ("follow_up", "ex_cliente")
+# testi che nascono da un fatto che il sistema NON vede (una risposta umana,
+# il tempo trascorso): si chiedono per testo_id, non si scelgono mai da soli
+SOLO_SU_RICHIESTA = ("follow_up", "ricontatto", "risposta_interesse")
 
 
 def _ha_segnale(azienda: dict, tipo: str) -> bool:
@@ -136,6 +146,22 @@ def componi(azienda: dict, testo_id: str = "", oggetto_precedente: str = "") -> 
     if not testo_id:
         return None
     perche, oggetto, corpo = TESTI[testo_id]
+
+    # i link vivono in config: se mancano, sparisce la frase intera
+    catalogo, prenotazione = config.LINK_CATALOGO, config.LINK_PRENOTAZIONE
+    if testo_id == "risposta_interesse" and not catalogo:
+        return None      # e' il testo che serve a mandare il catalogo
+    corpo = corpo.replace("{frase_catalogo}", (
+        f"\nLe lascio comunque il nostro catalogo, così ce l'ha se dovesse\n"
+        f"servirle: {catalogo}.\n" if catalogo else ""))
+    corpo = corpo.replace("{frase_catalogo_esteso}", (
+        f"\nLe allego il catalogo aggiornato: trova le linee complete di persiane,\n"
+        f"grate, cancelli e recinzioni, con le versioni in kit e finite.\n"
+        f"{catalogo}\n" if catalogo else ""))
+    corpo = corpo.replace("{frase_prenotazione}", (
+        f"\nSe le è comodo, in una chiamata di dieci minuti le mostro quale\n"
+        f"configurazione ha senso per il vostro lavoro e come funziona l'ordine.\n"
+        f"{prenotazione}\n" if prenotazione else ""))
 
     materiali = azienda.get("materiali") or []
     if isinstance(materiali, str):
@@ -244,11 +270,17 @@ if __name__ == "__main__" and "--test" in sys.argv:
     assert "[" not in senza["corpo"] and "{" not in senza["corpo"]
     assert not verifica(senza)
 
-    # 4. nessun claim vietato in NESSUNO degli otto testi
-    for tid in TESTI:
-        b = componi({"categoria": "fabbro"}, testo_id=tid, oggetto_precedente="X")
-        problemi = verifica(b)
-        assert not problemi, (tid, problemi)
+    # 4. nessun claim vietato in NESSUNO dei testi, con e senza i link
+    _cat, _pren = config.LINK_CATALOGO, config.LINK_PRENOTAZIONE
+    for cat, pren in (("", ""), ("catalogo.pdf", "cal.com/x")):
+        config.LINK_CATALOGO, config.LINK_PRENOTAZIONE = cat, pren
+        for tid in TESTI:
+            b = componi({"categoria": "fabbro"}, testo_id=tid, oggetto_precedente="X")
+            if b is None:
+                continue      # risposta_interesse senza catalogo: non si produce
+            problemi = verifica(b)
+            assert not problemi, (tid, cat, problemi)
+    config.LINK_CATALOGO, config.LINK_PRENOTAZIONE = _cat, _pren
 
     # 5. firma vuota -> si chiude senza segnaposto, non con "[Firma]"
     b = componi({"categoria": "showroom"})
@@ -260,7 +292,44 @@ if __name__ == "__main__" and "--test" in sys.argv:
                 oggetto_precedente="Fornitura componenti in acciaio")
     assert f["oggetto"] == "Re: Fornitura componenti in acciaio"
 
-    assert len(TESTI) == 8, "gli otto testi approvati"
+    # --- i due testi del catalogo ---
+    salvati = (config.LINK_CATALOGO, config.LINK_PRENOTAZIONE)
+
+    # senza link: il follow-up torna alla versione approvata, intatta
+    config.LINK_CATALOGO = config.LINK_PRENOTAZIONE = ""
+    f = componi({"categoria": "fabbro"}, testo_id="follow_up",
+                oggetto_precedente="Fornitura componenti in acciaio")
+    assert "catalogo" not in f["corpo"].lower(), f["corpo"]
+    assert "le avevo scritto qualche giorno fa" in f["corpo"]
+    assert not verifica(f)
+    # e la risposta-interesse non si produce affatto: serve a mandare il catalogo
+    assert componi({"categoria": "fabbro"}, testo_id="risposta_interesse") is None
+
+    # con i link: entrambe le frasi compaiono, nessun segnaposto
+    config.LINK_CATALOGO = "carpenterielaziali.it/catalogo.pdf"
+    config.LINK_PRENOTAZIONE = "cal.com/carpenterielaziali/10min"
+    f = componi({"categoria": "fabbro"}, testo_id="follow_up",
+                oggetto_precedente="X")
+    assert config.LINK_CATALOGO in f["corpo"] and not verifica(f)
+    r = componi({"categoria": "fabbro"}, testo_id="risposta_interesse")
+    assert config.LINK_CATALOGO in r["corpo"]
+    assert config.LINK_PRENOTAZIONE in r["corpo"]
+    assert "grazie del riscontro" in r["corpo"]
+    assert not verifica(r), verifica(r)
+
+    # solo il catalogo: la frase della chiamata sparisce, niente segnaposto
+    config.LINK_PRENOTAZIONE = ""
+    r = componi({"categoria": "fabbro"}, testo_id="risposta_interesse")
+    assert "dieci minuti" not in r["corpo"] and not verifica(r)
+    config.LINK_CATALOGO, config.LINK_PRENOTAZIONE = salvati
+
+    # i testi che nascono da un fatto invisibile al sistema non si autoscelgono
+    for tid in SOLO_SU_RICHIESTA:
+        assert scegli_testo({"categoria": "fabbro", "livello_fornitura": "kit"}) != tid
+
+    # 8 approvati (con follow_up aggiornato al catalogo, non aggiunto) + la
+    # risposta a chi mostra interesse
+    assert len(TESTI) == 9, sorted(TESTI)
     print("ok")
 elif __name__ == "__main__":
     raise SystemExit(main())

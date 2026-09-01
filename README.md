@@ -157,9 +157,10 @@ Un solo testo per azienda, scelto in quest'ordine di precedenza:
 | `livello_fornitura = kit` | *Fornitura componenti in acciaio* |
 | serramentista, montatore, artigiano | *Persiane e grate in acciaio* |
 
-Un ex cliente non riceve mai un testo da azienda nuova, e viceversa. Le
-altre due varianti — follow-up a 10 giorni e ricontatto a mesi — si
-chiedono per `testo_id`, non si scelgono da sole.
+Un ex cliente non riceve mai un testo da azienda nuova, e viceversa. Tre
+testi **non si scelgono mai da soli** perché nascono da un fatto che il
+sistema non vede — una risposta umana, il tempo trascorso — e si chiedono
+per `testo_id`: `follow_up`, `ricontatto`, `risposta_interesse`.
 
 Tre regole applicate dal codice e verificate dal self-check:
 **l'annuncio di lavoro non compare mai nel testo** (sceglie il messaggio,
@@ -167,9 +168,16 @@ non lo scrive); i campi variabili o si compilano o la frase che li conteneva
 sparisce — mai un `[segnaposto]` in una bozza; nessun claim su tempi,
 certificazioni o risparmi (`config.VIETATE_EMAIL`).
 
-Prima dell'uso vanno compilati `FIRMA_EMAIL` e `SITO_EMAIL` in `config.py`:
-se restano vuoti la bozza chiude senza firma, che è preferibile a un
-segnaposto in chiaro.
+Le email escono a nome dell'azienda (`FIRMA_EMAIL = "Carpenterie
+Laziali"`), non del singolo commerciale: la casella è condivisa, quindi la
+firma è una costante e non si legge da `assegnato_a`.
+
+`LINK_CATALOGO` e `LINK_PRENOTAZIONE` sono vuoti in attesa del catalogo del
+cliente. Finché lo sono: la frase che li conterrebbe **sparisce** (il
+follow-up torna esattamente alla versione approvata) e `risposta_interesse`
+non si produce affatto, perché è il testo che serve a mandare il catalogo.
+`SITO_EMAIL` resta vuoto di proposito: in chiusura andrà il link al
+catalogo, non al sito.
 
 ## Studio del territorio
 

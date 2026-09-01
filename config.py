@@ -183,8 +183,17 @@ FORNITURA_PER_CATEGORIA = {
 # La firma e il sito sono dati del MITTENTE: si compilano una volta qui.
 # Se restano vuoti, il generatore chiude senza firma invece di lasciare
 # un segnaposto in chiaro nella bozza.
-FIRMA_EMAIL = ""          # es. "Claudia Rossi — Carpenterie Laziali"
-SITO_EMAIL = ""           # es. "carpenterielaziali.it"
+# Le email escono a nome dell'azienda, non del singolo commerciale: la
+# casella e' condivisa, quindi la firma e' una costante e non si legge da
+# `assegnato_a`.
+FIRMA_EMAIL = "Carpenterie Laziali"
+# In chiusura andra' il link al CATALOGO, non al sito: si compila quando il
+# cliente lo manda. Finche' e' vuoto, la chiusura resta la sola firma.
+SITO_EMAIL = ""
+# Link usati dai due testi del catalogo. Vuoti finche' non arrivano: la
+# frase che li conterrebbe sparisce, mai un segnaposto in chiaro.
+LINK_CATALOGO = ""        # es. "carpenterielaziali.it/catalogo.pdf"
+LINK_PRENOTAZIONE = ""    # es. "cal.com/carpenterielaziali/10min"
 # Parole che non devono MAI comparire in una bozza: il PDF vieta di citare
 # gli annunci di lavoro, e la guida vieta claim su tempi e certificazioni.
 VIETATE_EMAIL = ("saldator", "annuncio", "assunzione", "cercate", "offerta di lavoro",
