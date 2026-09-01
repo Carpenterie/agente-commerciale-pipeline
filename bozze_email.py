@@ -1,7 +1,11 @@
 """Generatore di BOZZE email dai testi approvati (PDF del 2026-08-31).
 
-    python bozze_email.py --classe A --limite 20        # bozze per le classi A
-    python bozze_email.py --azienda <uuid>              # una sola
+    python bozze_email.py <uuid-azienda>
+    python bozze_email.py <uuid-azienda> --testo follow_up
+
+UNA AZIENDA PER VOLTA, su richiesta: la bozza si produce quando il
+commerciale apre la scheda, non in blocco su una lista. Non esiste una
+funzione che generi per liste, ed è deliberato — vedi README.
 
 NON invia niente e non tocca Gmail: il §2 del PRD lo mette fuori perimetro.
 Produce testo da rileggere e inviare a mano (o dall'app).
@@ -173,34 +177,40 @@ def verifica(bozza: dict) -> list[str]:
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--classe", default="A", help="classe da lavorare (A, B, C)")
-    p.add_argument("--limite", type=int, default=20)
+    p = argparse.ArgumentParser(
+        description="Bozza email per UNA azienda. Non genera in blocco.")
+    p.add_argument("azienda", help="uuid della scheda in `aziende`")
+    p.add_argument("--testo", default="", choices=sorted(TESTI) or None,
+                   help="forza un testo (follow_up, ricontatto...); "
+                        "senza, lo sceglie da categoria e fornitura")
+    p.add_argument("--oggetto-precedente", default="",
+                   help="per il follow-up: l'oggetto del primo messaggio")
     args = p.parse_args()
 
     import db
 
-    sb = db.client()
-    aziende = (sb.table("aziende").select("*").eq("classe", args.classe)
-               .limit(args.limite).execute().data or [])
-    print(f"{len(aziende)} aziende in classe {args.classe}\n")
-    senza = 0
-    for a in aziende:
-        bozza = componi(a)
-        if not bozza:
-            senza += 1
-            continue
-        problemi = verifica(bozza)
-        print("=" * 72)
-        print(f"{a['ragione_sociale']}  [{bozza['testo_id']}: {bozza['perche']}]")
-        print(f"Oggetto: {bozza['oggetto']}\n")
-        print(bozza["corpo"])
-        if problemi:
-            print("\n!! DA NON INVIARE:", "; ".join(problemi))
-    if senza:
-        print(f"\n{senza} aziende senza bozza: categoria o fornitura non "
-              "sufficienti a scegliere un testo")
-    print("\nBozze da rileggere prima dell'invio. Questo comando non invia nulla.")
+    righe = (db.client().table("aziende").select("*")
+             .eq("id", args.azienda).limit(1).execute().data)
+    if not righe:
+        print(f"nessuna azienda con id {args.azienda}")
+        return 1
+    a = righe[0]
+
+    bozza = componi(a, args.testo, args.oggetto_precedente)
+    if not bozza:
+        print(f"{a['ragione_sociale']}: nessuna bozza.\n"
+              "Categoria e livello di fornitura non bastano a scegliere un "
+              "testo: la scheda va letta a mano.")
+        return 1
+
+    print(f"{a['ragione_sociale']}  [{bozza['testo_id']}: {bozza['perche']}]")
+    print(f"Oggetto: {bozza['oggetto']}\n")
+    print(bozza["corpo"])
+    problemi = verifica(bozza)
+    if problemi:
+        print("\n!! DA NON INVIARE:", "; ".join(problemi))
+        return 1
+    print("\nBozza da rileggere prima dell'invio. Questo comando non invia nulla.")
     return 0
 
 

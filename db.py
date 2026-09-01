@@ -111,6 +111,15 @@ def riga_azienda(scheda: dict, dati: dict | None = None,
         motivazione = _testo(dati.get("motivazione"))
 
     segnali_finali = list(segnali or [])
+    # reputazione Google: non costa nulla e il commerciale la vede in scheda
+    if scheda.get("recensioni") is not None:
+        segnali_finali.append({"tipo": "reputazione_google",
+                               "recensioni": scheda.get("recensioni"),
+                               "punteggio": scheda.get("punteggio")})
+    if scheda.get("chiusa_temporaneamente"):
+        segnali_finali.append({
+            "tipo": "chiusa_temporaneamente",
+            "nota": "Google la dà temporaneamente chiusa: verificare prima di contattare"})
     if scheda.get("ex_cliente"):
         # il commerciale deve sapere che ci ha già lavorato
         segnali_finali.insert(0, scheda["ex_cliente"])
@@ -352,5 +361,20 @@ if __name__ == "__main__":
     assert exc["segnali"][0]["tipo"] == "ex_cliente"
     assert exc["classe"] == "A"          # resta un lead, con la sua classe
     assert exc["esito_analisi"] == "TARGET"
+
+    # reputazione e chiusura temporanea finiscono nei segnali
+    r = riga_azienda({"nome": "X", "fonte": "maps", "recensioni": 176,
+                      "punteggio": 4.8, "chiusa_temporaneamente": True},
+                     dati={"classificazione": "TARGET", "confidenza": "ALTA"},
+                     classe="A", esito_fetch="OK")
+    tipi = [s["tipo"] for s in r["segnali"]]
+    assert "reputazione_google" in tipi and "chiusa_temporaneamente" in tipi
+    rep = next(s for s in r["segnali"] if s["tipo"] == "reputazione_google")
+    assert rep["recensioni"] == 176 and rep["punteggio"] == 4.8
+    # senza recensioni (Exa non le ha) nessun segnale vuoto
+    r2 = riga_azienda({"nome": "Y", "fonte": "exa"},
+                      dati={"classificazione": "TARGET", "confidenza": "ALTA"},
+                      classe="A", esito_fetch="OK")
+    assert not any(s["tipo"] == "reputazione_google" for s in (r2["segnali"] or []))
 
     print("ok")

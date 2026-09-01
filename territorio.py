@@ -69,8 +69,40 @@ def _telefoni(testo: str) -> list[str]:
     return [re.sub(r"\D", "", m) for m in _RE_TEL.findall(testo)]
 
 
-def valuta(contenuto: str) -> dict:
-    """-> {"esito": "lazio"|"fuori"|"incerto", "segnale": str}"""
+def da_scheda(scheda: dict) -> dict | None:
+    """Segnale territoriale PRIMARIO: il CAP e la provincia che Google Maps
+    dichiara sulla scheda (93-95% valorizzati). È un dato di anagrafica,
+    non una deduzione dal testo di una pagina: quando c'è, vince
+    sull'euristica.
+
+    -> esito, oppure None se la scheda non porta il dato.
+    """
+    cap = str(scheda.get("cap") or "").strip()
+    provincia = str(scheda.get("provincia") or "").strip().upper()
+    if cap and cap[:2] in config.PREFISSI_CAP_LAZIO:
+        return {"esito": "lazio", "segnale": f"cap {cap} da Google Maps"}
+    if cap:
+        return {"esito": "fuori", "segnale": f"cap {cap} da Google Maps"}
+    if provincia and provincia in config.PROVINCE:
+        return {"esito": "lazio", "segnale": f"provincia {provincia} da Google Maps"}
+    if provincia:
+        return {"esito": "fuori", "segnale": f"provincia {provincia} da Google Maps"}
+    return None
+
+
+def valuta(contenuto: str, scheda: dict | None = None) -> dict:
+    """-> {"esito": "lazio"|"fuori"|"incerto", "segnale": str}
+
+    Se la scheda della fonte porta CAP o provincia, quelli decidono: sono
+    anagrafica, non deduzione. L'euristica sui recapiti della pagina resta
+    il ripiego per il 7% di schede che non li hanno (e per Exa, che non ne
+    ha mai).
+    """
+    if scheda:
+        primario = da_scheda(scheda)
+        if primario:
+            return primario
+
     testo = _RE_URL.sub(" ", _sezione_contatti(contenuto))
     lazio, fuori = [], []
 
@@ -185,6 +217,23 @@ if __name__ == "__main__":
     v = valuta("# PAGINA: https://x.it/\n\nhome\n\n# PAGINA: https://x.it/gallery\n\n"
                "cantiere a 20121 Milano\n\n# PAGINA: https://x.it/contatti\n\n00187 Roma")
     assert v["esito"] == "lazio" and "00187" in v["segnale"], v
+
+    # --- CAP e provincia da Maps: segnale primario, batte l'euristica ---
+    v = da_scheda({"cap": "00179", "provincia": "RM"})
+    assert v["esito"] == "lazio" and "da Google Maps" in v["segnale"]
+    assert da_scheda({"cap": "20121", "provincia": "MI"})["esito"] == "fuori"
+    assert da_scheda({"cap": "", "provincia": "LT"})["esito"] == "lazio"
+    assert da_scheda({"cap": "", "provincia": "BG"})["esito"] == "fuori"
+    assert da_scheda({"cap": "", "provincia": ""}) is None   # si passa all'euristica
+    assert da_scheda({}) is None
+
+    # il CAP della scheda vince sui recapiti della pagina, che qui direbbero Roma
+    pagina_romana = "# PAGINA: https://x.it/contatti\n\n00179 Roma, tel 06 1234567"
+    v = valuta(pagina_romana, {"cap": "24061", "provincia": "BG"})
+    assert v["esito"] == "fuori" and "24061" in v["segnale"], v
+    # senza scheda, l'euristica lavora come prima
+    assert valuta(pagina_romana)["esito"] == "lazio"
+    assert valuta(pagina_romana, {})["esito"] == "lazio"
 
     # --- verifica della sede dichiarata dopo la classificazione ---
     v = verifica_sede({"sede_comune": "RODANO", "sede_provincia": "MI",

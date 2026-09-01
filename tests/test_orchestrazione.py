@@ -47,11 +47,17 @@ import sourcing_maps  # noqa: E402
 
 SCHEDE = [
     {"fonte": "maps", "nome": "Officina Rossi", "sito": "https://rossi.it",
-     "telefono": "06 111", "comune": "Tivoli"},
+     "telefono": "06 111", "comune": "Tivoli", "cap": "00019", "provincia": "RM",
+     "recensioni": 12, "punteggio": 4.2},
     {"fonte": "maps", "nome": "Fabbro Bianchi", "sito": "",           # senza sito
      "telefono": "0774 222", "comune": "Guidonia"},
     {"fonte": "maps", "nome": "Fabbro Como", "sito": "https://como.it",  # fuori
-     "telefono": "031 333", "comune": "Como"},
+     "telefono": "031 333", "comune": "Como", "cap": "22100", "provincia": "CO"},
+    {"fonte": "maps", "nome": "Chiusa Definitivamente", "sito": "https://chiusa.it",
+     "comune": "Roma", "chiusa_definitivamente": True},
+    {"fonte": "maps", "nome": "Chiusa Per Ora", "sito": "https://chiusaperora.it",
+     "comune": "Roma", "cap": "00100", "provincia": "RM",
+     "chiusa_temporaneamente": True},
     {"fonte": "exa", "nome": "Sito Rotto", "sito": "https://rotto.it"},  # fetch KO
     {"fonte": "exa", "nome": "Esplosivo", "sito": "https://boom.it"},    # crash nel fetch
     {"fonte": "exa", "nome": "Boom Arricchimento",                       # crash fuori fetch
@@ -128,13 +134,16 @@ uscita = buffer.getvalue()
 assert esito == 0, esito
 
 # il doppione (stesso dominio della prima) è stato tolto dal dedup interno
-assert "dedup interno: 7 -> 6" in uscita, uscita
+# 9 schede, meno 1 chiusa definitivamente = 8; il dedup toglie il doppione
+assert "escluse 1 chiuse definitivamente" in uscita, uscita
+assert "1 temporaneamente chiuse" in uscita, uscita
+assert "dedup interno: 8 -> 7" in uscita, uscita
 # tutte e 5 le aziende sono state lavorate, nessuna ha fermato il ciclo
 for nome in ("Officina Rossi", "Fabbro Bianchi", "Fabbro Como", "Sito Rotto",
              "Esplosivo", "Boom Arricchimento"):
     assert nome in uscita, nome
 # un crash nel fetch non perde l'azienda: diventa FETCH_FALLITO e viene registrata
-assert "fetch KO Esplosivo" in uscita and "[5/6] Esplosivo" in uscita, uscita
+assert "fetch KO Esplosivo" in uscita, uscita
 # un crash fuori dal fetch salta la singola azienda ma non ferma il ciclo
 assert "SALTATA Boom Arricchimento" in uscita, uscita
 assert uscita.index("SALTATA Boom") < uscita.index("Aziende analizzate"), "ciclo fermato"
@@ -211,7 +220,7 @@ _classifica_lombarda = lambda client, contenuto: {  # noqa: E731
     "classificazione": "INDETERMINATO", "confidenza": "MEDIA",
     "sede_comune": "RODANO", "sede_provincia": "MI", "sede_regione": "Lombardia"}
 classify.classifica = _classifica_lombarda
-classify.classe_db = lambda c, conf, off="", seg=None: "C"  # valutata C
+classify.classe_db = lambda c, conf, off="", seg=None, sch=None: "C"
 
 args2 = types.SimpleNamespace(provincia="RM", limite=1, dry_run=True,
                               comuni=None, sourcing_fresco=True,

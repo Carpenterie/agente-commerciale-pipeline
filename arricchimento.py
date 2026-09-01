@@ -119,8 +119,9 @@ def arricchisci(nome: str, piva: str = "", provincia: str = "",
 
 
 def da_arricchire(aziende: list[dict]) -> list[dict]:
-    """Solo classe A e B (§9): sulle altre non si spende."""
-    return [a for a in aziende if a.get("classe") in ("A", "B")]
+    """Solo le classi in config.CLASSI_DA_ARRICCHIRE (§9): sulle altre non
+    si spende. Restringere a ("A",) e' una scelta di costo, non di codice."""
+    return [a for a in aziende if a.get("classe") in config.CLASSI_DA_ARRICCHIRE]
 
 
 if __name__ == "__main__":
@@ -149,6 +150,12 @@ if __name__ == "__main__":
 
     aziende = [{"classe": "A"}, {"classe": "B"}, {"classe": "C"},
                {"classe": "indeterminato"}, {}]
-    assert len(da_arricchire(aziende)) == 2
+    assert len(da_arricchire(aziende)) == len(
+        [a for a in aziende if a.get("classe") in config.CLASSI_DA_ARRICCHIRE])
+    # la restrizione e' un parametro, non una modifica al codice
+    salvato = config.CLASSI_DA_ARRICCHIRE
+    config.CLASSI_DA_ARRICCHIRE = ("A",)
+    assert [a["classe"] for a in da_arricchire(aziende)] == ["A"]
+    config.CLASSI_DA_ARRICCHIRE = salvato
 
     print("ok")

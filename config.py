@@ -94,6 +94,21 @@ ENDPOINT_OPENAPI = "IT-advanced"
 # il report costi (§9) usa questo valore, non quello del PRD.
 COSTO_OPENAPI_EUR = 0.10
 CHIAMATE_OPENAPI_GRATUITE_MESE = 30
+# Quali classi arricchire. Il §9 dice A e B; restringere a ("A",) taglia la
+# voce Openapi di circa due terzi (misurato: le A sono il 40% delle A+B).
+# Openapi serve a P.IVA, sede e dipendenti: sulle classi escluse la
+# modulazione organico non si applica e la scheda resta senza P.IVA.
+CLASSI_DA_ARRICCHIRE = ("A", "B")
+
+# --- Reputazione Google (dalla scheda Maps) ---
+# Concorre alla PRIORITÀ, mai all'esclusione: sul campione di Roma il 42%
+# delle aziende ha 5 recensioni o meno, e non perché sia fermo — un fabbro
+# che lavora B2B non riceve recensioni. Chi ne ha poche non viene toccato;
+# chi ne ha molte e buone sale in classe A.
+# Soglie sui dati reali: 50 recensioni è l'ultimo quintile (19% del
+# campione), 4.5 è un punteggio solido senza essere raro.
+SOGLIA_RECENSIONI_FORTE = 50
+SOGLIA_PUNTEGGIO_FORTE = 4.5
 
 # --- Segnali di lavoro (§9) ---
 # Ordine = priorità. Il saldatore pesa più di tutti: è la figura che il

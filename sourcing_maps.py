@@ -14,7 +14,17 @@ import config
 
 def _normalizza(voce: dict) -> dict:
     """Scheda Apify -> dict comune a tutta la pipeline. Salva SEMPRE
-    nome, sito, telefono, indirizzo, comune (§4)."""
+    nome, sito, telefono, indirizzo, comune (§4).
+
+    La scheda grezza ha 60 campi: qui si tengono quelli che servono.
+    - `cap` e `provincia` sono il segnale territoriale primario (93-95%
+      valorizzati), più affidabili dell'euristica sulla pagina;
+    - `recensioni` e `punteggio` concorrono alla priorità commerciale
+      (86%), MAI all'esclusione: metà delle aziende del settore ha meno di
+      dieci recensioni perché lavora B2B, non perché è ferma;
+    - `chiusa_definitivamente` e `chiusa_temporaneamente` evitano di
+      analizzare (e pagare) attività che non esistono più.
+    """
     return {
         "fonte": "maps",
         "query": voce.get("searchString", "") or "",
@@ -23,6 +33,12 @@ def _normalizza(voce: dict) -> dict:
         "telefono": voce.get("phone") or "",
         "indirizzo": voce.get("address") or "",
         "comune": voce.get("city") or "",
+        "cap": (voce.get("postalCode") or "").strip(),
+        "provincia": (voce.get("state") or "").strip(),
+        "recensioni": voce.get("reviewsCount"),
+        "punteggio": voce.get("totalScore"),
+        "chiusa_definitivamente": bool(voce.get("permanentlyClosed")),
+        "chiusa_temporaneamente": bool(voce.get("temporarilyClosed")),
     }
 
 
@@ -50,18 +66,29 @@ def cerca(comuni: list[str], log=print) -> tuple[list[dict], float]:
               for v in client.dataset(run.default_dataset_id).iterate_items()]
     costo_usd = float(run.usage_total_usd or 0)
     con_sito = sum(1 for s in schede if s["sito"])
+    chiuse = sum(1 for s in schede if s["chiusa_definitivamente"])
     log(f"maps: {len(schede)} schede, {con_sito} con sito, "
         f"{len(schede) - con_sito} senza sito (si tengono comunque) "
         f"- costo reale {costo_usd:.4f} USD")
+    if chiuse:
+        log(f"maps: {chiuse} risultano chiuse definitivamente")
     return schede, costo_usd
 
 
 if __name__ == "__main__":
     voce = {"searchString": "fabbro Roma", "title": " Officina X ",
             "website": "https://x.it", "phone": "+39 06 123", "address": "Via Y 1, Roma",
-            "city": "Roma"}
+            "city": "Roma", "postalCode": "00179", "state": "RM",
+            "reviewsCount": 176, "totalScore": 4.8, "permanentlyClosed": False}
     n = _normalizza(voce)
     assert n["nome"] == "Officina X" and n["sito"] == "https://x.it"
+    assert n["cap"] == "00179" and n["provincia"] == "RM"
+    assert n["recensioni"] == 176 and n["punteggio"] == 4.8
+    assert n["chiusa_definitivamente"] is False
+    # scheda che non dichiara i campi nuovi: None/False, mai KeyError
+    v = _normalizza({"title": "Y"})
+    assert v["cap"] == "" and v["recensioni"] is None
+    assert v["chiusa_definitivamente"] is False
     assert n["telefono"] == "+39 06 123" and n["comune"] == "Roma"
     assert _normalizza({})["sito"] == ""  # senza sito: campi vuoti, non None/KeyError
     print("ok")

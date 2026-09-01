@@ -48,13 +48,17 @@ volatile, cresce a ogni ciclo e il server ha la sua.
 
 `main.py` orchestra: sourcing (`sourcing_maps` + `sourcing_exa`) → `dedup`
 (interno, poi esclusioni e già-visti) → `fetch` (cache su disco per dominio)
-→ `territorio` (filtro geografico gratuito) → `classify` + `prompts` (il file
-sacro) → `arricchimento` e `segnali_lavoro` solo su classe A/B → `db`.
+→ `territorio` (CAP e provincia da Maps, euristica come ripiego) →
+`classify` + `prompts` (il file sacro) → `segnali_lavoro` su tutti i TARGET
+e `arricchimento` sulle sole A/B → `db`.
 `costi` conta token ed euro per azienda e per ciclo.
 
 ## Fuori territorio: due controlli, nessun declassamento
 
-`territorio.py` filtra prima della classificazione (gratis, sui recapiti) e
+Il segnale **primario** è il CAP (o la provincia) che Google Maps dichiara
+sulla scheda: 93-95% valorizzato, è anagrafica e non deduzione, quindi
+quando c'è decide da solo. Sotto, `territorio.py` filtra sui recapiti della
+pagina — il ripiego per il 7% senza CAP e per Exa, che non ne ha mai — e
 `territorio.verifica_sede()` ricontrolla dopo, sulla sede che il modello
 legge dalla pagina contatti — un dato migliore dell'euristica sui prefissi.
 Un'azienda che risulta di un'altra regione resta in DB con la **classe che
@@ -73,20 +77,25 @@ tratta solo alluminio o PVC sono target. Chi ha officina compra il kit, chi
 non ce l'ha il prodotto finito — due linee dello stesso catalogo, che è
 quello che decide `livello_fornitura`, non la classificazione.
 
-Poiché così i TARGET sono la maggioranza (15 su 24 nel campione), la
+Poiché così i TARGET sono la maggioranza (17 su 24 nel campione), la
 **classe dice chi chiamare prima**, non se l'azienda è pertinente:
 
 | classe | significato |
 |---|---|
-| A | segnale di bisogno rilevato (annuncio di lavoro), oppure officina accertata + confidenza alta |
-| B | target senza segnali, confidenza alta o media |
+| A | una fra tre: segnale di bisogno (annuncio di lavoro), officina accertata + confidenza alta, oppure reputazione Google forte |
+| B | target senza nessuna delle tre, confidenza alta o media |
 | C | target incerto, o dubbio fondato (INDETERMINATO con confidenza alta/media) |
 | indeterminato | il resto |
 
+La **reputazione** (≥50 recensioni e ≥4,5 di punteggio, soglie in `config`)
+concorre solo in positivo: sul campione di Roma il 42% delle aziende ha
+cinque recensioni o meno perché lavora B2B, non perché è ferma — chi ne ha
+poche non viene toccato.
+
 I segnali si cercano su **tutti** i TARGET (una query Exa, ~0,006 EUR),
 perché decidono la classe A: cercarli solo su A/B sarebbe circolare.
-Openapi resta sulle sole A/B: a 0,10 EUR a chiamata, su 180 target sarebbero
-18 EUR a ciclo.
+Openapi resta sulle classi in `config.CLASSI_DA_ARRICCHIRE`, oggi A e B:
+restringere a `("A",)` taglia quella voce da ~27 a ~9 EUR sul ciclo completo.
 
 ## Deploy su Hetzner
 
@@ -94,8 +103,8 @@ Openapi resta sulle sole A/B: a 0,10 EUR a chiamata, su 180 target sarebbero
 ./deploy.sh utente@indirizzo-server            # dal Mac, non dal server
 ```
 
-`deploy.sh` lancia gitleaks, poi rsync **escludendo `.env`, `cache/` e
-`.venv/`**, e sul server crea il venv e installa chromium. Il `.env` sul
+`deploy.sh` lancia gitleaks, poi rsync **escludendo `.env`, `/cache/` e
+`.venv/`** (la cache del campione invece viaggia: serve al regression), e sul server crea il venv e installa chromium. Il `.env` sul
 server si crea **a mano una volta sola** e non viaggia mai — né in git né
 in rsync:
 
@@ -126,10 +135,14 @@ server ha la sua.
 ## Bozze email
 
 ```bash
-python bozze_email.py --classe A --limite 20
+python bozze_email.py <uuid-azienda>
+python bozze_email.py <uuid-azienda> --testo follow_up
 ```
 
-Genera le bozze dagli otto testi approvati dal cliente (PDF del 2026-08-31).
+Genera la bozza dagli otto testi approvati dal cliente (PDF del 2026-08-31).
+**Una azienda per volta, su richiesta**: la bozza si produce quando il
+commerciale apre la scheda, non in blocco su una lista — non esiste una
+funzione che generi per liste, ed è deliberato.
 **Non invia nulla e non tocca Gmail**: il §2 del PRD lo mette fuori
 perimetro, il comando produce testo da rileggere.
 
@@ -172,6 +185,34 @@ individuate e classificate dal sistema — non è un censimento del mercato"
 è una colonna della vista** (`fonte_dato`), non una nota a piè di pagina:
 viaggia coi dati e l'app la mostra per forza. Il numero dipende dalle query
 di sourcing e dai comuni interrogati, non dal mercato reale.
+
+## Manutenzione: il campione va arricchito
+
+**Il campione delle 26 ha perso capacità discriminante.** Col perimetro
+allargato del 2026-08-26 quasi tutte risultano TARGET (17 su 24), e i casi
+che restano al confine oscillano: un guardiano che dice quasi sempre la
+stessa cosa non protegge più granché.
+
+Dopo il primo ciclo completo va **arricchito con 4-5 aziende che esercitano
+i confini attuali**, cioè le distinzioni su cui il perimetro può sbagliare:
+
+- ferramenta contro rivenditore al cliente finale (regola 5 contro regola 3);
+- grossista o distributore ad altri operatori contro distributore che vende
+  al finale (di nuovo regola 5, il caso più sottile);
+- produttore concorrente strutturato contro potenziale cliente (regola 3
+  applicata a chi produce già in proprio — è il caso Finstral).
+
+Le pagine si scaricano una volta e restano in `tests/campione_26/cache/`:
+il costo di ogni rilancio del regression **non cambia**, restano ~1,7 EUR
+per run indipendentemente da quante aziende contiene il campione.
+
+**Loi Carpenterie ha attraversato quattro classificazioni** durante
+l'evoluzione dei criteri — TARGET, INDETERMINATO, NON_TARGET, TARGET — e
+ognuna era coerente con le regole in vigore in quel momento. Non è
+instabilità del modello: è un caso difficile (carpenteria strutturale con
+linea serramenti attiva, regola 1 contro regola 7) che si è assestato
+quando il perimetro ha smesso di muoversi. Vale la pena saperlo prima di
+riaprire il caso fra sei mesi.
 
 ## Limiti noti
 

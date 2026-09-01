@@ -63,15 +63,28 @@ def classifica(client, contenuto: str) -> dict:
     raise ultimo_errore  # type: ignore[misc]
 
 
+def reputazione_forte(scheda: dict | None) -> bool:
+    """Molte recensioni E punteggio alto sulla scheda Google. Serve solo a
+    far salire di priorità: l'assenza del dato non penalizza nessuno."""
+    if not scheda:
+        return False
+    recensioni = scheda.get("recensioni") or 0
+    punteggio = scheda.get("punteggio") or 0
+    return (recensioni >= config.SOGLIA_RECENSIONI_FORTE
+            and punteggio >= config.SOGLIA_PUNTEGGIO_FORTE)
+
+
 def classe_db(classificazione: str, confidenza: str, officina: str = "",
-              segnali: list | None = None) -> str:
+              segnali: list | None = None, scheda: dict | None = None) -> str:
     """Priorità commerciale, non pertinenza: col perimetro allargato
     (2026-08-26) i TARGET sono la maggioranza, quindi la classe deve dire
     CHI CHIAMARE PRIMA.
 
     - A: TARGET con un segnale di bisogno (annuncio di lavoro), oppure
       TARGET con officina accertata e confidenza alta — il profilo che
-      compra kit e ordina in continuità
+      compra kit e ordina in continuità — oppure TARGET con reputazione
+      Google forte (molte recensioni e punteggio alto): è un'azienda
+      visibilmente attiva, e vale la pena chiamarla prima
     - B: TARGET senza segnali, confidenza alta o media
     - C: TARGET con confidenza bassa, o INDETERMINATO con confidenza
       alta o media (dubbio fondato)
@@ -81,6 +94,8 @@ def classe_db(classificazione: str, confidenza: str, officina: str = "",
         if segnali:
             return "A"
         if officina.strip().upper() == "SI" and confidenza == "ALTA":
+            return "A"
+        if reputazione_forte(scheda) and confidenza in ("ALTA", "MEDIA"):
             return "A"
         return "B" if confidenza in ("ALTA", "MEDIA") else "C"
     if classificazione == "INDETERMINATO" and confidenza in ("ALTA", "MEDIA"):
@@ -140,6 +155,24 @@ if __name__ == "__main__":
     assert classe_db("TARGET", "ALTA", "NON_DETERMINABILE") == "B"
     assert classe_db("TARGET", "MEDIA", "SI") == "B"      # officina ma confidenza media
     assert classe_db("TARGET", "MEDIA") == "B"
+    # A: reputazione Google forte (molte recensioni E punteggio alto)
+    forte = {"recensioni": 176, "punteggio": 4.8}
+    assert classe_db("TARGET", "ALTA", "NO", None, forte) == "A"
+    assert classe_db("TARGET", "MEDIA", "NO", None, forte) == "A"
+    # poche recensioni: nessun effetto, resta dove sarebbe stata
+    debole = {"recensioni": 3, "punteggio": 5.0}
+    assert classe_db("TARGET", "ALTA", "NO", None, debole) == "B"
+    assert classe_db("TARGET", "ALTA", "NO", None, {}) == "B"
+    assert classe_db("TARGET", "ALTA", "NO", None, None) == "B"
+    # molte recensioni ma punteggio basso: non basta
+    assert classe_db("TARGET", "ALTA", "NO", None,
+                     {"recensioni": 200, "punteggio": 3.2}) == "B"
+    # la reputazione non promuove chi non è TARGET
+    assert classe_db("NON_TARGET", "ALTA", "SI", None, forte) == "indeterminato"
+    # senza dati (Exa non li ha) nessun crash
+    assert reputazione_forte(None) is False
+    assert reputazione_forte({"recensioni": None, "punteggio": None}) is False
+
     # C: TARGET incerto, o dubbio fondato
     assert classe_db("TARGET", "BASSA", "SI") == "C"
     assert classe_db("INDETERMINATO", "MEDIA") == "C"

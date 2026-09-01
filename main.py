@@ -132,7 +132,7 @@ async def analizza(azienda: dict, crawler, client, totali: dict) -> dict:
         esito["esito_fetch"] = "FETCH_FALLITO"
         return esito
 
-    esito["territorio"] = territorio.valuta(contenuto)
+    esito["territorio"] = territorio.valuta(contenuto, azienda)
     if esito["territorio"]["esito"] == "fuori":
         return esito  # registrata ma non classificata: non si paga (§5)
 
@@ -146,7 +146,8 @@ async def analizza(azienda: dict, crawler, client, totali: dict) -> dict:
     esito["dati"] = dati
     esito["costo"] = dati["costo_analisi_eur"]
     esito["classe"] = classify.classe_db(
-        dati["classificazione"], dati["confidenza"], dati.get("capacita_officina", ""))
+        dati["classificazione"], dati["confidenza"],
+        dati.get("capacita_officina", ""), None, azienda)
     costi.registra_analisi(totali, dati["token_input"], dati["token_output"])
 
     # la sede letta dal modello batte l'euristica sui prefissi: se dichiara
@@ -185,7 +186,7 @@ def arricchisci_ab(azienda: dict, esito: dict, totali: dict,
     # classe definitiva: ora i segnali sono noti
     esito["classe"] = classify.classe_db(
         dati["classificazione"], dati["confidenza"],
-        dati.get("capacita_officina", ""), segnali)
+        dati.get("capacita_officina", ""), segnali, azienda)
     if segnali:
         print(f"  segnale di bisogno -> classe A ({segnali[0]['ruolo']})")
         stat["con_segnale"] += 1
@@ -194,7 +195,7 @@ def arricchisci_ab(azienda: dict, esito: dict, totali: dict,
         if esito["classe"] == "A" and preliminare != "A":
             stat["saliti_ad_A"] += 1
 
-    if esito["classe"] not in ("A", "B"):
+    if esito["classe"] not in config.CLASSI_DA_ARRICCHIRE:
         return {}, segnali
 
     stat["arricchibili"] = stat.get("arricchibili", 0) + 1
@@ -263,6 +264,17 @@ async def esegui(args) -> int:
     n_trovate = len(schede)
 
     # 2. dedup interno, poi esclusioni e già-visti (§4: dedup PRIMA, non dopo)
+    chiuse = [s for s in schede if s.get("chiusa_definitivamente")]
+    if chiuse:
+        schede = [s for s in schede if not s.get("chiusa_definitivamente")]
+        print(f"escluse {len(chiuse)} chiuse definitivamente (Google): "
+              + ", ".join(s.get("nome", "?")[:28] for s in chiuse[:5])
+              + (" …" if len(chiuse) > 5 else ""))
+    temporanee = sum(1 for s in schede if s.get("chiusa_temporaneamente"))
+    if temporanee:
+        print(f"{temporanee} temporaneamente chiuse: entrano marcate, "
+              "potrebbero riaprire")
+
     schede = dedup.dedup_interno(schede)
     if sb:
         elenco = db.esclusioni(sb)
