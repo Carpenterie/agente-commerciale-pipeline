@@ -124,7 +124,7 @@ residuo.
 
 Cron: si installa con `crontab cron.example`, **non** ricopiando a mano le
 righe in `crontab -e` — così l'ordine delle province è sempre quello del
-file versionato. **Attivo dal 2026-09-07**, primo ciclo il 1° ottobre.
+file versionato. **Fermo**: vedi sotto.
 Il server è su `Etc/UTC`: `0 3` sono le **5:00 italiane** con l'ora legale
 e le 4:00 con quella solare; per averle davvero alle 3 italiane basta
 `CRON_TZ=Europe/Rome` come prima riga. È **mensile**, una provincia
@@ -138,10 +138,15 @@ difesa: se il credito finisse comunque, a saltare è Rieti — 15 comuni, la
 provincia con meno aziende — invece di Viterbo, che ne ha di più e sarebbe
 saltata solo per via dell'ordine alfabetico.
 
-**Le quattro righe sono commentate dal 2026-09-07**: il preventivo approvato
-dal cliente (61 EUR per cinque province) è sbagliato, perché costruito su un
-giro da 30 aziende invece che sulle ~1150 che un ciclo Roma senza limite
-produce davvero. Si riattivano dopo l'approvazione del preventivo corretto. Il riepilogo di fine ciclo
+**Tutte e cinque le righe sono commentate dal 2026-09-07**, Roma compresa:
+il preventivo approvato dal cliente (61 EUR per cinque province) è
+sbagliato, perché costruito su un giro da 30 aziende invece che sulle ~1150
+che un ciclo Roma senza limite produce davvero. Il §11 vieta il ciclo pieno
+senza approvazione costi, e quella che c'è non vale per questi numeri —
+nemmeno per Roma, che pur ripartendo su un archivio già pieno ripaga
+comunque il sourcing Apify a ogni giro (~$3,5, la cache dura 24 ore).
+**Si riattivano tutte e cinque insieme** dopo l'approvazione del preventivo
+corretto. Il riepilogo di fine ciclo
 stampa il credito residuo in USD (non in euro: il tetto è in dollari, e
 convertirlo a cambio fisso farebbe leggere margine dove non ce n'è). La cadenza mensile invece che settimanale è una
 scelta di costo: il sourcing si ripaga a ogni giro ed è l'82% della spesa

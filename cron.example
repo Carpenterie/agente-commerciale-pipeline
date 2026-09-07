@@ -12,17 +12,19 @@
 # — 15 comuni, la provincia con meno aziende. In ordine alfabetico sarebbe
 # saltata Viterbo, che ne ha di più, e per nessun motivo.
 # Il consumo residuo si legge in fondo al log di ogni giorno.
-0 3 1 * * cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia RM >> /var/log/pipeline-rm.log 2>&1
+#0 3 1 * * cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia RM >> /var/log/pipeline-rm.log 2>&1
+#
+# Le altre quattro (vedi sotto, anch'esse ferme) partono il 7 e non il 2.
 #
 # COMMENTATE dal 2026-09-07: il preventivo approvato dal cliente (61 EUR
 # per cinque province) e' sbagliato — la sola Roma ne e' costata ~79, e le
 # stime erano fatte su un campione da 30 aziende invece che sulle 1154 che
 # un ciclo senza limite produce davvero. Il §11 vieta il ciclo pieno senza
 # approvazione costi, e quella attuale non vale per questi numeri.
-# Si riattivano togliendo il "#" DOPO che il cliente ha approvato il
-# preventivo corretto.
+# Si riattivano TUTTE E CINQUE INSIEME, togliendo il "#", dopo che il
+# cliente ha approvato il preventivo corretto.
 #
-# Le altre quattro partono il 7, non il 2: il ciclo di fatturazione Apify
+# Il ciclo di fatturazione Apify
 # va dal 7 di un mese al 6 del successivo (abbonamento attivato il
 # 2026-09-07). Con tutte e cinque fra l'1 e il 5 cadrebbero nello stesso
 # periodo di fatturazione e il tetto di $19 salterebbe sull'ultima. Cosi'
