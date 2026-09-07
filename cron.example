@@ -6,14 +6,29 @@
 # l'82% del costo (vedi README, Costi): a cadenza settimanale sarebbero
 # ~66 EUR/mese contro ~18.
 #
-# ORDINE PER DENSITÀ, non alfabetico: RM, LT, FR, VT, RI. Il piano Apify ha
+# ORDINE PER DENSITÀ, non alfabetico: RM(1), LT(7), FR(8), VT(9), RI(10). Il piano Apify ha
 # un tetto mensile rigido (~$19) e il ciclo completo gli arriva vicino: se
 # il credito finisse, a saltare deve essere l'ultima della fila, cioè Rieti
 # — 15 comuni, la provincia con meno aziende. In ordine alfabetico sarebbe
 # saltata Viterbo, che ne ha di più, e per nessun motivo.
 # Il consumo residuo si legge in fondo al log di ogni giorno.
 0 3 1 * * cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia RM >> /var/log/pipeline-rm.log 2>&1
-0 3 2 * * cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia LT >> /var/log/pipeline-lt.log 2>&1
-0 3 3 * * cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia FR >> /var/log/pipeline-fr.log 2>&1
-0 3 4 * * cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia VT >> /var/log/pipeline-vt.log 2>&1
-0 3 5 * * cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia RI >> /var/log/pipeline-ri.log 2>&1
+#
+# COMMENTATE dal 2026-09-07: il preventivo approvato dal cliente (61 EUR
+# per cinque province) e' sbagliato — la sola Roma ne e' costata ~79, e le
+# stime erano fatte su un campione da 30 aziende invece che sulle 1154 che
+# un ciclo senza limite produce davvero. Il §11 vieta il ciclo pieno senza
+# approvazione costi, e quella attuale non vale per questi numeri.
+# Si riattivano togliendo il "#" DOPO che il cliente ha approvato il
+# preventivo corretto.
+#
+# Le altre quattro partono il 7, non il 2: il ciclo di fatturazione Apify
+# va dal 7 di un mese al 6 del successivo (abbonamento attivato il
+# 2026-09-07). Con tutte e cinque fra l'1 e il 5 cadrebbero nello stesso
+# periodo di fatturazione e il tetto di $19 salterebbe sull'ultima. Cosi'
+# Roma resta sola in coda a un periodo e le altre quattro aprono il
+# successivo, con il credito rinnovato.
+#0 3 7 * * cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia LT >> /var/log/pipeline-lt.log 2>&1
+#0 3 8 * * cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia FR >> /var/log/pipeline-fr.log 2>&1
+#0 3 9 * * cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia VT >> /var/log/pipeline-vt.log 2>&1
+#0 3 10 * * cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia RI >> /var/log/pipeline-ri.log 2>&1

@@ -94,11 +94,14 @@ ENDPOINT_OPENAPI = "IT-advanced"
 # il report costi (§9) usa questo valore, non quello del PRD.
 COSTO_OPENAPI_EUR = 0.10
 CHIAMATE_OPENAPI_GRATUITE_MESE = 30
-# Quali classi arricchire. Il §9 dice A e B; restringere a ("A",) taglia la
-# voce Openapi di circa due terzi (misurato: le A sono il 40% delle A+B).
+# Quali classi arricchire. Il §9 dice A e B.
+# ATTENZIONE al risparmio atteso: il "circa due terzi" scritto qui prima
+# nasceva da un campione piccolo ed e' FALSO. Misurato sul ciclo Roma del
+# 2026-09-07, 194 aziende: A=55, B=20 — le A sono il 73% delle A+B, non il
+# 40%. Restringere ad ("A",) taglia Openapi del 27%, non di due terzi.
 # Openapi serve a P.IVA, sede e dipendenti: sulle classi escluse la
 # modulazione organico non si applica e la scheda resta senza P.IVA.
-CLASSI_DA_ARRICCHIRE = ("A", "B")
+CLASSI_DA_ARRICCHIRE = ("A",)
 
 # --- Reputazione Google (dalla scheda Maps) ---
 # Concorre alla PRIORITÀ, mai all'esclusione: sul campione di Roma il 42%

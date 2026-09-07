@@ -128,11 +128,20 @@ file versionato. **Attivo dal 2026-09-07**, primo ciclo il 1° ottobre.
 Il server è su `Etc/UTC`: `0 3` sono le **5:00 italiane** con l'ora legale
 e le 4:00 con quella solare; per averle davvero alle 3 italiane basta
 `CRON_TZ=Europe/Rome` come prima riga. È **mensile**, una provincia
-al giorno dal 1° al 5, **in ordine di densità: RM, LT, FR, VT, RI**. Il
-piano Apify ha un tetto mensile rigido (~$19) e il ciclo completo gli arriva
-vicino: se il credito finisse, così a saltare è Rieti — 15 comuni, la
+al giorno, **in ordine di densità: RM il 1°, poi LT, FR, VT, RI il 7, 8, 9
+e 10**. Le quattro non sono di seguito a Roma perché il ciclo di
+fatturazione Apify va dal 7 di un mese al 6 del successivo: tutte e cinque
+fra l'1 e il 5 cadrebbero nello stesso periodo e il tetto di $19 salterebbe
+sull'ultima. Così Roma chiude un periodo e le altre quattro aprono il
+successivo, con il credito rinnovato. L'ordine di densità resta la seconda
+difesa: se il credito finisse comunque, a saltare è Rieti — 15 comuni, la
 provincia con meno aziende — invece di Viterbo, che ne ha di più e sarebbe
-saltata solo per via dell'ordine alfabetico. Il riepilogo di fine ciclo
+saltata solo per via dell'ordine alfabetico.
+
+**Le quattro righe sono commentate dal 2026-09-07**: il preventivo approvato
+dal cliente (61 EUR per cinque province) è sbagliato, perché costruito su un
+giro da 30 aziende invece che sulle ~1150 che un ciclo Roma senza limite
+produce davvero. Si riattivano dopo l'approvazione del preventivo corretto. Il riepilogo di fine ciclo
 stampa il credito residuo in USD (non in euro: il tetto è in dollari, e
 convertirlo a cambio fisso farebbe leggere margine dove non ce n'è). La cadenza mensile invece che settimanale è una
 scelta di costo: il sourcing si ripaga a ogni giro ed è l'82% della spesa
