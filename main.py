@@ -147,7 +147,7 @@ async def analizza(azienda: dict, crawler, client, totali: dict) -> dict:
     esito["costo"] = dati["costo_analisi_eur"]
     esito["classe"] = classify.classe_db(
         dati["classificazione"], dati["confidenza"],
-        dati.get("capacita_officina", ""), None, azienda)
+        dati.get("capacita_officina", ""), None)
     costi.registra_analisi(totali, dati["token_input"], dati["token_output"])
 
     # la sede letta dal modello batte l'euristica sui prefissi: se dichiara
@@ -186,7 +186,7 @@ def arricchisci_ab(azienda: dict, esito: dict, totali: dict,
     # classe definitiva: ora i segnali sono noti
     esito["classe"] = classify.classe_db(
         dati["classificazione"], dati["confidenza"],
-        dati.get("capacita_officina", ""), segnali, azienda)
+        dati.get("capacita_officina", ""), segnali)
     if segnali:
         print(f"  segnale di bisogno -> classe A ({segnali[0]['ruolo']})")
         stat["con_segnale"] += 1

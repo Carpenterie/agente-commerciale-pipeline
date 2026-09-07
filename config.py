@@ -104,10 +104,25 @@ CHIAMATE_OPENAPI_GRATUITE_MESE = 30
 CLASSI_DA_ARRICCHIRE = ("A",)
 
 # --- Reputazione Google (dalla scheda Maps) ---
-# Concorre alla PRIORITÀ, mai all'esclusione: sul campione di Roma il 42%
-# delle aziende ha 5 recensioni o meno, e non perché sia fermo — un fabbro
-# che lavora B2B non riceve recensioni. Chi ne ha poche non viene toccato;
-# chi ne ha molte e buone sale in classe A.
+# ATTENZIONE: dal 2026-09-07 queste soglie NON assegnano piu' la classe A.
+# Restano solo a documentare cosa sia una reputazione forte; il dato finisce
+# nei `segnali` ed e' visibile in scheda, ma non concorre alla priorita'.
+#
+# Perche' e' stata tolta (misurato sul ciclo Roma, 64 aziende in classe A):
+# 12 ci arrivavano per la sola reputazione, e NESSUNA DELLE 12 aveva
+# officina accertata — erano showroom e rivenditori di PVC e alluminio
+# (Oknoplast, Allutek, "Nostra Casa Infissi in PVC" con 380 recensioni).
+# Il numero di recensioni misura la visibilita' verso il consumatore, non la
+# qualita' del prospect: un fabbro B2B non ne riceve per ragioni
+# strutturali. La soglia selezionava quindi un capo solo del perimetro.
+# Non erano prospect sbagliati — dopo il cambio di perimetro chi vende al
+# cliente finale e' target — ma sono da PRODOTTO FINITO, non da kit, e
+# stanno bene in B.
+# La ragione di fondo: la classe A deve voler dire UNA cosa leggibile
+# ("ha un bisogno visibile, oppure ha un'officina"). Con tre vie diventava
+# "una di tre cose diverse" e il commerciale non sapeva cosa guardava.
+# NON REINTRODURRE senza rifare questa misura.
+#
 # Soglie sui dati reali: 50 recensioni è l'ultimo quintile (19% del
 # campione), 4.5 è un punteggio solido senza essere raro.
 SOGLIA_RECENSIONI_FORTE = 50

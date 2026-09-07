@@ -83,15 +83,26 @@ Poiché così i TARGET sono la maggioranza (17 su 24 nel campione), la
 
 | classe | significato |
 |---|---|
-| A | una fra tre: segnale di bisogno (annuncio di lavoro), officina accertata + confidenza alta, oppure reputazione Google forte |
+| A | una fra due: segnale di bisogno (annuncio di lavoro), oppure officina accertata + confidenza alta |
 | B | target senza nessuna delle tre, confidenza alta o media |
 | C | target incerto, o dubbio fondato (INDETERMINATO con confidenza alta/media) |
 | indeterminato | il resto |
 
-La **reputazione** (≥50 recensioni e ≥4,5 di punteggio, soglie in `config`)
-concorre solo in positivo: sul campione di Roma il 42% delle aziende ha
-cinque recensioni o meno perché lavora B2B, non perché è ferma — chi ne ha
-poche non viene toccato.
+La **reputazione Google** finisce nei `segnali` ed è visibile in scheda, ma
+**dal 2026-09-07 non concorre più alla classe**. Era la terza via alla A ed
+è stata tolta: sul ciclo Roma, delle 64 aziende in classe A ce ne arrivavano
+12 per la sola reputazione, e **nessuna delle 12 aveva officina accertata** —
+erano showroom e rivenditori di PVC e alluminio. Il numero di recensioni
+misura la visibilità verso il consumatore, non la qualità del prospect: un
+fabbro B2B non ne riceve per ragioni strutturali. Non erano prospect
+sbagliati — chi vende al cliente finale è target — ma sono da **prodotto
+finito**, non da kit, e stanno bene in B.
+
+Il motivo di fondo è che la classe A deve voler dire **una cosa leggibile**:
+"ha un bisogno visibile, oppure ha un'officina". Con tre vie diventava "una
+di tre cose diverse", e una priorità che significa tre cose non è una
+priorità. Le soglie restano in `config` solo come documentazione, con la
+misura accanto perché non venga reintrodotta.
 
 I segnali si cercano su **tutti** i TARGET (una query Exa, ~0,006 EUR),
 perché decidono la classe A: cercarli solo su A/B sarebbe circolare.
