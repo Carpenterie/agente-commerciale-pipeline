@@ -7,8 +7,10 @@ UNA AZIENDA PER VOLTA, su richiesta: la bozza si produce quando il
 commerciale apre la scheda, non in blocco su una lista. Non esiste una
 funzione che generi per liste, ed è deliberato — vedi README.
 
-NON invia niente e non tocca Gmail: il §2 del PRD lo mette fuori perimetro.
-Produce testo da rileggere e inviare a mano (o dall'app).
+NON invia niente e non tocca la casella email: il §2 del PRD lo mette fuori
+perimetro. Produce oggetto e corpo da rileggere e inviare a mano, o dall'app
+(che ha il connettore Outlook). Qui il provider non conta: se un giorno la
+casella cambiasse di nuovo, questo file resterebbe com'e'.
 
 Regole dei testi, tutte verificate dal self-check:
 - un solo testo per azienda, scelto da categoria e livello di fornitura;

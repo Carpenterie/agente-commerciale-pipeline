@@ -158,8 +158,11 @@ Genera la bozza dagli otto testi approvati dal cliente (PDF del 2026-08-31).
 **Una azienda per volta, su richiesta**: la bozza si produce quando il
 commerciale apre la scheda, non in blocco su una lista — non esiste una
 funzione che generi per liste, ed è deliberato.
-**Non invia nulla e non tocca Gmail**: il §2 del PRD lo mette fuori
-perimetro, il comando produce testo da rileggere.
+**Non invia nulla e non tocca la casella email**: il §2 del PRD lo mette
+fuori perimetro, il comando produce testo da rileggere. L'invio avviene
+dall'app, dove il cliente ha collegato il connettore **Outlook** di Lovable.
+La pipeline non sa quale provider ci sia dall'altra parte e non deve
+saperlo: produce oggetto e corpo, il resto è dell'app.
 
 Un solo testo per azienda, scelto in quest'ordine di precedenza:
 
