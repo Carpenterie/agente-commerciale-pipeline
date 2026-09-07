@@ -385,7 +385,7 @@ async def esegui(args) -> int:
     print("=" * 52)
 
     territorio.riepilogo(valutazioni)
-    riepilogo = costi.stampa(totali)
+    riepilogo = costi.stampa(totali, credito=sourcing_maps.credito())
     if esiti_scrittura:
         print("scritture:", dict(Counter(esiti_scrittura)))
     if sb and not args.dry_run:

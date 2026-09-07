@@ -42,6 +42,26 @@ def _normalizza(voce: dict) -> dict:
     }
 
 
+def credito(log=print) -> tuple[float, float] | None:
+    """-> (usato, tetto) in USD nel ciclo di fatturazione corrente, o None.
+
+    Il piano ha un tetto rigido (`maxMonthlyUsageUsd`): oltre quello le run
+    falliscono. Il cron gira una provincia al giorno, quindi dal secondo
+    giorno serve sapere quanto resta PRIMA che a fermarsi sia l'ultima.
+    `users/me/limits` non e' fatturata: non lancia nessuna run.
+    """
+    from apify_client import ApifyClient
+
+    try:
+        # il client restituisce un oggetto tipizzato, non un dict
+        d = ApifyClient(os.environ["APIFY_TOKEN"]).user().limits()
+        return (float(d.current.monthly_usage_usd),
+                float(d.limits.max_monthly_usage_usd))
+    except Exception as e:  # noqa: BLE001 - il credito e' informativo, non blocca
+        log(f"apify: credito non leggibile ({type(e).__name__})")
+        return None
+
+
 def cerca(comuni: list[str], log=print) -> tuple[list[dict], float]:
     """-> (schede normalizzate, costo REALE della run in USD).
 

@@ -21,6 +21,7 @@ python main.py --provincia RM                          # ciclo pieno sulla provi
 python carica_esclusioni.py clienti.xlsx --dry-run     # esclusioni da Excel/CSV
 python -m tests.regression                             # il guardiano del prompt
 python -m tests.test_orchestrazione                    # flusso simulato, costo zero
+python verifica_chiavi.py                              # le chiavi del .env rispondono?
 ```
 
 Province: RM, LT, FR, RI, VT. `--dry-run` fa tutto tranne la scrittura su
@@ -113,8 +114,22 @@ ssh utente@server 'cat > /opt/agente-commerciale-pipeline/.env && chmod 600 /opt
 # poi si incolla il contenuto e si chiude con Ctrl-D
 ```
 
+**Quando cambia una chiave** (il cliente rigenera un token, si passa a un
+altro account) si lancia `python verifica_chiavi.py`: una chiamata minima
+per servizio, nessuna run Apify e nessuna scrittura, qualche centesimo in
+tutto. Va lanciato **anche sul server** — i due `.env` sono file distinti e
+possono divergere, e il cron gira di notte. Esce con codice 1 se una non
+risponde, quindi si può incatenare. Dice anche il piano Apify e il credito
+residuo.
+
 Cron: copiare `cron.example` in `crontab -e`. È **mensile**, una provincia
-al giorno dal 1° al 5. La cadenza mensile invece che settimanale è una
+al giorno dal 1° al 5, **in ordine di densità: RM, LT, FR, VT, RI**. Il
+piano Apify ha un tetto mensile rigido (~$19) e il ciclo completo gli arriva
+vicino: se il credito finisse, così a saltare è Rieti — 15 comuni, la
+provincia con meno aziende — invece di Viterbo, che ne ha di più e sarebbe
+saltata solo per via dell'ordine alfabetico. Il riepilogo di fine ciclo
+stampa il credito residuo in USD (non in euro: il tetto è in dollari, e
+convertirlo a cambio fisso farebbe leggere margine dove non ce n'è). La cadenza mensile invece che settimanale è una
 scelta di costo: il sourcing si ripaga a ogni giro ed è l'82% della spesa
 (~66 EUR/mese a cadenza settimanale contro ~18 mensile).
 

@@ -2,10 +2,15 @@
 # Mensile e non settimanale perché il sourcing si ripaga a ogni giro ed è
 # l'82% del costo (vedi README, Costi): a cadenza settimanale sarebbero
 # ~66 EUR/mese contro ~18.
+#
+# ORDINE PER DENSITÀ, non alfabetico: RM, LT, FR, VT, RI. Il piano Apify ha
+# un tetto mensile rigido (~$19) e il ciclo completo gli arriva vicino: se
+# il credito finisse, a saltare deve essere l'ultima della fila, cioè Rieti
+# — 15 comuni, la provincia con meno aziende. In ordine alfabetico sarebbe
+# saltata Viterbo, che ne ha di più, e per nessun motivo.
+# Il consumo residuo si legge in fondo al log di ogni giorno.
 0 3 1 * * cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia RM >> /var/log/pipeline-rm.log 2>&1
-
-# Le altre province, sfalsate di un giorno per non concentrare la spesa.
 0 3 2 * * cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia LT >> /var/log/pipeline-lt.log 2>&1
 0 3 3 * * cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia FR >> /var/log/pipeline-fr.log 2>&1
-0 3 4 * * cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia RI >> /var/log/pipeline-ri.log 2>&1
-0 3 5 * * cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia VT >> /var/log/pipeline-vt.log 2>&1
+0 3 4 * * cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia VT >> /var/log/pipeline-vt.log 2>&1
+0 3 5 * * cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia RI >> /var/log/pipeline-ri.log 2>&1

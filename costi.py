@@ -86,7 +86,7 @@ def riepilogo(tot: dict) -> dict:
     }
 
 
-def stampa(tot: dict, log=print) -> dict:
+def stampa(tot: dict, log=print, credito: tuple | None = None) -> dict:
     """Riepilogo leggibile: è la base del report consumi (§9)."""
     r = riepilogo(tot)
     log("\n" + "=" * 52)
@@ -97,6 +97,12 @@ def stampa(tot: dict, log=print) -> dict:
         f"({r['chiamate_openapi']} chiamate, {r['chiamate_openapi_pagate']} a pagamento)")
     log(f"  Exa        {r['costo_exa_eur']:>9.4f} EUR  ({r['ricerche_exa']} ricerche)")
     log(f"  Apify      {r['costo_apify_eur']:>9.4f} EUR  ({r['schede_apify']} schede)")
+    if credito:
+        # in USD e non in EUR: il tetto del piano e' in dollari, convertirlo
+        # a cambio fisso farebbe leggere margine dove non ce n'e'
+        usato, tetto = credito
+        log(f"    credito Apify: {usato:.2f} / {tetto:.2f} USD usati nel mese"
+            f" — restano {tetto - usato:.2f}")
     log(f"  TOTALE     {r['costo_totale_eur']:>9.4f} EUR")
     log(f"Costo medio per azienda analizzata: {r['costo_medio_azienda_eur']:.4f} EUR")
     log("=" * 52)
@@ -134,6 +140,16 @@ if __name__ == "__main__":
     assert abs(r["costo_exa_eur"] - atteso_exa) < 1e-6
     assert abs(r["costo_apify_eur"] - 480 * config.PREZZO_APIFY_SCHEDA_USD
                * config.USD_EUR) < 1e-6
+
+    # il credito: si stampa se c'e', si tace se manca (Apify irraggiungibile)
+    righe = []
+    stampa(t, log=righe.append, credito=(4.70, 19.0))
+    assert any("restano 14.30" in r for r in righe), righe
+    righe.clear()
+    stampa(t, log=righe.append)
+    assert not any("credito Apify" in r for r in righe)
+    stampa(t, log=righe.append, credito=None)   # credito non leggibile
+    assert not any("credito Apify" in r for r in righe)
 
     # le voci restano DISTINTE e sommano al totale
     voci = ("costo_anthropic_eur", "costo_openapi_eur", "costo_exa_eur",
