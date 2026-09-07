@@ -302,7 +302,11 @@ async def esegui(args) -> int:
     client = Anthropic()
     valutazioni, esiti_scrittura, n_in_target = [], [], 0
     stat = {"classi": Counter(), "ruoli": Counter(), "con_segnale": 0,
-            "saliti_ad_A": 0, "scesi_per_organico": 0, "arricchite": 0}
+            "saliti_ad_A": 0, "scesi_per_organico": 0, "arricchite": 0,
+            # la marcatura ex cliente e' una richiesta esplicita del
+            # committente: va vista in archivio, non solo nei log
+            "ex_in_riga": 0, "ex_scritti": 0}
+    ex_marcati = sum(1 for s in schede if s.get("ex_cliente"))
 
     async with AsyncWebCrawler(verbose=False) as crawler:
         for i, azienda in enumerate(schede, 1):
@@ -325,8 +329,18 @@ async def esegui(args) -> int:
                     anagrafica=anagrafica, segnali=segnali, classe=esito["classe"],
                     esito_fetch=esito["esito_fetch"], ciclo_id=ciclo_id,
                     pagine=esito["pagine"], costo=esito["costo"])
+                if any(s.get("tipo") == "ex_cliente"
+                       for s in (riga["segnali"] or [])):
+                    stat["ex_in_riga"] += 1
+                    ex_in_riga = True
+                else:
+                    ex_in_riga = False
+
                 if sb and not args.dry_run:
-                    esiti_scrittura.append(db.scrivi_azienda(sb, riga))
+                    scritta = db.scrivi_azienda(sb, riga)
+                    esiti_scrittura.append(scritta)
+                    if ex_in_riga and scritta == "inserita":
+                        stat["ex_scritti"] += 1
                 else:
                     print("  --- riga che verrebbe scritta:")
                     for campo, valore in riga.items():
@@ -383,6 +397,21 @@ async def esegui(args) -> int:
     else:
         print(f"  scesi di classe per organico ampio: {stat['scesi_per_organico']}")
     print("=" * 52)
+
+    print("\nEX CLIENTI (marcatura richiesta dal committente)")
+    print(f"  marcati nel sourcing        {ex_marcati:>4}")
+    print(f"  nelle righe costruite       {stat['ex_in_riga']:>4}")
+    if args.dry_run or not sb:
+        print("       dry-run: nessuna scrittura, la marcatura NON è in archivio")
+    else:
+        print(f"  scritti in archivio         {stat['ex_scritti']:>4}")
+        if ex_marcati and not stat["ex_scritti"]:
+            print("  ATTENZIONE: marcati nel sourcing ma nessuno è arrivato in "
+                  "archivio (già presenti da un ciclo precedente, o scritture "
+                  "fallite: vedi 'scritture' qui sotto)")
+    if not ex_marcati:
+        print("  nessun ex cliente fra le aziende trovate: la marcatura non è "
+              "stata esercitata in questo ciclo")
 
     territorio.riepilogo(valutazioni)
     riepilogo = costi.stampa(totali, credito=sourcing_maps.credito())

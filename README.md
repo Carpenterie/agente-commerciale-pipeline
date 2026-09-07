@@ -175,6 +175,40 @@ Un solo testo per azienda, scelto in quest'ordine di precedenza:
 | `livello_fornitura = kit` | *Fornitura componenti in acciaio* |
 | serramentista, montatore, artigiano | *Persiane e grate in acciaio* |
 
+### La logica di scelta esiste in DUE posti — vanno allineati a mano
+
+`bozze_email.py` nella pipeline, e l'app Lovable, che ha il suo pannello con
+oggetto e corpo modificabili, la stessa scelta automatica, una tendina per
+cambiare testo, il salvataggio in `attivita` e l'aggiornamento dello stato.
+**La duplicazione è inevitabile** — l'app non esegue Python — ma non è
+gratuita: chi cambia un testo o una regola **deve cambiarli in entrambi**,
+altrimenti la stessa azienda riceve testi diversi a seconda di dove parte la
+bozza, e nessuno se ne accorge finché non lo nota un cliente.
+
+Cosa va tenuto allineato, in questo ordine di precedenza (è
+`bozze_email.scegli_testo()`, riga per riga):
+
+| # | condizione | testo |
+|---|---|---|
+| 1 | segnale `ex_cliente` | `ex_cliente` |
+| 2 | segnale `annuncio_lavoro` | `carico_produttivo` |
+| 3 | categoria `impresa_edile` o `costruttore` | `commessa_edile` |
+| 4 | categoria `showroom` | `finito_showroom` |
+| 5 | `livello_fornitura = kit` | `kit_officina` |
+| 6 | categoria `serramentista`, `montatore`, `artigiano`, **oppure** `livello_fornitura = prodotto_finito` | `finito_serramentista` |
+| 7 | nessuna delle precedenti | **nessuna bozza** |
+
+L'ordine è una precedenza, non una preferenza: 1 e 2 vincono sulla categoria,
+e la 5 viene prima della 6 perché un fabbro con officina è `kit` anche se la
+categoria direbbe altro. La 7 non è un errore: senza informazioni sufficienti
+non si scrive niente.
+
+Oltre alle sette regole vanno allineati anche: i **testi** stessi (`TESTI`
+in `bozze_email.py`, dal PDF del 2026-08-31), le **parole vietate**
+(`config.VIETATE_EMAIL`), la regola per cui **le frasi con un dato mancante
+spariscono** invece di lasciare un segnaposto, la **firma**
+(`config.FIRMA_EMAIL`), e i tre testi che **non si scelgono mai da soli**.
+
 Un ex cliente non riceve mai un testo da azienda nuova, e viceversa. Tre
 testi **non si scelgono mai da soli** perché nascono da un fatto che il
 sistema non vede — una risposta umana, il tempo trascorso — e si chiedono

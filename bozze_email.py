@@ -123,7 +123,14 @@ def _ha_segnale(azienda: dict, tipo: str) -> bool:
 def scegli_testo(azienda: dict) -> str:
     """Un solo testo per azienda. L'ordine è una precedenza, non una
     preferenza: un ex cliente non riceve MAI un testo da azienda nuova, e
-    viceversa (PDF, nota al testo 8)."""
+    viceversa (PDF, nota al testo 8).
+
+    ATTENZIONE: queste stesse regole esistono anche nell'app Lovable, che
+    non esegue Python. Chi ne cambia una qui deve cambiarla anche là,
+    altrimenti la stessa azienda riceve testi diversi a seconda di dove
+    parte la bozza. Elenco di cosa allineare nel README, sezione
+    "La logica di scelta esiste in DUE posti".
+    """
     if _ha_segnale(azienda, "ex_cliente"):
         return "ex_cliente"
     if _ha_segnale(azienda, "annuncio_lavoro"):

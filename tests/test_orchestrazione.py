@@ -238,3 +238,55 @@ assert "esito_analisi        INDETERMINATO" in uscita3, uscita3  # conservato
 assert "fuori_territorio_sede_dichiarata" in uscita3, uscita3    # segnale in cima
 
 print("ok (fuori territorio post-analisi: classe conservata)")
+
+# --- la marcatura ex cliente arriva in ARCHIVIO, non solo nei log --------
+# È una richiesta esplicita del committente e finora era stata vista solo
+# nei log di un dry-run, che per definizione non scrive niente. Qui il
+# percorso è completo: elenco esclusioni -> dedup.marca -> riga_azienda ->
+# scrittura riuscita -> conteggio nel riepilogo.
+import importlib  # noqa: E402
+
+import config  # noqa: E402
+
+importlib.reload(classify)          # ripristina la classe_db vera
+classify.classifica = _classifica_finta
+
+ELENCO = [
+    {"ragione_sociale": "Officina Rossi", "comune": "Tivoli",
+     "motivo": "ex cliente: perso per prezzo"},
+    {"ragione_sociale": "Ditta Mai Vista", "comune": "Roma",
+     "motivo": config.MOTIVO_CLIENTE_ATTIVO},
+]
+scritte = []
+db.client = lambda: object()
+db.esclusioni = lambda sb: ELENCO
+db.riferimenti_aziende = lambda sb: []
+db.avvia_ciclo = lambda sb, regione, note="": "ciclo-finto"
+db.chiudi_ciclo = lambda *a, **k: None
+db.scrivi_azienda = lambda sb, riga, log=print: (scritte.append(riga), "inserita")[1]
+
+args3 = types.SimpleNamespace(provincia="RM", limite=None, dry_run=False,
+                              comuni=None, sourcing_fresco=True,
+                              riusa_sourcing=False, gratuite_openapi=30)
+buffer4 = io.StringIO()
+with contextlib.redirect_stdout(buffer4):
+    asyncio.run(main.esegui(args3))
+uscita4 = buffer4.getvalue()
+
+# il cliente attivo esclude, l'ex cliente marca e resta nei risultati
+assert "1 attivi (escludono), 1 ex clienti (marcano)" in uscita4, uscita4
+assert "ex cliente [ragione+comune]: Officina Rossi" in uscita4, uscita4
+assert "Officina Rossi" in [r["ragione_sociale"] for r in scritte], scritte
+
+# il segnale è nella riga scritta, in prima posizione
+riga_rossi = next(r for r in scritte if r["ragione_sociale"] == "Officina Rossi")
+assert riga_rossi["segnali"][0]["tipo"] == "ex_cliente", riga_rossi["segnali"]
+assert riga_rossi["segnali"][0]["motivo"] == "ex cliente: perso per prezzo"
+
+# e il riepilogo lo conta come ARRIVATO IN ARCHIVIO
+assert "marcati nel sourcing           1" in uscita4, uscita4
+assert "nelle righe costruite          1" in uscita4, uscita4
+assert "scritti in archivio            1" in uscita4, uscita4
+assert "dry-run" not in uscita4.split("EX CLIENTI")[1], uscita4
+
+print("ok (ex cliente marcato, scritto e contato)")
