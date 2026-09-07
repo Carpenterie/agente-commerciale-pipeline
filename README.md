@@ -229,13 +229,31 @@ Le pagine si scaricano una volta e restano in `tests/campione_26/cache/`:
 il costo di ogni rilancio del regression **non cambia**, restano ~1,7 EUR
 per run indipendentemente da quante aziende contiene il campione.
 
-**Loi Carpenterie ha attraversato quattro classificazioni** durante
-l'evoluzione dei criteri — TARGET, INDETERMINATO, NON_TARGET, TARGET — e
-ognuna era coerente con le regole in vigore in quel momento. Non è
-instabilità del modello: è un caso difficile (carpenteria strutturale con
-linea serramenti attiva, regola 1 contro regola 7) che si è assestato
-quando il perimetro ha smesso di muoversi. Vale la pena saperlo prima di
-riaprire il caso fra sei mesi.
+**Finstral e Loi Carpenterie sono i due casi permanentemente instabili del
+campione.** Se il regression fallisce solo su questi due nomi, **non è una
+regressione**: sono aziende sul confine, e a parità di prompt e
+`temperature=0` oscillano fra TARGET e NON_TARGET. Loi ne ha attraversate
+cinque durante l'evoluzione dei criteri; **Finstral ha dato tre esiti in tre
+run consecutivi il 2026-09-07** — TARGET, NON_TARGET, TARGET — a parità di
+prompt, di chiave e di cache. Ogni motivazione era difendibile.
+
+Conseguenza pratica: **il gate sarà rosso su Finstral all'incirca una volta
+su due**, qualunque valore si congeli. Il campione non ha oggi un modo di
+risolverlo, e la strada non è un'eccezione nominale nel regression (già
+tentata e ritirata, vedi Limiti noti): è arricchire il campione come descritto
+sopra, così che il guardiano poggi su casi netti e non su due monetine.
+
+Il sintomo che li riconosce è nella motivazione, non nell'esito: il modello
+si contraddice in chiusura. *«Tuttavia, la presenza esplicita di "Grate e
+Serramenti di sicurezza" … potrebbe far scattare la regola 1»* è un'esitazione,
+il comportamento di un caso al confine. Una chiave o un account diversi non
+producono esitazione: producono un'altra risposta, sicura.
+
+**Il tempo per indagarli è già stato speso** — circa 30 EUR di rilanci del
+regression — e restano incerti comunque. Chi li ritrova rossi fra sei mesi
+li rivalidi e ricongeli, senza riaprire l'indagine: `--salva` rifà tutte e
+24 le classificazioni, mentre correggere a mano le sole righe cambiate in
+`risultati.csv` costa zero (il gate confronta solo `classificazione`).
 
 ## Limiti noti
 
