@@ -122,7 +122,12 @@ possono divergere, e il cron gira di notte. Esce con codice 1 se una non
 risponde, quindi si può incatenare. Dice anche il piano Apify e il credito
 residuo.
 
-Cron: copiare `cron.example` in `crontab -e`. È **mensile**, una provincia
+Cron: si installa con `crontab cron.example`, **non** ricopiando a mano le
+righe in `crontab -e` — così l'ordine delle province è sempre quello del
+file versionato. **Attivo dal 2026-09-07**, primo ciclo il 1° ottobre.
+Il server è su `Etc/UTC`: `0 3` sono le **5:00 italiane** con l'ora legale
+e le 4:00 con quella solare; per averle davvero alle 3 italiane basta
+`CRON_TZ=Europe/Rome` come prima riga. È **mensile**, una provincia
 al giorno dal 1° al 5, **in ordine di densità: RM, LT, FR, VT, RI**. Il
 piano Apify ha un tetto mensile rigido (~$19) e il ciclo completo gli arriva
 vicino: se il credito finisse, così a saltare è Rieti — 15 comuni, la

@@ -1,4 +1,7 @@
-# Ciclo mensile: il primo giorno del mese alle 3 del mattino.
+# Ciclo mensile: il primo giorno del mese alle 3:00 UTC.
+# ATTENZIONE: il server e' su Etc/UTC, quindi sono le 5:00 italiane con
+# l'ora legale e le 4:00 con quella solare. Per farle diventare le 3:00
+# italiane basta aggiungere `CRON_TZ=Europe/Rome` come prima riga.
 # Mensile e non settimanale perché il sourcing si ripaga a ogni giro ed è
 # l'82% del costo (vedi README, Costi): a cadenza settimanale sarebbero
 # ~66 EUR/mese contro ~18.
