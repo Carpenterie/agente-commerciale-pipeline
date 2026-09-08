@@ -276,6 +276,36 @@ individuate e classificate dal sistema — non è un censimento del mercato"
 viaggia coi dati e l'app la mostra per forza. Il numero dipende dalle query
 di sourcing e dai comuni interrogati, non dal mercato reale.
 
+## Clienti attivi: il match esatto non basta
+
+La promessa al committente è che **i suoi clienti attivi non compaiano
+nell'elenco**. Il confronto per ragione sociale normalizzata + comune esatto
+non la mantiene: **le insegne di Google Maps non coincidono con le ragioni
+sociali** dell'elenco clienti. Misurato sul primo ciclo Roma, su 113 clienti
+attivi ne riconosceva **9**; nell'archivio consegnabile erano rimasti
+"Show Room Comerci Serramenti" (per "COMERCI SERRAMENTI") e "Messina
+Serramenti di Messina Sergio" (per "MESSINA SERGIO"), entrambi in classe A o
+B. È la stessa radice del 31% di aggancio di Openapi.
+
+Dal 2026-09-08 `dedup.cerca_riferimento(..., permissivo=True)` aggiunge un
+confronto **per sottostringa nei due versi**, con almeno
+`dedup.MIN_NOME_PERMISSIVO` (8) caratteri **su entrambi i lati** — sotto
+quella soglia un nome normalizzato come `af` o `z` è sottostringa di mezzo
+archivio. Il **comune conferma ma non vincola**: stesso comune → match
+certo, comune diverso → match `INCERTO`, e **si esclude lo stesso**. Perdere
+un prospect è un'occasione mancata, consegnare un cliente attivo è una
+promessa rotta.
+
+`permissivo` è **acceso solo sull'elenco clienti** (attivi ed ex) e resta
+spento sul dedup "già in aziende": due "Officina Y" in comuni diversi sono
+due aziende diverse, e scartarle farebbe perdere prospect a ogni ciclo.
+
+I nomi **sotto la soglia non si tirano a indovinare**: `dedup.nomi_ambigui()`
+li elenca e `python clienti_ambigui.py` li stampa perché il committente li
+verifichi a mano — riconosce un suo cliente in trenta secondi. Lo stesso
+comando applica il filtro alle righe già in archivio (`--scarta`), senza
+rianalizzare niente.
+
 ## Manutenzione: il campione va arricchito
 
 **Il campione delle 26 ha perso capacità discriminante.** Col perimetro

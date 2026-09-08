@@ -284,10 +284,20 @@ async def esegui(args) -> int:
         ex = [r for r in elenco if r not in attivi]
         print(f"elenco clienti: {len(attivi)} attivi (escludono), "
               f"{len(ex)} ex clienti (marcano)")
-        # solo i clienti attivi escono dalla ricerca
-        schede = dedup.filtra(schede, dedup.riferimenti(attivi), "clienti attivi")
-        # gli ex clienti restano nei risultati, marcati per il commerciale
-        schede = dedup.marca(schede, dedup.riferimenti(ex))
+        # solo i clienti attivi escono dalla ricerca. permissivo=True: le
+        # insegne di Maps non coincidono con le ragioni sociali dell'elenco
+        # ("Show Room Comerci Serramenti" contro "COMERCI SERRAMENTI"), e
+        # consegnare un cliente attivo rompe una promessa contrattuale
+        schede = dedup.filtra(schede, dedup.riferimenti(attivi), "clienti attivi",
+                              permissivo=True)
+        # gli ex clienti restano nei risultati, marcati per il commerciale:
+        # stesso problema di nomi, e un match incerto e' visibile in scheda
+        schede = dedup.marca(schede, dedup.riferimenti(ex), permissivo=True)
+        ambigui = dedup.nomi_ambigui(attivi)
+        if ambigui:
+            print(f"{len(ambigui)} clienti attivi hanno un nome troppo corto per "
+                  f"il confronto permissivo: vanno verificati a mano col "
+                  f"committente (vedi clienti_ambigui.py)")
         schede = dedup.filtra(schede, dedup.riferimenti(db.riferimenti_aziende(sb)),
                               "già in aziende")
     else:

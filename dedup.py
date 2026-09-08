@@ -102,6 +102,33 @@ def dedup_interno(schede: list[dict], log=print) -> list[dict]:
     return tenute
 
 
+# Sotto questa lunghezza un nome normalizzato non identifica nessuno: "af",
+# "z", "mcm" sono sottostringhe di mezzo archivio. Misurato sul ciclo Roma:
+# con 8 il confronto permissivo toglie 7 aziende, esattamente come con 10 o
+# 12 — la soglia non e' delicata, ma senza di essa i falsi positivi
+# esplodono (24 clienti "trovati", quasi tutti artefatti).
+MIN_NOME_PERMISSIVO = 8
+
+
+def nome_confrontabile(nome_normalizzato: str) -> bool:
+    """Il nome regge un confronto per sottostringa?"""
+    return len(nome_normalizzato) >= MIN_NOME_PERMISSIVO
+
+
+def nomi_ambigui(righe: list[dict]) -> list[dict]:
+    """Le righe il cui nome e' troppo corto per un confronto affidabile.
+
+    Non si tirano a indovinare: si consegnano al committente, che riconosce
+    un suo cliente in trenta secondi guardando l'elenco.
+    """
+    fuori = []
+    for r in righe:
+        rag = norm_ragione(r.get("ragione_sociale") or r.get("nome") or "")
+        if not nome_confrontabile(rag):
+            fuori.append(r)
+    return fuori
+
+
 def riferimenti(righe: list[dict]) -> dict:
     """Indici di confronto da righe di `esclusioni` o di `aziende` (valori
     grezzi: si normalizza qui). Ogni chiave punta alla riga sorgente, che
@@ -122,11 +149,27 @@ def riferimenti(righe: list[dict]) -> dict:
         elif rag:
             rif["ragioni_senza_comune"].setdefault(rag, r)
     rif["ragioni_con_comune"] = {rag for rag, _ in rif["ragioni_comune"]}
+    # per il confronto permissivo: solo i nomi che reggono una sottostringa
+    rif["nomi_lunghi"] = [
+        (norm_ragione(r.get("ragione_sociale") or r.get("nome") or ""),
+         _norm_comune(r.get("comune") or ""), r)
+        for r in righe
+        if nome_confrontabile(norm_ragione(
+            r.get("ragione_sociale") or r.get("nome") or ""))]
     return rif
 
 
-def cerca_riferimento(s: dict, rif: dict) -> tuple[str | None, dict | None]:
-    """-> (criterio che ha fatto match, riga sorgente) oppure (None, None)."""
+def cerca_riferimento(s: dict, rif: dict,
+                      permissivo: bool = False) -> tuple[str | None, dict | None]:
+    """-> (criterio che ha fatto match, riga sorgente) oppure (None, None).
+
+    `permissivo` aggiunge il confronto per sottostringa sul nome. Va acceso
+    SOLO per l'elenco clienti del committente (attivi ed ex): li' un match
+    in piu' e' un errore economico piccolo, e uno in meno rompe una
+    promessa contrattuale. Sul dedup "gia' in aziende" resta spento: due
+    "Officina Y" in comuni diversi sono due aziende diverse, e scartarle
+    farebbe perdere prospect a ogni ciclo.
+    """
     p = norm_piva(s.get("piva") or "")
     if p and p in rif["pive"]:
         return "piva", rif["pive"][p]
@@ -145,18 +188,36 @@ def cerca_riferimento(s: dict, rif: dict) -> tuple[str | None, dict | None]:
         # la scheda non dichiara il comune: nel dubbio si esclude
         chiave = next(k for k in rif["ragioni_comune"] if k[0] == rag)
         return "ragione (comune non verificabile)", rif["ragioni_comune"][chiave]
+
+    # Ultimo criterio, PERMISSIVO: sottostringa nei due versi. Serve perche'
+    # l'insegna di Google Maps non coincide con la ragione sociale
+    # dell'elenco clienti — "Show Room Comerci Serramenti" contro "COMERCI
+    # SERRAMENTI", "Messina Serramenti di Messina Sergio" contro "MESSINA
+    # SERGIO". Il match esatto ne agganciava 9 su 113 clienti attivi.
+    # Il comune CONFERMA ma non vincola: comune diverso non esclude il
+    # match, lo segnala incerto. E nel dubbio si esclude comunque — perdere
+    # un prospect e' un'occasione mancata, consegnare un cliente attivo e'
+    # una promessa rotta.
+    if not permissivo or not nome_confrontabile(rag):
+        return None, None
+    for nome, comune_rif, riga in rif["nomi_lunghi"]:
+        if rag in nome or nome in rag:
+            if com and comune_rif and com == comune_rif:
+                return "nome contenuto (stesso comune)", riga
+            return "nome contenuto (comune diverso: INCERTO)", riga
     return None, None
 
 
-def _criterio(s: dict, rif: dict) -> str | None:
-    return cerca_riferimento(s, rif)[0]
+def _criterio(s: dict, rif: dict, permissivo: bool = False) -> str | None:
+    return cerca_riferimento(s, rif, permissivo)[0]
 
 
-def filtra(schede: list[dict], rif: dict, etichetta: str, log=print) -> list[dict]:
+def filtra(schede: list[dict], rif: dict, etichetta: str, log=print,
+           permissivo: bool = False) -> list[dict]:
     """Toglie le schede che matchano i riferimenti, loggando ognuna col criterio."""
     tenute = []
     for s in schede:
-        criterio = _criterio(s, rif)
+        criterio = _criterio(s, rif, permissivo)
         if criterio:
             log(f"escluso [{etichetta} / {criterio}]: {s.get('nome', '?')}"
                 f" ({s.get('comune') or s.get('sito') or '-'})")
@@ -166,13 +227,14 @@ def filtra(schede: list[dict], rif: dict, etichetta: str, log=print) -> list[dic
     return tenute
 
 
-def marca(schede: list[dict], rif: dict, log=print) -> list[dict]:
+def marca(schede: list[dict], rif: dict, log=print,
+          permissivo: bool = False) -> list[dict]:
     """NON toglie niente: annota su quali schede il committente ha già
     lavorato (ex clienti da riattivare). Il commerciale deve saperlo, ma
     l'azienda resta nei risultati."""
     marcate = 0
     for s in schede:
-        criterio, riga = cerca_riferimento(s, rif)
+        criterio, riga = cerca_riferimento(s, rif, permissivo)
         if not criterio:
             continue
         s["ex_cliente"] = {
@@ -236,8 +298,48 @@ if __name__ == "__main__":
     assert _criterio({"nome": "PM SERRAMENTI", "comune": "Latina"}, rif) == "ragione+comune"
     assert _criterio({"nome": "PM Serramenti srl", "comune": ""}, rif) == \
         "ragione (comune non verificabile)"
-    assert _criterio({"nome": "PM Serramenti", "comune": "Roma"}, rif) is None  # altro comune
+    # comune diverso: dal 2026-09-08 NON esclude piu' il match, lo segnala
+    # incerto — e nel dubbio si esclude comunque
+    assert _criterio({"nome": "PM Serramenti", "comune": "Roma"}, rif, True) == \
+        "nome contenuto (comune diverso: INCERTO)"
+    # spento (default) il comune diverso non fa match: e' il dedup interno
+    assert _criterio({"nome": "PM Serramenti", "comune": "Roma"}, rif) is None
     assert _criterio({"nome": "Fabbro Nuovo", "comune": "Roma"}, rif) is None
+
+    # --- confronto permissivo: i casi veri del ciclo Roma
+    rif_p = riferimenti([
+        {"ragione_sociale": "COMERCI SERRAMENTI", "comune": "Roma"},
+        {"ragione_sociale": "MESSINA SERGIO", "comune": "Guidonia"},
+        {"ragione_sociale": "AF Srl", "comune": "Latina"},        # nome corto
+    ])
+    # l'insegna di Maps e' un sovrainsieme della ragione sociale
+    assert _criterio({"nome": "Show Room Comerci Serramenti", "comune": "Roma"},
+                     rif_p, True) == "nome contenuto (stesso comune)"
+    # senza permissivo l'insegna di Maps non aggancia: e' il bug del 2026-09-08
+    assert _criterio({"nome": "Show Room Comerci Serramenti", "comune": "Roma"},
+                     rif_p) is None
+    assert _criterio({"nome": "Messina Serramenti di Messina Sergio",
+                      "comune": "Guidonia"}, rif_p, True) == \
+        "nome contenuto (stesso comune)"
+    # comune diverso: incerto, ma esce lo stesso
+    assert _criterio({"nome": "Show Room Comerci Serramenti", "comune": "Tivoli"},
+                     rif_p, True) == "nome contenuto (comune diverso: INCERTO)"
+    # un nome corto continua a fare match ESATTO (ragione+comune): quello
+    # e' affidabile. Cio' che non fa e' il match permissivo — "af" e'
+    # sottostringa di mezzo archivio, e lì si fermerebbe tutto
+    assert _criterio({"nome": "AF Srl", "comune": "Latina"}, rif_p) == "ragione+comune"
+    assert _criterio({"nome": "Graffiti AF Roma", "comune": "Roma"}, rif_p, True) is None
+    assert _criterio({"nome": "AF Srl", "comune": "Pomezia"}, rif_p, True) is None
+    # e un'azienda che non c'entra resta dentro
+    assert _criterio({"nome": "Carpenteria Bianchi", "comune": "Roma"},
+                     rif_p, True) is None
+
+    assert nome_confrontabile("comerci serramenti")
+    assert not nome_confrontabile("af")
+    assert not nome_confrontabile("mcm srl")     # 3 caratteri dopo la forma
+    ambigui = nomi_ambigui([{"ragione_sociale": "AF Srl"},
+                            {"ragione_sociale": "COMERCI SERRAMENTI"}])
+    assert [a["ragione_sociale"] for a in ambigui] == ["AF Srl"]
 
     assert len(filtra(schede[:3], rif, "test", zitto)) == 3
 
