@@ -8,3 +8,4 @@ __pycache__/
 # elenco clienti del committente: dati commerciali riservati, restano locali
 clienti_da_verificare.csv
 clienti*.xlsx
+revisione*.csv

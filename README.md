@@ -334,6 +334,33 @@ verifichi a mano — riconosce un suo cliente in trenta secondi. Lo stesso
 comando applica il filtro alle righe già in archivio (`--scarta`), senza
 rianalizzare niente.
 
+## Sessione di revisione dei criteri col committente
+
+```bash
+python revisione_schede.py                      # 20 schede di classe A
+python revisione_schede.py --numero 30 --classe B
+python revisione_schede.py --seme 7             # ripesca le STESSE
+python revisione_schede.py --csv revisione.csv  # e le esporta
+```
+
+Stampa le schede per esteso — comune, categoria, materiali, officina,
+segnali e **motivazione completa** — una per schermata, con una riga vuota
+per il giudizio. Serve a farsi dire "questa la chiamerei, questa no" mentre
+si è collegati.
+
+`--seme` è la parte che conta se la chiamata cade o si riprende un altro
+giorno: con lo stesso numero tornano **le stesse schede nello stesso
+ordine**. Il default è 1, quindi due lanci senza argomenti mostrano sempre
+le stesse — ed è voluto.
+
+Il CSV ha due colonne vuote, `giudizio` e `note`, da compilare **durante**
+la chiamata: le risposte si registrano lì, non a memoria. I file
+`revisione*.csv` sono in `.gitignore`.
+
+Le schede già `scartato` non entrano nel campione: sono fuori per decisione
+presa, non da giudicare. E il segnale `territorio` non si stampa — il comune
+si vede due righe sopra, e in sessione è rumore.
+
 ## Manutenzione: il campione va arricchito
 
 **Il campione delle 26 ha perso capacità discriminante.** Col perimetro
