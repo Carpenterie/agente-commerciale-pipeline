@@ -109,11 +109,13 @@ if __name__ == "__main__":
                   "sede_regione", "email_aziendale", '"categoria"',
                   "MAI dedotto dal nome"):
         assert pezzo in prompts.PROMPT, pezzo
-    # le 9 regole del perimetro commerciale, in ordine
+    # le 10 regole del perimetro commerciale, in ordine (la 9, sui portali
+    # di intermediazione, e' del 2026-09-08)
     regole = prompts.PROMPT[prompts.PROMPT.index("REGOLE DI CLASSIFICAZIONE"):
                             prompts.PROMPT.index("ATTENZIONE AL LESSICO")]
-    for n in range(1, 10):
+    for n in range(1, 11):
         assert f"\n{n}. " in regole, f"manca la regola {n}"
+    assert "aggregatori di preventivi" in regole
     assert regole.count("TARGET:") >= 8      # 4 TARGET + 4 NON_TARGET
     assert "vende o installa serramenti al cliente finale" in regole
     assert "INDETERMINATO: informazioni insufficienti" in regole

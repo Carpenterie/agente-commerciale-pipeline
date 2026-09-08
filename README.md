@@ -276,6 +276,34 @@ individuate e classificate dal sistema — non è un censimento del mercato"
 viaggia coi dati e l'app la mostra per forza. Il numero dipende dalle query
 di sourcing e dai comuni interrogati, non dal mercato reale.
 
+## Portali di intermediazione
+
+Aggregatori di preventivi e siti acchiappa-contatti (`archisio.it`,
+`fabbro.roma.it`, `ristrutturazione.roma.it`, …) raccolgono richieste e le
+girano agli artigiani: non producono né vendono niente. Nel primo ciclo
+Roma ne erano passati **sei, tre dei quali in classe A** — cioè in cima
+alla lista da chiamare.
+
+Si difendono su due fronti, perché nessuno dei due basta da solo:
+
+- **la regola 9 del prompt** li riconosce nel merito ("trova il
+  professionista", "richiedi preventivi", elenchi di operatori invece di
+  una singola azienda). È l'unica difesa che vale per i portali **nuovi**;
+- **`config.PORTALI_INTERMEDIAZIONE`** chiude per dominio quei sei, che
+  erano già passati. `python scarta_portali.py --scarta` li toglie anche
+  dalle righe già in archivio.
+
+**Non esiste una regola sulla forma del nome**, ed è deliberato:
+`gratedisicurezza-roma.it` è intermediazione e `carpenteriabianchini.it` è
+un'azienda vera — i due nomi si somigliano, la differenza sta nel merito.
+
+`PORTALI_INTERMEDIAZIONE` è **separata dai social** dentro
+`PORTALI_ESCLUSI`: da una pagina Facebook non si parte per il sourcing, ma
+un'azienda vera il cui unico sito è una pagina Facebook **resta in
+archivio**. Sito debole non vuol dire azienda inesistente, e scartarla come
+"portale" sarebbe una motivazione falsa. Nel ciclo Roma erano sei aziende
+reali.
+
 ## Clienti attivi: il match esatto non basta
 
 La promessa al committente è che **i suoi clienti attivi non compaiano

@@ -59,6 +59,22 @@ PORTALI_ESCLUSI = (
     "exa.ai", "tavily.com", "apify.com",  # i motori restituiscono se stessi
 )
 
+# Portali di INTERMEDIAZIONE trovati nel primo ciclo Roma (2026-09-08):
+# raccolgono contatti e li girano agli artigiani, non producono niente.
+# Tenuti separati dai social perche' i due casi NON si trattano allo stesso
+# modo: un'azienda vera il cui unico sito e' una pagina Facebook resta in
+# archivio (sito debole, azienda reale), un portale no.
+# Elencati per DOMINIO e non per forma del nome perche' la forma non
+# distingue: "gratedisicurezza-roma.it" e' intermediazione,
+# "carpenteriabianchini.it" e' un'azienda vera. La distinzione sta nel
+# merito, e per i cicli futuri la fa la regola 9 del prompt; questa lista
+# chiude solo i sei che erano gia' passati.
+PORTALI_INTERMEDIAZIONE = (
+    "archisio.it", "fabbro.roma.it", "ristrutturazione.roma.it",
+    "gratedisicurezza-roma.it", "emergenza-fabbro.it", "assisitop.it",
+)
+PORTALI_ESCLUSI = PORTALI_ESCLUSI + PORTALI_INTERMEDIAZIONE
+
 # --- Filtro territorio (§5) ---
 PREFISSI_CAP_LAZIO = ("00", "01", "02", "03", "04")
 PREFISSI_TEL_LAZIO = ("06", "0746", "0761",

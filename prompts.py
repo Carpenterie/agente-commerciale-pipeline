@@ -86,7 +86,13 @@ REGOLE DI CLASSIFICAZIONE (in ordine, si applica la prima che corrisponde):
    navale, capannoni, serbatoi) senza linea serramenti. Se serramenti,
    grate o cancelli sono una linea di prodotto attiva, vince la regola 1.
 8. NON_TARGET: attività non pertinente al settore serramenti.
-9. INDETERMINATO: informazioni insufficienti per collocare l'azienda in
+9. NON_TARGET: portali di intermediazione, aggregatori di preventivi,
+   servizi che mettono in contatto clienti e artigiani. Riconoscibili
+   perché parlano di "trova il professionista", "richiedi preventivi",
+   "confronta offerte", o elencano molti operatori diversi invece di
+   presentare una singola azienda. Non producono né vendono serramenti:
+   raccolgono contatti.
+10. INDETERMINATO: informazioni insufficienti per collocare l'azienda in
    una delle categorie precedenti. È una risposta corretta.
 
 ATTENZIONE — ERRORE DA NON COMMETTERE: vendere al cliente finale NON è mai
