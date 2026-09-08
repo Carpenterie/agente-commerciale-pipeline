@@ -27,7 +27,7 @@ def carica(sb, cicli: list[str] | None = None) -> list[dict]:
     righe, off = [], 0
     while True:
         q = sb.table("aziende").select(
-            "id,ragione_sociale,comune,classe,sito,stato,ciclo_id")
+            "id,ragione_sociale,comune,classe,sito,stato,ciclo_id,motivazione")
         if cicli:
             q = q.in_("ciclo_id", cicli)
         b = q.range(off, off + 999).execute().data
@@ -35,6 +35,21 @@ def carica(sb, cicli: list[str] | None = None) -> list[dict]:
         if len(b) < 1000:
             return righe
         off += 1000
+
+
+SPIEGA = {
+    "ragione+comune": "ragione sociale e comune coincidono",
+    "nome contenuto (stesso comune)": "stesso comune",
+    "nome contenuto (comune diverso: INCERTO)": "comune diverso, INCERTO: da verificare",
+}
+
+
+def motivo_scarto(criterio: str, sorgente: dict) -> str:
+    """Perche' e' stata scartata e con chi ha fatto match: serve al
+    committente per verificarla in sessione, e a chi legge fra sei mesi."""
+    nome = (sorgente.get("ragione_sociale") or "?").strip()
+    return (f"SCARTATA: possibile cliente attivo, corrisponde a {nome} "
+            f"({SPIEGA.get(criterio, criterio)})")
 
 
 def main() -> int:
@@ -75,10 +90,16 @@ def main() -> int:
     if not scarta:
         print("\n(prova: nessuna scrittura. Rilancia con --scarta)")
         return 0
-    for r, criterio, _ in colpite:
-        sb.table("aziende").update(
-            {"stato": "scartato"}).eq("id", r["id"]).execute()
-    print(f"\n{len(colpite)} aziende messe in stato 'scartato'.")
+    for r, criterio, sorgente in colpite:
+        sb.table("aziende").update({
+            "stato": "scartato",
+            # in testa alla motivazione, non al posto: l'analisi e' pagata e
+            # serve se il committente dice che il match era sbagliato
+            "motivazione": motivo_scarto(criterio, sorgente) + " — "
+                           + (r.get("motivazione") or ""),
+        }).eq("id", r["id"]).execute()
+    print(f"\n{len(colpite)} aziende messe in stato 'scartato', "
+          f"con il motivo e il nome del cliente in testa alla motivazione.")
     return 0
 
 

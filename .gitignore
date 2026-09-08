@@ -4,3 +4,7 @@ __pycache__/
 .DS_Store
 /cache/
 *.log
+
+# elenco clienti del committente: dati commerciali riservati, restano locali
+clienti_da_verificare.csv
+clienti*.xlsx
