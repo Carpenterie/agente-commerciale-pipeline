@@ -73,12 +73,27 @@ def _fornitura(categoria: str | None, officina: str | None = None) -> str | None
 
 
 def _provincia(scheda: dict, dati: dict, anagrafica: dict) -> str | None:
-    """Sigla della provincia: prima quella dichiarata, poi quella del comune."""
+    """Sigla della provincia, per ordine di specificita'.
+
+    1. quella DICHIARATA (anagrafica Openapi, o la sede letta dal sito):
+       e' la piu' specifica e puo' riferirsi a una sede diversa da quella
+       della scheda Maps, quindi vince sempre;
+    2. il campo `state` della scheda Maps, che e' anagrafica e arriva
+       sull'87% delle schede — non e' una sigla ma il nome amministrativo
+       ("Provincia di Latina"), e `config.sigla_provincia` lo converte;
+    3. solo per le righe Exa, che una scheda Maps non ce l'hanno, il comune
+       sulla tabella dei comuni laziali. E' un ripiego stretto: la tabella
+       copre i 90 comuni del sourcing, non i 378 del Lazio, e allargarla
+       costerebbe query Maps a ogni ciclo (vedi README, Province).
+    """
     dichiarata = config.sigla_provincia(
         _testo(anagrafica.get("sede_provincia"))
         or _testo(dati.get("sede_provincia")), log=print)
     if dichiarata:
         return dichiarata
+    da_maps = config.sigla_provincia(_testo(scheda.get("provincia")), log=print)
+    if da_maps:
+        return da_maps
     return comuni_lazio.provincia_di(
         _testo(anagrafica.get("sede_comune")) or _testo(dati.get("sede_comune"))
         or _testo(scheda.get("comune")), log=print)
@@ -427,6 +442,21 @@ if __name__ == "__main__":
     r_c = riga_azienda({"nome": "C", "fonte": "maps", "comune": "Roma"},
                        dati={"classificazione": "TARGET", "confidenza": "ALTA",
                              "sede_provincia": "Viterbo"},
+                       territorio=None, anagrafica={}, segnali=[], classe="B",
+                       esito_fetch="OK", ciclo_id="c")
+    assert r_c["provincia"] == "VT"
+    # il campo `state` della scheda Maps, nella forma che Maps usa davvero
+    r_c = riga_azienda({"nome": "C", "fonte": "maps", "comune": "Ariccia",
+                        "provincia": "Città metropolitana di Roma Capitale"},
+                       dati={"classificazione": "TARGET", "confidenza": "ALTA"},
+                       territorio=None, anagrafica={}, segnali=[], classe="B",
+                       esito_fetch="nessun_sito", ciclo_id="c")
+    assert r_c["provincia"] == "RM", r_c["provincia"]
+    # ma la sede dichiarata dal sito vince anche su Maps
+    r_c = riga_azienda({"nome": "C", "fonte": "maps", "comune": "Roma",
+                        "provincia": "Città metropolitana di Roma Capitale"},
+                       dati={"classificazione": "TARGET", "confidenza": "ALTA",
+                             "sede_provincia": "Provincia di Viterbo"},
                        territorio=None, anagrafica={}, segnali=[], classe="B",
                        esito_fetch="OK", ciclo_id="c")
     assert r_c["provincia"] == "VT"

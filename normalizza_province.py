@@ -15,14 +15,45 @@ Questo comando sistema le righe gia' scritte, senza rianalizzare.
 from __future__ import annotations
 
 import collections
+import json
+import pathlib
 import sys
 
 import config
 import db
+import dedup
 from data import comuni_lazio
 
 
-def da_correggere(righe: list[dict]) -> list[tuple[dict, str]]:
+def indice_cache(cartella: str = "cache") -> dict:
+    """Le schede Maps gia' scaricate, indicizzate per dominio e per
+    nome+comune. La provincia sta in `state` e non e' una sigla: e' il nome
+    amministrativo, che `config.sigla_provincia` sa convertire."""
+    per_dom, per_nome = {}, {}
+    for f in sorted(pathlib.Path(cartella).glob("sourcing_*.json")):
+        for s in json.loads(f.read_text(encoding="utf-8")).get("schede", []):
+            d = dedup.dominio_azienda(s.get("sito") or "")
+            k = (dedup.norm_ragione(s.get("nome") or ""),
+                 (s.get("comune") or "").strip().lower())
+            if d:
+                per_dom.setdefault(d, s)
+            if k[0]:
+                per_nome.setdefault(k, s)
+    return {"dominio": per_dom, "nome": per_nome}
+
+
+def dalla_cache(riga: dict, cache: dict) -> str | None:
+    d = dedup.dominio_azienda(riga.get("dominio") or riga.get("sito") or "")
+    k = (dedup.norm_ragione(riga.get("ragione_sociale") or ""),
+         (riga.get("comune") or "").strip().lower())
+    s = cache["dominio"].get(d) or cache["nome"].get(k)
+    if not s:
+        return None
+    sigla = config.sigla_provincia(s.get("provincia"))
+    return sigla if sigla and len(sigla) == 2 else None
+
+
+def da_correggere(righe: list[dict], cache: dict | None = None) -> list[tuple[dict, str]]:
     """-> [(riga, sigla_nuova)] solo dove il valore cambia davvero.
 
     Due casi: un nome per esteso da convertire in sigla, oppure un campo
@@ -34,9 +65,12 @@ def da_correggere(righe: list[dict]) -> list[tuple[dict, str]]:
     for r in righe:
         vecchio = (r.get("provincia") or "").strip()
         if not vecchio:
-            dal_comune = comuni_lazio.provincia_di(r.get("comune"))
-            if dal_comune:
-                fuori.append((r, dal_comune))
+            # prima la scheda Maps (anagrafica, 87% delle schede), poi il
+            # comune: quest'ultimo serve alle sole righe Exa
+            nuovo = (dalla_cache(r, cache) if cache else None) \
+                or comuni_lazio.provincia_di(r.get("comune"))
+            if nuovo:
+                fuori.append((r, nuovo))
             continue
         nuovo = config.sigla_provincia(vecchio)
         if nuovo and nuovo != vecchio:
@@ -56,7 +90,10 @@ def main() -> int:
             break
         off += 1000
 
-    fuori = da_correggere(righe)
+    cache = indice_cache()
+    print(f"schede Maps in cache: {len(cache['dominio'])} per dominio, "
+          f"{len(cache['nome'])} per nome+comune")
+    fuori = da_correggere(righe, cache)
     print(f"righe in archivio: {len(righe)}")
     print(f"da correggere:     {len(fuori)}\n")
     for (vecchio, nuovo), n in sorted(collections.Counter(
@@ -64,6 +101,7 @@ def main() -> int:
              for r, s in fuori)).items(), key=lambda x: -x[1]):
         print(f"  {vecchio:<24} -> {nuovo}   {n:>4} righe")
     resta_vuota = [r for r in righe if not (r.get("provincia") or "").strip()
+                   and not dalla_cache(r, cache)
                    and not comuni_lazio.provincia_di(r.get("comune"))]
     print(f"\n  restano senza provincia: {len(resta_vuota)}"
           f"  (di cui {sum(1 for r in resta_vuota if not (r.get('comune') or '').strip())}"
@@ -98,6 +136,16 @@ if __name__ == "__main__":
                  {"provincia": "VT", "comune": "Roma"}]        # NON si tocca
         esiti = da_correggere(righe)
         assert [s for _, s in esiti] == ["RM", "FR", "RM"], esiti
+        # la scheda Maps ha la precedenza sul comune, e il nome
+        # amministrativo diventa sigla
+        finta = {"dominio": {}, "nome": {("azienda x", "ariccia"):
+                 {"provincia": "Città metropolitana di Roma Capitale"}}}
+        r = {"provincia": "", "ragione_sociale": "Azienda X", "comune": "Ariccia"}
+        assert dalla_cache(r, finta) == "RM"
+        assert [s for _, s in da_correggere([r], finta)] == ["RM"]
+        # una scheda senza `state` non inventa niente
+        finta["nome"][("azienda x", "ariccia")] = {"provincia": ""}
+        assert dalla_cache(r, finta) is None
         assert not any(r.get("provincia") == "VT" for r, _ in esiti), \
             "una provincia gia' valorizzata non si sovrascrive col comune"
         # una sigla gia' giusta non si riscrive, e l'ignota non si tocca

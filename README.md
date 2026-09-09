@@ -293,31 +293,36 @@ di sourcing e dai comuni interrogati, non dal mercato reale.
 ## Province: sempre la sigla
 
 Il modello restituisce `sede_provincia` a volte come sigla (`RM`) e a volte
-per esteso (`Roma`). In archivio finivano come **valori distinti**: il menu
-di filtro dell'app mostrava "FR" e "Frosinone" come due voci separate, e chi
-ne sceglieva una perdeva metà delle aziende.
+per esteso (`Roma`); Google Maps mette in `state` il **nome amministrativo
+completo** — "Provincia di Latina", "Città metropolitana di Roma Capitale" —
+e solo nel 6% dei casi la sigla. In archivio finivano come valori distinti:
+il menu di filtro dell'app mostrava più voci per la stessa provincia, e chi
+ne sceglieva una perdeva le aziende finite sotto l'altra.
 
-`config.sigla_provincia()` converte prima della scrittura, e
-`db.riga_azienda` la applica sempre. Un nome **non** in `SIGLE_PROVINCE` si
-lascia invariato e si logga, invece di indovinare una sigla. Le righe già
-scritte si sistemano con `python normalizza_province.py --applica` (107
-corrette il 2026-09-09, nessun valore lungo rimasto).
+`config.sigla_provincia()` converte tutte queste forme, e `db.riga_azienda`
+la applica sempre. L'ordine è per specificità:
 
-Quando `sede_provincia` è vuota — succede spesso: chi non ha sito non ha una
-pagina contatti da leggere — la sigla si **ricava dal comune** della scheda
-Maps, che è anagrafica (`comuni_lazio.provincia_di()`). La provincia
-dichiarata dal sito **ha sempre la precedenza e non si sovrascrive mai**: è
-più specifica e può riferirsi a una sede diversa da quella della scheda.
+1. la provincia **dichiarata** (anagrafica Openapi, o la sede letta dal
+   sito): vince sempre, può riferirsi a una sede diversa da quella Maps;
+2. il campo `state` della **scheda Maps**, anagrafica, presente sull'87%;
+3. solo per le righe **Exa**, che scheda Maps non ne hanno, il comune sulla
+   tabella dei comuni laziali.
 
-**Restano 492 righe senza provincia**, ed è un limite della tabella, non un
-bug: `data/comuni_lazio.py` contiene i **90 comuni da interrogare** su Maps,
-non i 378 del Lazio. Ariccia, Artena o Tivoli Terme non ci sono, e un comune
-fuori tabella si lascia vuoto invece di indovinarlo. Cinquanta di quelle
-righe non hanno nemmeno il comune.
+**Perché `SIGLE_PROVINCE` non è un debito**: le province italiane sono un
+elenco **chiuso di 107 voci**. Non cresce aprendo Puglia o Lombardia — ci
+sono già — e cambia solo per legge dello Stato. È l'opposto di una tabella
+di comuni: quella sarebbe 8.000 voci da estendere regione per regione, ed è
+stata valutata e scartata proprio per questo. Un self-check verifica che
+siano 107. Una provincia non in tabella **resta com'è e viene loggata**:
+nessuna sigla inventata.
 
-**Allargare `COMUNI` non è la soluzione**: quella lista guida il sourcing, e
-ogni comune aggiunto costa 3 query Maps a ogni ciclo. Se servisse più
-copertura, la strada è una tabella separata di sola consultazione.
+Le righe già scritte si sistemano con `python normalizza_province.py
+--applica`, che legge anche le schede in `cache/sourcing_*.json` per
+recuperare `state` dove il campo era vuoto. Risultato del 2026-09-09: **107
+nomi convertiti in sigla, 720 righe popolate, 52 rimaste vuote** — 50 non
+hanno nemmeno il comune, quindi non c'è da dove ricavarla. Nessun valore
+diverso da due lettere è rimasto, e le 1.131 righe con provincia si
+distribuiscono su 69 province (753 nel Lazio, 378 fuori).
 
 ## Portali di intermediazione
 

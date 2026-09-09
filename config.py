@@ -6,6 +6,7 @@ Le chiavi API stanno in .env, mai qui.
 """
 
 import os as _os
+import re
 
 # Il Python di python.org non installa i certificati CA: senza questo, ogni
 # chiamata HTTPS fatta con urllib (Exa, Openapi) fallisce con
@@ -40,30 +41,113 @@ PROVINCE = {"RM": "Roma", "LT": "Latina", "FR": "Frosinone",
 REGIONE_CICLO = "Lazio"   # perimetro del primo ciclo (§1)
 
 # Il modello restituisce `sede_provincia` a volte come sigla ("RM") e a
-# volte per esteso ("Roma"): in archivio finivano come valori DISTINTI e il
-# menu di filtro dell'app mostrava due voci per la stessa provincia, con
-# meta' aziende ciascuna. Si scrive sempre la sigla.
-# Le cinque del Lazio piu' quelle viste davvero fuori regione: un nome non
-# in tabella si lascia com'e' e si logga, invece di indovinare.
+# volte per esteso ("Roma"); Google Maps mette in `state` il nome
+# amministrativo completo ("Provincia di Latina", "Città metropolitana di
+# Roma Capitale") e solo nel 6% dei casi la sigla. In archivio finivano come
+# valori DISTINTI e il menu di filtro dell'app mostrava piu' voci per la
+# stessa provincia, con le aziende divise fra loro. Si scrive sempre la sigla.
+#
+# PERCHE' QUESTA TABELLA E' SICURA E NON VA MANTENUTA: le province italiane
+# sono un elenco CHIUSO di 107 voci. Non cresce aprendo Puglia o Lombardia —
+# ci sono gia' — e cambia solo con una legge dello Stato, cosa che accade
+# una volta ogni molti anni. E' l'opposto di una tabella di comuni, che
+# sarebbe 8.000 voci da estendere regione per regione: quella strada e'
+# stata valutata e scartata proprio per questo (vedi README, Province).
+# Se una provincia mancasse, il valore resta com'e' e viene loggato: nessuna
+# sigla inventata.
 SIGLE_PROVINCE = {
-    "roma": "RM", "latina": "LT", "frosinone": "FR", "rieti": "RI",
+    # Abruzzo
+    "l'aquila": "AQ", "aquila": "AQ", "chieti": "CH", "pescara": "PE",
+    "teramo": "TE",
+    # Basilicata
+    "matera": "MT", "potenza": "PZ",
+    # Calabria
+    "catanzaro": "CZ", "cosenza": "CS", "crotone": "KR",
+    "reggio calabria": "RC", "vibo valentia": "VV",
+    # Campania
+    "avellino": "AV", "benevento": "BN", "caserta": "CE", "napoli": "NA",
+    "salerno": "SA",
+    # Emilia-Romagna
+    "bologna": "BO", "ferrara": "FE", "forlì-cesena": "FC",
+    "forli-cesena": "FC", "modena": "MO", "parma": "PR", "piacenza": "PC",
+    "ravenna": "RA", "reggio emilia": "RE", "rimini": "RN",
+    # Friuli-Venezia Giulia
+    "gorizia": "GO", "pordenone": "PN", "trieste": "TS", "udine": "UD",
+    # Lazio
+    "frosinone": "FR", "latina": "LT", "rieti": "RI", "roma": "RM",
     "viterbo": "VT",
-    "milano": "MI", "brescia": "BS", "como": "CO", "napoli": "NA",
-    "siena": "SI", "torino": "TO",
+    # Liguria
+    "genova": "GE", "imperia": "IM", "la spezia": "SP", "savona": "SV",
+    # Lombardia
+    "bergamo": "BG", "brescia": "BS", "como": "CO", "cremona": "CR",
+    "lecco": "LC", "lodi": "LO", "mantova": "MN", "milano": "MI",
+    "monza e della brianza": "MB", "monza e brianza": "MB", "pavia": "PV",
+    "sondrio": "SO", "varese": "VA",
+    # Marche
+    "ancona": "AN", "ascoli piceno": "AP", "fermo": "FM", "macerata": "MC",
+    "pesaro e urbino": "PU",
+    # Molise
+    "campobasso": "CB", "isernia": "IS",
+    # Piemonte
+    "alessandria": "AL", "asti": "AT", "biella": "BI", "cuneo": "CN",
+    "novara": "NO", "torino": "TO", "verbano-cusio-ossola": "VB",
+    "vercelli": "VC",
+    # Puglia
+    "bari": "BA", "barletta-andria-trani": "BT", "brindisi": "BR",
+    "foggia": "FG", "lecce": "LE", "taranto": "TA",
+    # Sardegna
+    "cagliari": "CA", "nuoro": "NU", "oristano": "OR", "sassari": "SS",
+    "sud sardegna": "SU",
+    # Sicilia
+    "agrigento": "AG", "caltanissetta": "CL", "catania": "CT", "enna": "EN",
+    "messina": "ME", "palermo": "PA", "ragusa": "RG", "siracusa": "SR",
+    "trapani": "TP",
+    # Toscana
+    "arezzo": "AR", "firenze": "FI", "grosseto": "GR", "livorno": "LI",
+    "lucca": "LU", "massa-carrara": "MS", "massa e carrara": "MS",
+    "pisa": "PI", "pistoia": "PT", "prato": "PO", "siena": "SI",
+    # Trentino-Alto Adige
+    "bolzano": "BZ", "trento": "TN",
+    # Umbria
+    "perugia": "PG", "terni": "TR",
+    # Valle d'Aosta
+    "aosta": "AO", "valle d'aosta": "AO",
+    # Veneto
+    "belluno": "BL", "padova": "PD", "rovigo": "RO", "treviso": "TV",
+    "venezia": "VE", "verona": "VR", "vicenza": "VI",
 }
+
+# "Provincia di X", "Città metropolitana di X Capitale", "Libero consorzio
+# comunale di X": Maps usa tutte queste forme. Il nome vero e' quello che
+# resta togliendole.
+_PREFISSI_PROVINCIA = re.compile(
+    r"^(provincia\s+di\s+|provincia\s+dell['’]|provincia\s+del\s+|"
+    r"citt[aà]\s+metropolitana\s+di\s+|libero\s+consorzio\s+comunale\s+di\s+)",
+    re.IGNORECASE)
+_CODA_PROVINCIA = re.compile(r"\s+capitale$", re.IGNORECASE)
 
 
 def sigla_provincia(valore: str | None, log=None) -> str | None:
-    """-> sigla a due lettere. Un valore sconosciuto torna invariato."""
+    """-> sigla a due lettere. Un valore sconosciuto torna invariato.
+
+    Accetta sia la sigla, sia il nome nudo, sia le forme amministrative di
+    Google Maps ("Città metropolitana di Roma Capitale" -> RM).
+    """
     v = (valore or "").strip()
-    if not v or len(v) == 2:
-        return v.upper() or None
-    sigla = SIGLE_PROVINCE.get(v.lower())
+    if not v:
+        return None
+    if len(v) == 2:
+        return v.upper()
+    nudo = _CODA_PROVINCIA.sub("", _PREFISSI_PROVINCIA.sub("", v)).strip()
+    if len(nudo) == 2:
+        return nudo.upper()
+    sigla = SIGLE_PROVINCE.get(nudo.lower())
     if sigla:
         return sigla
     if log:
         log(f"provincia '{v}' non in SIGLE_PROVINCE: lasciata invariata")
     return v
+
 
 # --- Sourcing Exa (§4, le 5 query del test) ---
 QUERY_EXA = (
@@ -291,6 +375,26 @@ VIETATE_EMAIL = ("saldator", "annuncio", "assunzione", "cercate", "offerta di la
 
 
 if __name__ == "__main__":
+    # le province italiane sono 107: se questo numero cambia, e' cambiata
+    # una legge dello Stato, non un dato di questo progetto
+    assert len(set(SIGLE_PROVINCE.values())) == 107, len(set(SIGLE_PROVINCE.values()))
+    assert sigla_provincia("Città metropolitana di Roma Capitale") == "RM"
+    assert sigla_provincia("Provincia di Latina") == "LT"
+    assert sigla_provincia("Provincia dell'Aquila") == "AQ"
+    assert sigla_provincia("Città Metropolitana di Bari") == "BA"   # M maiuscola
+    assert sigla_provincia("Monza e della Brianza") == "MB"
+    assert sigla_provincia("Roma") == "RM" and sigla_provincia("roma") == "RM"
+    assert sigla_provincia("RM") == "RM" and sigla_provincia("rm") == "RM"
+    assert sigla_provincia("Provincia di RM") == "RM"
+    # una provincia sconosciuta resta com'e': mai una sigla inventata
+    assert sigla_provincia("Oltrepo") == "Oltrepo"
+    assert sigla_provincia("") is None and sigla_provincia(None) is None
+    # le cinque del Lazio, che sono il perimetro di oggi
+    for nome, sigla in (("Roma", "RM"), ("Latina", "LT"), ("Frosinone", "FR"),
+                        ("Rieti", "RI"), ("Viterbo", "VT")):
+        assert sigla_provincia(f"Provincia di {nome}") == sigla
+        assert sigla in PROVINCE
+
     assert esclude(MOTIVO_CLIENTE_ATTIVO) and esclude(MOTIVO_COMMITTENTE)
     assert esclude(" Cliente Attivo ")          # il file e' compilato a mano
     assert not esclude(f"{MOTIVO_EX_CLIENTE}: perso per prezzo")
