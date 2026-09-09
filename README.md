@@ -290,6 +290,27 @@ individuate e classificate dal sistema — non è un censimento del mercato"
 viaggia coi dati e l'app la mostra per forza. Il numero dipende dalle query
 di sourcing e dai comuni interrogati, non dal mercato reale.
 
+## Province: sempre la sigla
+
+Il modello restituisce `sede_provincia` a volte come sigla (`RM`) e a volte
+per esteso (`Roma`). In archivio finivano come **valori distinti**: il menu
+di filtro dell'app mostrava "FR" e "Frosinone" come due voci separate, e chi
+ne sceglieva una perdeva metà delle aziende.
+
+`config.sigla_provincia()` converte prima della scrittura, e
+`db.riga_azienda` la applica sempre. Un nome **non** in `SIGLE_PROVINCE` si
+lascia invariato e si logga, invece di indovinare una sigla. Le righe già
+scritte si sistemano con `python normalizza_province.py --applica` (107
+corrette il 2026-09-09, nessun valore lungo rimasto).
+
+**Restano 772 righe con la provincia vuota**, ed è un problema diverso: la
+provincia viene da `sede_provincia`, che il modello legge dalla pagina
+contatti. 338 di quelle aziende non hanno sito e 68 hanno il fetch fallito,
+quindi non c'è pagina da leggere; le altre 366 hanno una pagina ma non una
+sede dichiarata. **722 su 772 hanno però il comune**, che arriva da Google
+Maps: se il filtro per provincia dovesse coprirle, la strada è derivarla dal
+comune, non dal sito.
+
 ## Portali di intermediazione
 
 Aggregatori di preventivi e siti acchiappa-contatti (`archisio.it`,

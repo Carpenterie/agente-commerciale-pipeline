@@ -39,6 +39,32 @@ PROVINCE = {"RM": "Roma", "LT": "Latina", "FR": "Frosinone",
             "RI": "Rieti", "VT": "Viterbo"}
 REGIONE_CICLO = "Lazio"   # perimetro del primo ciclo (§1)
 
+# Il modello restituisce `sede_provincia` a volte come sigla ("RM") e a
+# volte per esteso ("Roma"): in archivio finivano come valori DISTINTI e il
+# menu di filtro dell'app mostrava due voci per la stessa provincia, con
+# meta' aziende ciascuna. Si scrive sempre la sigla.
+# Le cinque del Lazio piu' quelle viste davvero fuori regione: un nome non
+# in tabella si lascia com'e' e si logga, invece di indovinare.
+SIGLE_PROVINCE = {
+    "roma": "RM", "latina": "LT", "frosinone": "FR", "rieti": "RI",
+    "viterbo": "VT",
+    "milano": "MI", "brescia": "BS", "como": "CO", "napoli": "NA",
+    "siena": "SI", "torino": "TO",
+}
+
+
+def sigla_provincia(valore: str | None, log=None) -> str | None:
+    """-> sigla a due lettere. Un valore sconosciuto torna invariato."""
+    v = (valore or "").strip()
+    if not v or len(v) == 2:
+        return v.upper() or None
+    sigla = SIGLE_PROVINCE.get(v.lower())
+    if sigla:
+        return sigla
+    if log:
+        log(f"provincia '{v}' non in SIGLE_PROVINCE: lasciata invariata")
+    return v
+
 # --- Sourcing Exa (§4, le 5 query del test) ---
 QUERY_EXA = (
     "officina fabbro cancelli e inferriate in ferro provincia di {provincia}",

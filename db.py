@@ -169,8 +169,10 @@ def riga_azienda(scheda: dict, dati: dict | None = None,
         # sede: Openapi (legale) > modello (pagina contatti) > Maps
         "comune": (_testo(anagrafica.get("sede_comune"))
                    or _testo(dati.get("sede_comune")) or _testo(scheda.get("comune"))),
-        "provincia": (_testo(anagrafica.get("sede_provincia"))
-                      or _testo(dati.get("sede_provincia"))),
+        # sempre la sigla: vedi config.SIGLE_PROVINCE
+        "provincia": config.sigla_provincia(
+            _testo(anagrafica.get("sede_provincia"))
+            or _testo(dati.get("sede_provincia")), log=print),
         "regione": _testo(dati.get("sede_regione")),
         "email_aziendale": _testo(dati.get("email_aziendale")),
         "telefono": _testo(dati.get("telefono")) or _testo(scheda.get("telefono")),
@@ -382,6 +384,24 @@ if __name__ == "__main__":
                        dati={"classificazione": "TARGET", "confidenza": "ALTA"},
                        classe="A", esito_fetch="OK")
     assert exc["segnali"][0]["tipo"] == "ex_cliente"
+
+    # provincia: in archivio va SEMPRE la sigla, mai il nome per esteso
+    base = {"nome": "P", "fonte": "maps"}
+    for dato, atteso in (("Roma", "RM"), ("roma", "RM"), ("RM", "RM"),
+                         ("rm", "RM"), ("Frosinone", "FR"), ("Milano", "MI")):
+        r_p = riga_azienda(base, dati={"classificazione": "TARGET",
+                                       "confidenza": "ALTA",
+                                       "sede_provincia": dato},
+                           territorio=None, anagrafica={}, segnali=[],
+                           classe="B", esito_fetch="OK", ciclo_id="c")
+        assert r_p["provincia"] == atteso, (dato, r_p["provincia"])
+    # una provincia che non conosciamo si lascia com'e' invece di indovinare
+    r_p = riga_azienda(base, dati={"classificazione": "TARGET",
+                                   "confidenza": "ALTA",
+                                   "sede_provincia": "Oltrepo"},
+                       territorio=None, anagrafica={}, segnali=[],
+                       classe="B", esito_fetch="OK", ciclo_id="c")
+    assert r_p["provincia"] == "Oltrepo"
 
     # verniciatura interna: segnale, mai livello_fornitura
     assert verniciatura_interna({"motivazione": "esegue verniciatura a polvere interna"})
