@@ -466,8 +466,24 @@ testuale è stata provata e **scartata**: solo 32 righe hanno il riferimento
 in un inciso fra parentesi, dove toglierlo è sicuro; nelle altre 343 sta
 dentro la frase («rientra nella regola 3: serramentista che…») e ogni regex
 che ci prova lascia rotture del tipo «rientra nella:» o «esposti.:
-serramentista». L'unico modo pulito è **rianalizzare**: le sole classe A
-colpite costano ~7 EUR.
+serramentista». L'unico modo pulito è **rianalizzare**, ed è
+quello che `riscrivi_motivazioni.py` fa: rilegge la pagina dalla **cache di
+fetch** (nessun sito riscaricato), riclassifica col prompt nuovo e
+**sostituisce solo il campo `motivazione`**.
+
+**La classificazione non si tocca mai.** Quella in archivio è stata
+validata; se la rianalisi cambierebbe idea lo script lo scrive nel log ma
+non lo applica — qui si riscrive un testo, non si ridiscute un giudizio.
+Una motivazione nuova che contenesse ancora gergo viene scartata invece che
+scritta: meglio tenere la vecchia che sostituirla con una altrettanto
+sporca.
+
+Eseguito il 2026-09-09 sulla sola classe A: **121 riscritte su 123**, 2
+saltate perché la pagina non era in cache, 8,36 EUR. Il gergo in classe A
+passa dal 74% all'1% (restano le 2 saltate). **B e indeterminate restano
+com'erano**: nessuno le legge in sessione e i cicli futuri escono già puliti.
+Quattro schede avrebbero cambiato classificazione (tutte TARGET →
+NON_TARGET) e sono rimaste come validate.
 
 ## Manutenzione: il campione va arricchito
 
