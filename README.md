@@ -51,7 +51,7 @@ volatile, cresce a ogni ciclo e il server ha la sua.
 (interno, poi esclusioni e già-visti) → `fetch` (cache su disco per dominio)
 → `territorio` (CAP e provincia da Maps, euristica come ripiego) →
 `classify` + `prompts` (il file sacro) → `segnali_lavoro` su tutti i TARGET
-e `arricchimento` sulle sole A/B → `db`.
+e `arricchimento` sulle sole classi in `CLASSI_DA_ARRICCHIRE` (oggi A) → `db`.
 `costi` conta token ed euro per azienda e per ciclo.
 
 ## Fuori territorio: due controlli, nessun declassamento
@@ -106,8 +106,13 @@ misura accanto perché non venga reintrodotta.
 
 I segnali si cercano su **tutti** i TARGET (una query Exa, ~0,006 EUR),
 perché decidono la classe A: cercarli solo su A/B sarebbe circolare.
-Openapi resta sulle classi in `config.CLASSI_DA_ARRICCHIRE`, oggi A e B:
-restringere a `("A",)` taglia quella voce da ~27 a ~9 EUR sul ciclo completo.
+Openapi resta sulle classi in `config.CLASSI_DA_ARRICCHIRE`, **oggi solo
+`("A",)`**. Attenzione al risparmio atteso: qui c'era scritto che
+restringere ad A taglia quella voce "di circa due terzi", ed **è falso**.
+Misurato sul ciclo Roma su 194 aziende, le A sono il **73%** delle A+B
+(55 contro 20), quindi il taglio è del **27%** — circa 16 EUR su un ciclo
+provinciale, non 18. Era una stima su un campione troppo piccolo, lo stesso
+errore che aveva prodotto il preventivo sbagliato.
 
 ## Deploy su Hetzner
 
@@ -176,6 +181,31 @@ cd /opt/agente-commerciale-pipeline
 Il sourcing resta in `cache/sourcing_<provincia>.json` per 24 ore: due
 rilanci in giornata non lo ripagano. `cache/` non viene sincronizzata, il
 server ha la sua.
+
+## Quando un ciclo notturno fallisce
+
+Il cron scrive in `/var/log/pipeline-<provincia>.log` e **l'ultima riga dice
+in chiaro com'è andata**: `ESITO: ciclo COMPLETATO — 934 aziende lavorate,
+36.69 EUR` oppure `ESITO: ciclo FALLITO — <motivo>`. È la prima cosa da
+leggere aprendo il file, e il codice di uscita **non è mai 0** quando
+qualcosa è andato storto.
+
+Tre fermate volute, tutte coperte da `tests/test_orchestrazione.py`:
+
+- **Supabase irraggiungibile all'avvio**: il ciclo si ferma **prima del
+  sourcing**. Senza database il dedup non esiste — entrerebbero i clienti
+  attivi — e le righe analizzate non si scriverebbero: sarebbero ~35 EUR
+  di Apify, Exa e Anthropic spesi per un file di log;
+- **sourcing fallito** (credito Apify finito, Exa giù, rete): la riga già
+  aperta in `cicli_ricerca` viene **chiusa con il motivo** invece di restare
+  appesa;
+- **database che cade a metà**: dopo `MAX_ERRORI_SCRITTURA` (10) scritture
+  fallite di fila il ciclo si interrompe. Le aziende già scritte restano,
+  le altre non vengono analizzate: a quel punto il problema non è l'azienda,
+  è il database, e continuare vuol dire pagare centinaia di analisi per
+  buttarle.
+
+Una scrittura `duplicata` **non** conta come errore: è il dedup che lavora.
 
 ## Bozze email
 

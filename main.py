@@ -238,6 +238,26 @@ def arricchimento_sicuro(azienda: dict, nome: str, totali: dict,
     return dati
 
 
+# Dopo tanti errori di scrittura di fila il problema non e' l'azienda, e'
+# il database: continuare significa analizzare (e pagare) centinaia di
+# aziende per buttarle.
+MAX_ERRORI_SCRITTURA = 10
+
+
+def _verdetto(ok: bool, motivo: str = "") -> int:
+    """Ultima riga del log, in chiaro: e' la prima che si legge aprendolo.
+
+    Il codice di uscita non e' mai 0 quando qualcosa e' andato storto: il
+    cron altrimenti registra un successo.
+    """
+    print("=" * 52)
+    if ok:
+        print("ESITO: ciclo COMPLETATO" + (f" — {motivo}" if motivo else ""))
+        return 0
+    print(f"ESITO: ciclo FALLITO — {motivo}")
+    return 1
+
+
 async def esegui(args) -> int:
     from dotenv import load_dotenv
 
@@ -251,16 +271,31 @@ async def esegui(args) -> int:
     try:
         sb = db.client()
     except Exception as e:  # noqa: BLE001
-        print(f"Supabase non raggiungibile ({type(e).__name__}): dedup su DB saltato")
-        sb = None
+        # Ci si ferma PRIMA del sourcing: senza database il dedup non c'e'
+        # (entrerebbero i clienti attivi) e le righe analizzate non si
+        # scrivono, quindi sarebbero ~35 EUR di Apify, Exa e Anthropic
+        # spesi per un file di log.
+        return _verdetto(False, f"Supabase non raggiungibile "
+                                f"({type(e).__name__}: {e}). Niente sourcing, "
+                                f"nessuna spesa.")
     ciclo_id = None
     if sb and not args.dry_run:
         ciclo_id = db.avvia_ciclo(sb, "Lazio", note=f"provincia {args.provincia}")
         print(f"ciclo {ciclo_id} avviato")
 
     # 1. sourcing
-    schede = raccogli(args.provincia, totali, args.comuni, args.sourcing_fresco,
-                      args.riusa_sourcing)
+    try:
+        schede = raccogli(args.provincia, totali, args.comuni, args.sourcing_fresco,
+                          args.riusa_sourcing)
+    except Exception as e:  # noqa: BLE001 - credito Apify finito, Exa giu', rete
+        # la riga in cicli_ricerca esiste gia': va CHIUSA con il motivo,
+        # altrimenti resta appesa e nessuno sa perche'
+        motivo = f"sourcing fallito ({type(e).__name__}: {str(e)[:160]})"
+        if ciclo_id:
+            db.chiudi_ciclo(sb, ciclo_id, costi.riepilogo(totali), 0, 0,
+                            note=f"provincia {args.provincia} — INTERROTTO: {motivo}")
+            print(f"ciclo {ciclo_id} chiuso come interrotto")
+        return _verdetto(False, motivo)
     n_trovate = len(schede)
 
     # 2. dedup interno, poi esclusioni e già-visti (§4: dedup PRIMA, non dopo)
@@ -309,6 +344,7 @@ async def esegui(args) -> int:
     # il ciclo incoerente, le aziende già scritte restano (§12)
     client = Anthropic()
     valutazioni, esiti_scrittura, n_in_target = [], [], 0
+    errori_di_fila, interrotto = 0, ""
     stat = {"classi": Counter(), "ruoli": Counter(), "con_segnale": 0,
             "saliti_ad_A": 0, "scesi_per_organico": 0, "arricchite": 0,
             # la marcatura ex cliente e' una richiesta esplicita del
@@ -349,6 +385,14 @@ async def esegui(args) -> int:
                     esiti_scrittura.append(scritta)
                     if ex_in_riga and scritta == "inserita":
                         stat["ex_scritti"] += 1
+                    # "duplicata" non e' un errore: e' il dedup che lavora
+                    errori_di_fila = errori_di_fila + 1 if scritta == "errore" else 0
+                    if errori_di_fila >= MAX_ERRORI_SCRITTURA:
+                        interrotto = (f"{errori_di_fila} scritture fallite di "
+                                      f"fila: il database non risponde")
+                        print(f"  STOP: {interrotto}. Le {i} aziende gia' "
+                              f"lavorate restano, le altre no.")
+                        break
                 else:
                     print("  --- riga che verrebbe scritta:")
                     for campo, valore in riga.items():
@@ -426,10 +470,19 @@ async def esegui(args) -> int:
     if esiti_scrittura:
         print("scritture:", dict(Counter(esiti_scrittura)))
     if sb and not args.dry_run:
+        nota = f"provincia {args.provincia}"
         db.chiudi_ciclo(sb, ciclo_id, riepilogo, n_trovate, n_in_target,
-                        note=f"provincia {args.provincia}")
+                        note=nota + (f" — INTERROTTO: {interrotto}" if interrotto
+                                     else ""))
         print(f"ciclo {ciclo_id} chiuso")
-    return 0
+    if interrotto:
+        return _verdetto(False, interrotto)
+    falliti = Counter(esiti_scrittura).get("errore", 0)
+    if falliti:
+        return _verdetto(False, f"{falliti} aziende non scritte per errori del "
+                                f"database")
+    return _verdetto(True, f"{stat['classi'].total()} aziende lavorate, "
+                           f"{riepilogo['costo_totale_eur']:.2f} EUR")
 
 
 def main() -> int:

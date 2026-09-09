@@ -34,7 +34,12 @@ import fetch  # noqa: E402
 import db  # noqa: E402
 import main  # noqa: E402
 
-db.client = lambda: (_ for _ in ()).throw(RuntimeError("nessun DB nel test"))
+# Dal 2026-09-09 il ciclo si FERMA se il database non c'e' (prima spendeva
+# tutto e non scriveva niente), quindi qui serve un DB finto che risponda
+# alle sole letture: la scrittura resta disattivata da dry_run.
+db.client = lambda: object()
+db.esclusioni = lambda sb: []
+db.riferimenti_aziende = lambda sb: []
 
 # il sourcing salvato è dato di produzione: il test scrive altrove
 import tempfile  # noqa: E402
@@ -290,3 +295,63 @@ assert "scritti in archivio            1" in uscita4, uscita4
 assert "dry-run" not in uscita4.split("EX CLIENTI")[1], uscita4
 
 print("ok (ex cliente marcato, scritto e contato)")
+
+# --- i tre modi di fallire di notte, che prima uscivano 0 -----------------
+# Erano il difetto piu' grave trovato nella revisione pre-consegna: il cron
+# registrava un successo mentre il ciclo aveva speso tutto senza scrivere.
+_client, _escl, _rif = db.client, db.esclusioni, db.riferimenti_aziende
+_cerca_maps = sourcing_maps.cerca
+
+def _prova(args_, atteso_ok: bool):
+    b = io.StringIO()
+    with contextlib.redirect_stdout(b):
+        codice = asyncio.run(main.esegui(args_))
+    u = b.getvalue()
+    assert (codice == 0) == atteso_ok, (codice, u[-400:])
+    assert "ESITO: ciclo" in u, "manca la riga di verdetto in fondo al log"
+    return codice, u
+
+# 1. database assente all'avvio: si esce senza toccare Apify
+chiamate_maps = []
+sourcing_maps.cerca = lambda comuni, log=print: (chiamate_maps.append(1), ([], 0.0))[1]
+db.client = lambda: (_ for _ in ()).throw(RuntimeError("connessione rifiutata"))
+_, uscita = _prova(types.SimpleNamespace(
+    provincia="RM", limite=None, dry_run=False, comuni=None,
+    sourcing_fresco=True, riusa_sourcing=False, gratuite_openapi=30), False)
+assert "Supabase non raggiungibile" in uscita, uscita
+assert "Niente sourcing, nessuna spesa" in uscita
+assert not chiamate_maps, "ha chiamato Apify pur senza database: e' spesa persa"
+print("ok (senza database si esce prima di spendere)")
+
+# 2. sourcing che esplode: la riga del ciclo si CHIUDE, non resta appesa
+chiuso = {}
+db.client, db.esclusioni, db.riferimenti_aziende = lambda: object(), _escl, _rif
+db.avvia_ciclo = lambda sb, regione, note="": "ciclo-x"
+db.chiudi_ciclo = lambda sb, cid, riep, nt, nit, note="": chiuso.update(
+    {"id": cid, "note": note})
+sourcing_maps.cerca = lambda comuni, log=print: (_ for _ in ()).throw(
+    RuntimeError("monthly usage hard limit exceeded"))
+_, uscita = _prova(types.SimpleNamespace(
+    provincia="RM", limite=None, dry_run=False, comuni=None,
+    sourcing_fresco=True, riusa_sourcing=False, gratuite_openapi=30), False)
+assert chiuso.get("id") == "ciclo-x", "il ciclo e' rimasto aperto"
+assert "INTERROTTO" in chiuso["note"] and "hard limit" in chiuso["note"], chiuso
+print("ok (sourcing fallito: il ciclo si chiude col motivo)")
+
+# 3. database che cade a meta': si smette dopo MAX_ERRORI_SCRITTURA, non a
+# fine giro. Il campione di prova ha 6 aziende, meno della soglia vera: la
+# si abbassa qui, la logica e' la stessa.
+sourcing_maps.cerca = _cerca_maps
+main.MAX_ERRORI_SCRITTURA = 3
+db.scrivi_azienda = lambda sb, riga, log=print: "errore"
+_, uscita = _prova(types.SimpleNamespace(
+    provincia="RM", limite=None, dry_run=False, comuni=None,
+    sourcing_fresco=True, riusa_sourcing=False, gratuite_openapi=30), False)
+assert "STOP:" in uscita and "scritture fallite di fila" in uscita, uscita[-500:]
+assert "INTERROTTO" in chiuso["note"], chiuso
+# si e' fermato PRIMA di lavorarle tutte: e' il punto dell'esercizio
+lavorate = len([x for x in uscita.splitlines() if x.startswith("[")])
+assert lavorate < 6, f"le ha lavorate tutte lo stesso: {lavorate}"
+print("ok (database giu' a meta': si interrompe, non analizza tutto)")
+
+db.client, db.esclusioni, db.riferimenti_aziende = _client, _escl, _rif
