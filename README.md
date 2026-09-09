@@ -184,7 +184,8 @@ python bozze_email.py <uuid-azienda>
 python bozze_email.py <uuid-azienda> --testo follow_up
 ```
 
-Genera la bozza dagli otto testi approvati dal cliente (PDF del 2026-08-31).
+Genera la bozza dai testi approvati dal cliente (PDF del 2026-08-31; i
+testi 1, 2 e 5 riscritti il 2026-09-09 con gli argomenti del catalogo).
 **Una azienda per volta, su richiesta**: la bozza si produce quando il
 commerciale apre la scheda, non in blocco su una lista — non esiste una
 funzione che generi per liste, ed è deliberato.
@@ -254,10 +255,23 @@ Le email escono a nome dell'azienda (`FIRMA_EMAIL = "Carpenterie
 Laziali"`), non del singolo commerciale: la casella è condivisa, quindi la
 firma è una costante e non si legge da `assegnato_a`.
 
-`LINK_CATALOGO` e `LINK_PRENOTAZIONE` sono vuoti in attesa del catalogo del
-cliente. Finché lo sono: la frase che li conterrebbe **sparisce** (il
-follow-up torna esattamente alla versione approvata) e `risposta_interesse`
-non si produce affatto, perché è il testo che serve a mandare il catalogo.
+`LINK_CATALOGO` è compilato dal 2026-09-09 (PDF su Supabase Storage).
+`LINK_PRENOTAZIONE` è ancora vuoto: finché lo è, la frase della chiamata di
+dieci minuti **sparisce** invece di lasciare un segnaposto. Se anche
+`LINK_CATALOGO` tornasse vuoto, il follow-up tornerebbe esatto alla versione
+approvata e `risposta_interesse` non si produrrebbe affatto, perché è il
+testo che serve a mandare il catalogo.
+
+**Argomenti dal catalogo** (2026-09), nei testi 1, 2 e 5: i quaranta minuti
+di assemblaggio di una persiana, l'assenza di sfridi e misurazioni, il
+sistema a incastro che riduce la manodopera specializzata, e il terzo
+livello di fornitura (assemblato grezzo) offerto al serramentista. Sono
+affermazioni **del cliente**, quindi non violano la regola sui claim.
+Restano fuori i **tempi di consegna** — il catalogo stesso li dichiara
+indicativi — e i **nomi dei modelli**, perché quale modello scegliere è una
+decisione estetica del cliente finale, non deducibile dal sito di un fabbro.
+Gli altri cinque testi non sono stati toccati: nessun argomento del catalogo
+li migliorava.
 `SITO_EMAIL` resta vuoto di proposito: in chiusura andrà il link al
 catalogo, non al sito.
 

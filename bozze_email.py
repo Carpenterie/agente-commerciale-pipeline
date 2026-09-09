@@ -40,14 +40,16 @@ TESTI = {
         "produciamo persiane, grate, cancelli e recinzioni in acciaio, e forniamo\n"
         "anche il solo kit: i componenti arrivano tagliati, forati e già organizzati\n"
         "per l'assemblaggio.\n\n"
-        "Chi ha officina propria lo usa per assorbire i periodi più carichi senza\n"
-        "rinunciare alla lavorazione e al rapporto con il proprio cliente.\n\n"
+        "Chi ha officina propria lo usa per assorbire i periodi più carichi: una\n"
+        "persiana si assembla in circa quaranta minuti, senza misurazioni e senza\n"
+        "sfridi da smaltire.\n\n"
         "Vi capita di avere commesse in cui potrebbe tornarvi utile?"),
     "finito_serramentista": (
         "serramentista o rivenditore senza officina — prodotto finito",
         "Persiane e grate in acciaio",
         "{frase_materiali}Noi produciamo persiane, grate, cancelli e recinzioni in\n"
-        "acciaio e li forniamo finiti e verniciati, pronti alla posa.\n\n"
+        "acciaio e li forniamo finiti e verniciati, pronti alla posa — oppure\n"
+        "assemblati grezzi, se preferite gestire voi la verniciatura.\n\n"
         "È il modo con cui diversi serramentisti completano la gamma quando arriva\n"
         "una richiesta in acciaio, senza doverla lavorare internamente.\n\n"
         "Vi capita di riceverne?"),
@@ -72,9 +74,9 @@ TESTI = {
         "Fornitura nei periodi di carico",
         "produciamo persiane, grate, cancelli e recinzioni in acciaio, anche in kit\n"
         "già tagliato e forato.\n\n"
-        "Diversi fabbri ci usano nei periodi in cui la produzione è piena: prendono\n"
-        "il semilavorato, assemblano e consegnano nei tempi senza dover aggiungere\n"
-        "lavorazioni.\n\n"
+        "Il sistema a incastro riduce la necessità di manodopera specializzata:\n"
+        "diversi fabbri lo usano nei periodi in cui la produzione è piena, per\n"
+        "assemblare e consegnare nei tempi senza aggiungere lavorazioni.\n\n"
         "Nei mesi più carichi potrebbe esservi utile?"),
     "follow_up": (
         "follow-up a 10 giorni dal primo contatto senza risposta",
@@ -290,6 +292,41 @@ if __name__ == "__main__" and "--test" in sys.argv:
             problemi = verifica(b)
             assert not problemi, (tid, cat, problemi)
     config.LINK_CATALOGO, config.LINK_PRENOTAZIONE = _cat, _pren
+
+    # 4b. gli argomenti dal catalogo (2026-09), nei tre testi riscritti.
+    # Sono affermazioni DEL CLIENTE, quindi utilizzabili: non sono claim
+    # nostri su tempi o certificazioni. Fuori restano i tempi di consegna
+    # (il catalogo stesso li dichiara indicativi) e i nomi dei modelli, che
+    # sono una scelta estetica del cliente finale.
+    # `steso`: le frasi vanno cercate senza gli a capo dell'impaginazione,
+    # altrimenti una riformattazione romperebbe i test senza cambiare nulla
+    steso = lambda s: " ".join(s.split())  # noqa: E731
+    kit = steso(componi({"categoria": "fabbro", "livello_fornitura": "kit"})["corpo"])
+    assert "circa quaranta minuti" in kit, "il numero e' l'argomento del testo 1"
+    assert "senza misurazioni e senza sfridi da smaltire" in kit
+    ser = steso(componi({"categoria": "serramentista",
+                         "livello_fornitura": "prodotto_finito"})["corpo"])
+    assert "oppure assemblati grezzi" in ser, "il terzo livello e' nel testo 2"
+    assert "gestire voi la verniciatura" in ser
+    car = steso(componi({"categoria": "fabbro"},
+                        testo_id="carico_produttivo")["corpo"])
+    assert "riduce la necessità di manodopera specializzata" in car
+    # ...e nel testo 5 NON si nomina mai l'annuncio che lo ha fatto scegliere
+    for parola in ("annunc", "saldator", "assunzion", "cercate", "offerta di lavoro"):
+        assert parola not in car.lower(), parola
+    # i tempi di CONSEGNA restano fuori da tutti i testi
+    for tid in TESTI:
+        b = componi({"categoria": "fabbro"}, testo_id=tid, oggetto_precedente="X")
+        if b is None:
+            continue
+        for vietata in ("24 ore", "48 ore", "consegna rapida", "consegniamo in"):
+            assert vietata not in b["corpo"].lower(), (tid, vietata)
+
+    # 4c. gli altri CINQUE testi non sono stati toccati: restano approvati
+    assert "pronti da esporre e installare" in steso(TESTI["finito_showroom"][2])
+    assert "un solo interlocutore" in steso(TESTI["commessa_edile"][2])
+    assert "abbiamo lavorato insieme in passato" in steso(TESTI["ex_cliente"][2])
+    assert TESTI["ex_cliente"][1] == "Ci risentiamo"
 
     # 5. firma vuota -> si chiude senza segnaposto, non con "[Firma]"
     b = componi({"categoria": "showroom"})

@@ -144,6 +144,20 @@ CLASSI_DA_ARRICCHIRE = ("A",)
 SOGLIA_RECENSIONI_FORTE = 50
 SOGLIA_PUNTEGGIO_FORTE = 4.5
 
+# --- Verniciatura interna: indizio per l'ASSEMBLATO GREZZO (catalogo 2026-09) ---
+# Il catalogo descrive tre livelli, non due: kit semilavorato, assemblato
+# grezzo e prodotto finito. Il grezzo e' "la soluzione ideale per chi vuole
+# gestire autonomamente la verniciatura".
+# NON si assegna `livello_fornitura`: non sappiamo distinguere in modo
+# affidabile chi ha solo la verniciatura da chi ha l'officina completa, e
+# il sistema non deve inventare un'assegnazione che non puo' provare.
+# Si aggiunge solo un segnale, che il commerciale legge in scheda e usa in
+# trattativa. Misurato sull'archivio Roma: 42 aziende su 1169, 38 delle
+# quali in classe A.
+INDIZI_VERNICIATURA = ("verniciatura a polvere", "verniciatura a forno",
+                       "zincatura", "impianto di verniciatura")
+NOTA_VERNICIATURA = "può interessare l'assemblato grezzo"
+
 # --- Segnali di lavoro (§9) ---
 # Ordine = priorità. Il saldatore pesa più di tutti: è la figura che il
 # cliente ha indicato come in via di sparizione ed è l'argomento di vendita
@@ -226,7 +240,8 @@ FIRMA_EMAIL = "Carpenterie Laziali"
 SITO_EMAIL = ""
 # Link usati dai due testi del catalogo. Vuoti finche' non arrivano: la
 # frase che li conterrebbe sparisce, mai un segnaposto in chiaro.
-LINK_CATALOGO = ""        # es. "carpenterielaziali.it/catalogo.pdf"
+LINK_CATALOGO = ("https://pvxzrfthfhbhslxhjihu.supabase.co/storage/v1/object/"
+                 "public/catalogo%20pubblico/Catalogo%20Carpenterie%20Laziali.pdf")
 LINK_PRENOTAZIONE = ""    # es. "cal.com/carpenterielaziali/10min"
 # Parole che non devono MAI comparire in una bozza: il PDF vieta di citare
 # gli annunci di lavoro, e la guida vieta claim su tempi e certificazioni.

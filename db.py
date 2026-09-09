@@ -82,6 +82,26 @@ def _struttura(dipendenti: int | None) -> str | None:
     return "media" if dipendenti < 250 else "grande"
 
 
+def verniciatura_interna(dati: dict) -> bool:
+    """Indizi che l'azienda vernicia o zinca in casa (catalogo 2026-09).
+
+    E' un SEGNALE, non un livello di fornitura: chi vernicia potrebbe
+    volere l'assemblato grezzo, ma non sappiamo distinguerlo da chi ha
+    l'officina completa e il sistema non deve inventarlo. Lo legge il
+    commerciale e lo usa in trattativa.
+
+    Attenzione alla precisione: "zincatura" e' il processo, ma un testo che
+    dice "persiane in acciaio zincato" parla del MATERIALE. Il falso
+    positivo qui costa poco (una riga in piu' in scheda, che il commerciale
+    scarta leggendo), il falso negativo costa un argomento di vendita.
+    """
+    materiali = dati.get("materiali_rilevati")
+    if isinstance(materiali, list):
+        materiali = " ".join(str(m) for m in materiali)
+    testo = f"{materiali or ''} {dati.get('motivazione') or ''}".lower()
+    return any(i in testo for i in config.INDIZI_VERNICIATURA)
+
+
 def riga_azienda(scheda: dict, dati: dict | None = None,
                  territorio: dict | None = None, anagrafica: dict | None = None,
                  segnali: list[dict] | None = None, classe: str = "indeterminato",
@@ -120,6 +140,9 @@ def riga_azienda(scheda: dict, dati: dict | None = None,
         segnali_finali.append({
             "tipo": "chiusa_temporaneamente",
             "nota": "Google la dà temporaneamente chiusa: verificare prima di contattare"})
+    if verniciatura_interna(dati):
+        segnali_finali.append({"tipo": "verniciatura_interna",
+                               "nota": config.NOTA_VERNICIATURA})
     if scheda.get("ex_cliente"):
         # il commerciale deve sapere che ci ha già lavorato
         segnali_finali.insert(0, scheda["ex_cliente"])
@@ -359,6 +382,23 @@ if __name__ == "__main__":
                        dati={"classificazione": "TARGET", "confidenza": "ALTA"},
                        classe="A", esito_fetch="OK")
     assert exc["segnali"][0]["tipo"] == "ex_cliente"
+
+    # verniciatura interna: segnale, mai livello_fornitura
+    assert verniciatura_interna({"motivazione": "esegue verniciatura a polvere interna"})
+    assert verniciatura_interna({"materiali_rilevati": ["ferro", "zincatura a caldo"]})
+    assert not verniciatura_interna({"motivazione": "vende persiane in pvc"})
+    assert not verniciatura_interna({})
+    v = riga_azienda(
+        {"nome": "V", "fonte": "maps", "comune": "Tivoli"},
+        dati={"classificazione": "TARGET", "confidenza": "ALTA",
+              "categoria": "fabbro", "capacita_officina": "SI",
+              "materiali_rilevati": ["ferro"],
+              "motivazione": "trattamenti interni: zincatura e verniciatura"},
+        territorio=None, anagrafica={}, segnali=[], classe="A",
+        esito_fetch="OK", ciclo_id="c")
+    assert any(s["tipo"] == "verniciatura_interna" for s in v["segnali"])
+    assert v["livello_fornitura"] != "assemblato_grezzo", \
+        "la verniciatura NON assegna il livello di fornitura, e' solo un segnale"
     assert exc["classe"] == "A"          # resta un lead, con la sua classe
     assert exc["esito_analisi"] == "TARGET"
 
