@@ -127,6 +127,50 @@ Misurato sul ciclo Roma su 194 aziende, le A sono il **73%** delle A+B
 provinciale, non 18. Era una stima su un campione troppo piccolo, lo stesso
 errore che aveva prodotto il preventivo sbagliato.
 
+## Quanto rende una provincia, misurato
+
+```bash
+python sourcing_solo.py LT FR RI      # solo sourcing: niente analisi, niente scrittura
+```
+
+Serve a sapere quante aziende produce una provincia **prima** di impegnarsi
+con l'analisi, e a spendere il credito Apify prima che il ciclo di
+fatturazione si chiuda. Il risultato finisce in
+`cache/sourcing_<provincia>.json`, lo stesso file che `main.py` rilegge:
+l'analisi parte poi con `--riusa-sourcing` e **Maps ed Exa non si ripagano**.
+
+Sourcing completo delle cinque province, eseguito il 2026-09-09:
+
+| prov | comuni | uniche | per comune | USD |
+|---|---|---|---|---|
+| RM | 21 | 1284 | 61,1 | 4,70 |
+| LT | 18 | 1049 | 58,3 | 3,05 |
+| FR | 18 | 1025 | 56,9 | 2,93 |
+| VT | 18 | 1016 | 56,4 | 2,94 |
+| RI | 15 | 848 | 56,5 | 2,42 |
+| **tot** | **90** | **5222** | **58,0** | **16,04** |
+
+**I comuni piccoli rendono quasi quanto Roma**: da 56,4 a 61,1 aziende per
+comune, uno scarto dell'8%. L'ipotesi opposta — che i paesi rendessero molto
+meno — era il fondamento del limite basso del preventivo, ed **era
+sbagliata**. Rieti, senza nessun centro grande, fa 56,5 per comune come
+Viterbo.
+
+Restano **3.938 schede** da analizzare sulle quattro province diverse da
+Roma. Con i costi misurati sul ciclo Roma reale:
+
+| scenario | costo |
+|---|---|
+| si analizza tutto | ~172 EUR |
+| il filtro territoriale scarta prima dell'analisi, come su Roma | ~157 EUR |
+
+Il filtro aiuta meno di quanto sembri: toglie l'analisi Anthropic sulle
+fuori regione (il **46%** delle schede) ma non cambia la quota di classe A
+da arricchire con Openapi, che pesa un terzo del totale. Con i 14,8 EUR di
+Apify già pagati e i 59 di Roma, **il ciclo completo sulle cinque province
+costa 230-245 EUR** — contro i 61 del preventivo che il cliente aveva
+approvato.
+
 ## Deploy su Hetzner
 
 ```bash
