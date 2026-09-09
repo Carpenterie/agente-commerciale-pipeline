@@ -278,9 +278,7 @@ async def esegui(args) -> int:
     schede = dedup.dedup_interno(schede)
     if sb:
         elenco = db.esclusioni(sb)
-        attivi = [r for r in elenco
-                  if (r.get("motivo") or "").strip().lower()
-                  == config.MOTIVO_CLIENTE_ATTIVO]
+        attivi = [r for r in elenco if config.esclude(r.get("motivo"))]
         ex = [r for r in elenco if r not in attivi]
         print(f"elenco clienti: {len(attivi)} attivi (escludono), "
               f"{len(ex)} ex clienti (marcano)")

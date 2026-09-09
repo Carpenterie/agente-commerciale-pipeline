@@ -320,6 +320,19 @@ reali.
 
 ## Clienti attivi: il match esatto non basta
 
+**L'azienda committente sta nell'elenco esclusioni** con motivo
+`azienda committente`: la pipeline l'ha trovata a Roma e classificata A —
+correttamente, non poteva sapere che era lei — e senza quella riga sarebbe
+finita fra i prospect da chiamare. Non è un cliente, quindi ha un motivo
+suo, ma **esclude come loro**: `config.esclude()` decide chi esce, e il
+confronto non è più `== "cliente attivo"` in tre punti sparsi. Con il
+vecchio codice un motivo nuovo sarebbe finito fra gli ex clienti, che si
+**marcano e restano**: il committente si sarebbe ritrovato in elenco con
+un'etichetta invece che fuori. Verificato che non esistano filiali o sedi
+secondarie: una sola riga per P.IVA, dominio e telefono — con la riserva che
+solo il 6% delle righe ha la P.IVA valorizzata, quindi lì il controllo vede
+poco.
+
 La promessa al committente è che **i suoi clienti attivi non compaiano
 nell'elenco**. Il confronto per ragione sociale normalizzata + comune esatto
 non la mantiene: **le insegne di Google Maps non coincidono con le ragioni

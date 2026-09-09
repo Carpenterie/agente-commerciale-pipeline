@@ -167,8 +167,8 @@ def main() -> int:
     for a in anomalie:
         print(f"ATTENZIONE: {a}")
 
-    attivi = [r for r in righe if r["motivo"] == config.MOTIVO_CLIENTE_ATTIVO]
-    ex = [r for r in righe if r["motivo"] != config.MOTIVO_CLIENTE_ATTIVO]
+    attivi = [r for r in righe if config.esclude(r["motivo"])]
+    ex = [r for r in righe if not config.esclude(r["motivo"])]
     print(f"\n{len(righe)} righe lette dal file")
     print(f"  {len(attivi):>4} da ESCLUDERE dalla ricerca (motivo '{config.MOTIVO_CLIENTE_ATTIVO}')")
     print(f"  {len(ex):>4} ex clienti: caricati ma NON esclusi, compaiono marcati")

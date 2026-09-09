@@ -46,8 +46,14 @@ SPIEGA = {
 
 def motivo_scarto(criterio: str, sorgente: dict) -> str:
     """Perche' e' stata scartata e con chi ha fatto match: serve al
-    committente per verificarla in sessione, e a chi legge fra sei mesi."""
+    committente per verificarla in sessione, e a chi legge fra sei mesi.
+
+    Il motivo della riga in `esclusioni` conta: l'azienda del committente
+    non e' "un possibile cliente attivo", ed e' lei che legge la scheda.
+    """
     nome = (sorgente.get("ragione_sociale") or "?").strip()
+    if (sorgente.get("motivo") or "").strip().lower() == config.MOTIVO_COMMITTENTE:
+        return "SCARTATA: e' l'azienda committente, non un prospect"
     return (f"SCARTATA: possibile cliente attivo, corrisponde a {nome} "
             f"({SPIEGA.get(criterio, criterio)})")
 
@@ -57,8 +63,7 @@ def main() -> int:
     sb = db.client()
 
     elenco = db.esclusioni(sb)
-    attivi = [r for r in elenco
-              if (r.get("motivo") or "").strip().lower() == config.MOTIVO_CLIENTE_ATTIVO]
+    attivi = [r for r in elenco if config.esclude(r.get("motivo"))]
     righe = carica(sb)
     rif = dedup.riferimenti(attivi)
     print(f"clienti attivi in elenco: {len(attivi)}")
@@ -66,6 +71,9 @@ def main() -> int:
 
     colpite = []
     for r in righe:
+        if r.get("stato") == "scartato":
+            continue        # gia' fuori: un secondo giro raddoppierebbe il
+                            # prefisso in testa alla motivazione
         s = {"nome": r["ragione_sociale"], "comune": r.get("comune"),
              "sito": r.get("sito")}
         criterio, sorgente = dedup.cerca_riferimento(s, rif, permissivo=True)

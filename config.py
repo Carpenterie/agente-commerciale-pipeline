@@ -193,6 +193,20 @@ PREZZO_APIFY_SCHEDA_USD = 0.0015
 STATI_CLIENTE_ATTIVO = ("attivo", "fidelizzato")
 MOTIVO_CLIENTE_ATTIVO = "cliente attivo"
 MOTIVO_EX_CLIENTE = "ex cliente"
+# L'azienda committente stessa: la pipeline l'ha trovata a Roma e
+# classificata A, correttamente — non poteva sapere che era lei. Non e' un
+# cliente, quindi ha un motivo suo, ma ESCLUDE come loro.
+MOTIVO_COMMITTENTE = "azienda committente"
+# Chi porta uno di questi motivi esce dalla ricerca; tutto il resto sono ex
+# clienti, che si marcano e restano. Il confronto era `== MOTIVO_CLIENTE_ATTIVO`
+# in tre punti: un motivo nuovo sarebbe finito fra gli ex e avrebbe MARCATO
+# il committente invece di escluderlo.
+MOTIVI_CHE_ESCLUDONO = (MOTIVO_CLIENTE_ATTIVO, MOTIVO_COMMITTENTE)
+
+
+def esclude(motivo: str | None) -> bool:
+    """Il motivo di `esclusioni` toglie l'azienda dalla ricerca?"""
+    return (motivo or "").strip().lower() in MOTIVI_CHE_ESCLUDONO
 # lo stesso valore scritto in due modi nel file compilato a mano
 CATEGORIE_CLIENTI_ALIAS = {
     "show room": "showroom", "showroom": "showroom",
@@ -248,3 +262,11 @@ LINK_PRENOTAZIONE = ""    # es. "cal.com/carpenterielaziali/10min"
 VIETATE_EMAIL = ("saldator", "annuncio", "assunzione", "cercate", "offerta di lavoro",
                  "garantiam", "certificat", "risparmi", "sconto", "24 ore",
                  "48 ore", "consegna rapida", "prezzi imbattibili")
+
+
+if __name__ == "__main__":
+    assert esclude(MOTIVO_CLIENTE_ATTIVO) and esclude(MOTIVO_COMMITTENTE)
+    assert esclude(" Cliente Attivo ")          # il file e' compilato a mano
+    assert not esclude(f"{MOTIVO_EX_CLIENTE}: perso per prezzo")
+    assert not esclude("") and not esclude(None)
+    print("ok")
