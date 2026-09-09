@@ -120,6 +120,10 @@ if __name__ == "__main__":
     assert "vende o installa serramenti al cliente finale" in regole
     assert "INDETERMINATO: informazioni insufficienti" in regole
     # e le note interpretative restano quelle validate sul campione
+    # la motivazione la legge il commerciale: niente numeri di regola ne'
+    # etichette in maiuscolo dentro il testo
+    assert "COME SCRIVERE LA MOTIVAZIONE" in prompts.PROMPT
+    assert "Non citare mai i numeri delle regole" in prompts.PROMPT
     for nota in ("ATTENZIONE AL LESSICO", "COSA COSTITUISCE PROVA SUFFICIENTE",
                  "ASSENZA DI PROVA NON È PROVA DI ASSENZA", "AZIENDA MISTA"):
         assert nota in prompts.PROMPT, nota

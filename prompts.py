@@ -64,6 +64,11 @@ Rispondi con questo schema esatto:
     "costruttore" | "artigiano" | "montatore" | "ferramenta" | "altro"
 }
 
+COME SCRIVERE LA MOTIVAZIONE: la motivazione è letta dal commerciale, non da
+chi ha scritto le regole. Non citare mai i numeri delle regole, e non usare
+le etichette TARGET, NON_TARGET, INDETERMINATO nel testo: spiega con parole
+normali cosa fa l'azienda e perché è o non è un potenziale cliente.
+
 REGOLE DI CLASSIFICAZIONE (in ordine, si applica la prima che corrisponde):
 
 1. TARGET: produce internamente serramenti, grate, persiane, cancelli o

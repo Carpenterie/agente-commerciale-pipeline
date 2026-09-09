@@ -452,6 +452,23 @@ Le schede già `scartato` non entrano nel campione: sono fuori per decisione
 presa, non da giudicare. E il segnale `territorio` non si stampa — il comune
 si vede due righe sopra, e in sessione è rumore.
 
+## La motivazione la legge il commerciale
+
+Il prompt vieta di citare i **numeri delle regole** e di usare le etichette
+`TARGET` / `NON_TARGET` / `INDETERMINATO` dentro il testo: chi apre una
+scheda non ha l'elenco delle regole sotto mano, e «si applica la regola 7»
+non gli dice niente. Un self-check in `classify.py` verifica che
+l'istruzione sia nel prompt.
+
+**Le righe scritte prima del 2026-09-09 non rispettano questa regola**: 375
+su 1.100 citano una regola, e sono il **74% delle classe A**. Una pulizia
+testuale è stata provata e **scartata**: solo 32 righe hanno il riferimento
+in un inciso fra parentesi, dove toglierlo è sicuro; nelle altre 343 sta
+dentro la frase («rientra nella regola 3: serramentista che…») e ogni regex
+che ci prova lascia rotture del tipo «rientra nella:» o «esposti.:
+serramentista». L'unico modo pulito è **rianalizzare**: le sole classe A
+colpite costano ~7 EUR.
+
 ## Manutenzione: il campione va arricchito
 
 **Il campione delle 26 ha perso capacità discriminante.** Col perimetro
