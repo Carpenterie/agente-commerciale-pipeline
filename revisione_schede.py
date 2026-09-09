@@ -48,6 +48,10 @@ def _segnali(segnali) -> str:
                          f"su {s.get('recensioni', '?')} recensioni")
         elif t == "ex_cliente":
             fuori.append(f"EX CLIENTE — {s.get('motivo', '')}")
+        elif t == "verniciatura_interna":
+            # il tipo da solo non dice niente in chiamata: l'argomento
+            # commerciale e' la nota
+            fuori.append(f"verniciatura interna — {s.get('nota', '')}".rstrip(" —"))
         elif t == "territorio":
             continue          # rumore in sessione: il comune si vede sopra
         else:
@@ -144,6 +148,11 @@ if __name__ == "__main__":
                        "recensioni": 51},
                       {"tipo": "territorio", "esito": "lazio"}])
         assert "saldatore" in s and "51 recensioni" in s
+        v = _segnali([{"tipo": "verniciatura_interna",
+                       "nota": "può interessare l'assemblato grezzo"}])
+        assert "assemblato grezzo" in v, v
+        # senza nota non resta un trattino penzolante
+        assert _segnali([{"tipo": "verniciatura_interna"}]) == "verniciatura interna"
         assert "territorio" not in s, "il territorio e' rumore in sessione"
         assert _segnali([]) == "-"
         # stesso seme = stesse schede, anche in giorni diversi
