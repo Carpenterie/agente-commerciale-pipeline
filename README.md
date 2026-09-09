@@ -70,6 +70,19 @@ altre regioni, quelle aziende sono già analizzate e pagate e si recuperano
 per classe. `n_in_target` del ciclo invece le esclude: non sono il risultato
 di un ciclo laziale.
 
+### Le righe vecchie senza il segnale
+
+Le aziende dei primi cicli sono state scritte quando il segnale
+territoriale non veniva registrato in questa forma: nell'app comparivano
+nell'elenco normale e le loro province finivano nel menu di filtro.
+`python segnale_territorio.py --applica` lo aggiunge alle righe con una
+provincia **valorizzata e non laziale**, e tocca solo il campo `segnali`
+(109 marcate il 2026-09-09; ora tutte e 377 le fuori regione ce l'hanno).
+
+Le righe **senza provincia non si marcano**: non sappiamo dove siano, e
+scrivere "fuori" sarebbe inventare. Ne restano 46, di cui 20 senza nessun
+segnale territoriale.
+
 ## Perimetro commerciale e classi
 
 Dal 2026-08-26 il criterio è "vende o installa serramenti al cliente
