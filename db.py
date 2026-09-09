@@ -20,6 +20,7 @@ from __future__ import annotations
 import os
 
 import config
+from data import comuni_lazio
 
 MOTIVAZIONE_NO_SITO = "nessuna fonte web disponibile — valutazione telefonica"
 MOTIVAZIONE_FUORI = "fuori territorio"
@@ -69,6 +70,18 @@ def _fornitura(categoria: str | None, officina: str | None = None) -> str | None
     if categoria == "serramentista":
         return {"si": "kit", "no": "prodotto_finito"}.get(officina or "")
     return config.FORNITURA_PER_CATEGORIA.get(categoria or "")
+
+
+def _provincia(scheda: dict, dati: dict, anagrafica: dict) -> str | None:
+    """Sigla della provincia: prima quella dichiarata, poi quella del comune."""
+    dichiarata = config.sigla_provincia(
+        _testo(anagrafica.get("sede_provincia"))
+        or _testo(dati.get("sede_provincia")), log=print)
+    if dichiarata:
+        return dichiarata
+    return comuni_lazio.provincia_di(
+        _testo(anagrafica.get("sede_comune")) or _testo(dati.get("sede_comune"))
+        or _testo(scheda.get("comune")), log=print)
 
 
 def _struttura(dipendenti: int | None) -> str | None:
@@ -169,10 +182,11 @@ def riga_azienda(scheda: dict, dati: dict | None = None,
         # sede: Openapi (legale) > modello (pagina contatti) > Maps
         "comune": (_testo(anagrafica.get("sede_comune"))
                    or _testo(dati.get("sede_comune")) or _testo(scheda.get("comune"))),
-        # sempre la sigla: vedi config.SIGLE_PROVINCE
-        "provincia": config.sigla_provincia(
-            _testo(anagrafica.get("sede_provincia"))
-            or _testo(dati.get("sede_provincia")), log=print),
+        # sempre la sigla (config.SIGLE_PROVINCE); se il sito non la
+        # dichiara si ricava dal comune della scheda Maps, che e'
+        # anagrafica. Il dato dal sito ha la precedenza: e' piu' specifico e
+        # puo' riferirsi a una sede diversa da quella della scheda.
+        "provincia": _provincia(scheda, dati, anagrafica),
         "regione": _testo(dati.get("sede_regione")),
         "email_aziendale": _testo(dati.get("email_aziendale")),
         "telefono": _testo(dati.get("telefono")) or _testo(scheda.get("telefono")),
@@ -402,6 +416,26 @@ if __name__ == "__main__":
                        territorio=None, anagrafica={}, segnali=[],
                        classe="B", esito_fetch="OK", ciclo_id="c")
     assert r_p["provincia"] == "Oltrepo"
+
+    # senza sede_provincia la si ricava dal comune della scheda Maps...
+    r_c = riga_azienda({"nome": "C", "fonte": "maps", "comune": "Guidonia Montecelio"},
+                       dati={"classificazione": "TARGET", "confidenza": "ALTA"},
+                       territorio=None, anagrafica={}, segnali=[], classe="B",
+                       esito_fetch="nessun_sito", ciclo_id="c")
+    assert r_c["provincia"] == "RM"
+    # ...ma quella DICHIARATA vince: e' piu' specifica e puo' essere un'altra sede
+    r_c = riga_azienda({"nome": "C", "fonte": "maps", "comune": "Roma"},
+                       dati={"classificazione": "TARGET", "confidenza": "ALTA",
+                             "sede_provincia": "Viterbo"},
+                       territorio=None, anagrafica={}, segnali=[], classe="B",
+                       esito_fetch="OK", ciclo_id="c")
+    assert r_c["provincia"] == "VT"
+    # comune fuori tabella: si lascia vuoto invece di indovinare
+    r_c = riga_azienda({"nome": "C", "fonte": "maps", "comune": "Ariccia"},
+                       dati={"classificazione": "TARGET", "confidenza": "ALTA"},
+                       territorio=None, anagrafica={}, segnali=[], classe="B",
+                       esito_fetch="nessun_sito", ciclo_id="c")
+    assert r_c["provincia"] is None
 
     # verniciatura interna: segnale, mai livello_fornitura
     assert verniciatura_interna({"motivazione": "esegue verniciatura a polvere interna"})

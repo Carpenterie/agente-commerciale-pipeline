@@ -19,14 +19,24 @@ import sys
 
 import config
 import db
+from data import comuni_lazio
 
 
 def da_correggere(righe: list[dict]) -> list[tuple[dict, str]]:
-    """-> [(riga, sigla_nuova)] solo dove il valore cambia davvero."""
+    """-> [(riga, sigla_nuova)] solo dove il valore cambia davvero.
+
+    Due casi: un nome per esteso da convertire in sigla, oppure un campo
+    VUOTO da ricavare dal comune. Le province gia' valorizzate non si
+    toccano mai: il dato dal sito e' piu' specifico e potrebbe riferirsi a
+    una sede diversa da quella della scheda Maps.
+    """
     fuori = []
     for r in righe:
         vecchio = (r.get("provincia") or "").strip()
         if not vecchio:
+            dal_comune = comuni_lazio.provincia_di(r.get("comune"))
+            if dal_comune:
+                fuori.append((r, dal_comune))
             continue
         nuovo = config.sigla_provincia(vecchio)
         if nuovo and nuovo != vecchio:
@@ -39,7 +49,7 @@ def main() -> int:
     sb = db.client()
     righe, off = [], 0
     while True:
-        b = sb.table("aziende").select("id,ragione_sociale,provincia").range(
+        b = sb.table("aziende").select("id,ragione_sociale,provincia,comune").range(
             off, off + 999).execute().data
         righe += b
         if len(b) < 1000:
@@ -50,9 +60,14 @@ def main() -> int:
     print(f"righe in archivio: {len(righe)}")
     print(f"da correggere:     {len(fuori)}\n")
     for (vecchio, nuovo), n in sorted(collections.Counter(
-            ((r.get("provincia"), s) for r, s in fuori)).items(),
-            key=lambda x: -x[1]):
-        print(f"  {vecchio:<14} -> {nuovo}   {n:>4} righe")
+            ((r.get("provincia") or "(vuota, dal comune)", s)
+             for r, s in fuori)).items(), key=lambda x: -x[1]):
+        print(f"  {vecchio:<24} -> {nuovo}   {n:>4} righe")
+    resta_vuota = [r for r in righe if not (r.get("provincia") or "").strip()
+                   and not comuni_lazio.provincia_di(r.get("comune"))]
+    print(f"\n  restano senza provincia: {len(resta_vuota)}"
+          f"  (di cui {sum(1 for r in resta_vuota if not (r.get('comune') or '').strip())}"
+          f" senza nemmeno il comune)")
 
     # cio' che resta fuori tabella: va guardato, non corretto alla cieca
     ignoti = {(r.get("provincia") or "").strip() for r in righe
@@ -77,9 +92,14 @@ if __name__ == "__main__":
     if "--test" in sys.argv:
         righe = [{"provincia": "Roma"}, {"provincia": "RM"}, {"provincia": ""},
                  {"provincia": None}, {"provincia": "Frosinone"},
-                 {"provincia": "Oltrepo"}]
+                 {"provincia": "Oltrepo"},
+                 {"provincia": "", "comune": "Tivoli"},        # si popola
+                 {"provincia": "", "comune": "Ariccia"},       # fuori tabella
+                 {"provincia": "VT", "comune": "Roma"}]        # NON si tocca
         esiti = da_correggere(righe)
-        assert [s for _, s in esiti] == ["RM", "FR"], esiti
+        assert [s for _, s in esiti] == ["RM", "FR", "RM"], esiti
+        assert not any(r.get("provincia") == "VT" for r, _ in esiti), \
+            "una provincia gia' valorizzata non si sovrascrive col comune"
         # una sigla gia' giusta non si riscrive, e l'ignota non si tocca
         assert not any(r.get("provincia") in ("RM", "Oltrepo") for r, _ in esiti)
         print("ok")

@@ -303,13 +303,21 @@ lascia invariato e si logga, invece di indovinare una sigla. Le righe già
 scritte si sistemano con `python normalizza_province.py --applica` (107
 corrette il 2026-09-09, nessun valore lungo rimasto).
 
-**Restano 772 righe con la provincia vuota**, ed è un problema diverso: la
-provincia viene da `sede_provincia`, che il modello legge dalla pagina
-contatti. 338 di quelle aziende non hanno sito e 68 hanno il fetch fallito,
-quindi non c'è pagina da leggere; le altre 366 hanno una pagina ma non una
-sede dichiarata. **722 su 772 hanno però il comune**, che arriva da Google
-Maps: se il filtro per provincia dovesse coprirle, la strada è derivarla dal
-comune, non dal sito.
+Quando `sede_provincia` è vuota — succede spesso: chi non ha sito non ha una
+pagina contatti da leggere — la sigla si **ricava dal comune** della scheda
+Maps, che è anagrafica (`comuni_lazio.provincia_di()`). La provincia
+dichiarata dal sito **ha sempre la precedenza e non si sovrascrive mai**: è
+più specifica e può riferirsi a una sede diversa da quella della scheda.
+
+**Restano 492 righe senza provincia**, ed è un limite della tabella, non un
+bug: `data/comuni_lazio.py` contiene i **90 comuni da interrogare** su Maps,
+non i 378 del Lazio. Ariccia, Artena o Tivoli Terme non ci sono, e un comune
+fuori tabella si lascia vuoto invece di indovinarlo. Cinquanta di quelle
+righe non hanno nemmeno il comune.
+
+**Allargare `COMUNI` non è la soluzione**: quella lista guida il sourcing, e
+ogni comune aggiunto costa 3 query Maps a ogni ciclo. Se servisse più
+copertura, la strada è una tabella separata di sola consultazione.
 
 ## Portali di intermediazione
 
