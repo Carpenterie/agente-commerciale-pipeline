@@ -58,6 +58,9 @@ Rispondi con questo schema esatto:
     assente — MAI dedotto dal nome dell'azienda o dal dominio",
   "sede_provincia": "provincia della sede, stessa regola; null se assente",
   "sede_regione": "regione della sede, stessa regola; null se assente",
+  "partita_iva": "le 11 cifre della partita IVA se compaiono nel sito (di
+    solito nel footer, accanto a ragione sociale e sede legale); solo le
+    cifre, senza 'IT' e senza punti; null se non c'è",
   "email_aziendale": "se presente nel sito, altrimenti null",
   "telefono": "se presente nel sito, altrimenti null",
   "categoria": "fabbro" | "serramentista" | "showroom" | "impresa_edile" |

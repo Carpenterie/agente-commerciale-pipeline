@@ -199,7 +199,9 @@ def arricchisci_ab(azienda: dict, esito: dict, totali: dict,
         return {}, segnali
 
     stat["arricchibili"] = stat.get("arricchibili", 0) + 1
-    anagrafica = arricchimento_sicuro(azienda, nome, totali, provincia)
+    anagrafica = arricchimento_sicuro(
+        azienda, nome, totali, provincia,
+        piva=(dati.get("partita_iva") or "").strip())
     if anagrafica:
         stat["arricchite"] += 1
         comune_sito = (dati.get("sede_comune") or "").strip()
@@ -229,11 +231,16 @@ def arricchisci_ab(azienda: dict, esito: dict, totali: dict,
 
 
 def arricchimento_sicuro(azienda: dict, nome: str, totali: dict,
-                         provincia: str = "") -> dict:
-    """Senza P.IVA servono due chiamate (search + advanced): le registra
-    entrambe, altrimenti il costo del ciclo è sottostimato della metà."""
+                         provincia: str = "", piva: str = "") -> dict:
+    """Con la P.IVA basta UNA chiamata (IT-advanced diretta); senza, ne
+    servono due (IT-search per l'id, poi IT-advanced) e la ricerca per nome
+    "prende il primo" fra gli omonimi. Da quando il modello estrae la P.IVA
+    dal sito, la strada corta e' quella normale: costa meta' ed e' esatta.
+    Le chiamate si registrano tutte, altrimenti il costo del ciclo e'
+    sottostimato."""
+    piva = (piva or azienda.get("piva") or "").strip()
     dati = arricchimento.arricchisci(
-        nome, piva=(azienda.get("piva") or "").strip(), provincia=provincia) or {}
+        nome, piva=piva, provincia=provincia) or {}
     costi.registra_openapi(totali, dati.get("chiamate", 1) if dati else 1)
     return dati
 

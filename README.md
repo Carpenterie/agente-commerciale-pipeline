@@ -171,6 +171,31 @@ Apify già pagati e i 59 di Roma, **il ciclo completo sulle cinque province
 costa 230-245 EUR** — contro i 61 del preventivo che il cliente aveva
 approvato.
 
+## La partita IVA viene dal sito, non da Openapi
+
+Nel footer l'azienda dichiara **la propria** P.IVA, accanto a ragione
+sociale, sede legale e numero REA. Openapi invece la deduce da una ricerca
+per denominazione che **prende il primo fra gli omonimi**. Misurato sulle 53
+righe dove esistevano entrambe: **concordano nel 72%**, e nei discordi
+esaminati uno per uno aveva ragione il sito.
+
+Quindi il sito ha la precedenza in `db.riga_azienda`, il prompt chiede al
+modello di estrarla (nessun costo aggiuntivo: legge già quel testo), e
+`piva_da_sito.py` la recupera dalle pagine **già in cache** con una regex
+validata dal **checksum** della partita IVA italiana — senza il checksum un
+numero di telefono di undici cifre passerebbe per P.IVA.
+
+Risultato del 2026-09-14 sulla classe A: **da 32% a 86% di copertura**, 90
+campi vuoti riempiti e 12 valori di Openapi corretti. Sulle 12 corrette sono
+stati **azzerati anche `n_dipendenti` e `struttura`**: se la P.IVA era di
+un'altra azienda, lo erano anche gli altri dati della stessa visura.
+
+**Openapi ora chiama diretto.** Con la P.IVA basta `IT-advanced` (una
+chiamata); senza servono `IT-search` più `IT-advanced` (due, e con il
+rischio omonimi). Da 1,32 chiamate per azienda arricchita a **1,04**: circa
+**11 EUR in meno** sulle quattro province restanti, il 21% della voce
+Openapi — e soprattutto senza più omonimi.
+
 ## Deploy su Hetzner
 
 ```bash

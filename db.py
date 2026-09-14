@@ -191,7 +191,12 @@ def riga_azienda(scheda: dict, dati: dict | None = None,
     return {
         "ciclo_id": ciclo_id,
         "ragione_sociale": (scheda.get("nome") or "").strip(),
-        "partita_iva": _testo(anagrafica.get("piva")),
+        # il sito vince su Openapi: nel footer l'azienda dichiara la
+        # PROPRIA, mentre Openapi la deduce da una ricerca per nome che
+        # prende il primo fra gli omonimi. Misurato: concordano nel 72%, e
+        # nei discordi esaminati aveva ragione il sito.
+        "partita_iva": (_testo(dati.get("partita_iva"))
+                        or _testo(anagrafica.get("piva"))),
         "dominio": dominio or None,
         "sito": _testo(scheda.get("sito")),
         # sede: Openapi (legale) > modello (pagina contatti) > Maps
@@ -413,6 +418,22 @@ if __name__ == "__main__":
                        dati={"classificazione": "TARGET", "confidenza": "ALTA"},
                        classe="A", esito_fetch="OK")
     assert exc["segnali"][0]["tipo"] == "ex_cliente"
+
+    # la P.IVA del sito ha la precedenza su quella di Openapi
+    r_pv = riga_azienda(
+        {"nome": "PV", "fonte": "maps"},
+        dati={"classificazione": "TARGET", "confidenza": "ALTA",
+              "partita_iva": "06330721009"},
+        territorio=None, anagrafica={"piva": "05962321005"}, segnali=[],
+        classe="A", esito_fetch="OK", ciclo_id="c")
+    assert r_pv["partita_iva"] == "06330721009", r_pv["partita_iva"]
+    # se il sito non la dichiara, resta quella di Openapi
+    r_pv = riga_azienda(
+        {"nome": "PV", "fonte": "maps"},
+        dati={"classificazione": "TARGET", "confidenza": "ALTA"},
+        territorio=None, anagrafica={"piva": "05962321005"}, segnali=[],
+        classe="A", esito_fetch="OK", ciclo_id="c")
+    assert r_pv["partita_iva"] == "05962321005"
 
     # provincia: in archivio va SEMPRE la sigla, mai il nome per esteso
     base = {"nome": "P", "fonte": "maps"}
