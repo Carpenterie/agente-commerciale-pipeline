@@ -190,6 +190,13 @@ campi vuoti riempiti e 12 valori di Openapi corretti. Sulle 12 corrette sono
 stati **azzerati anche `n_dipendenti` e `struttura`**: se la P.IVA era di
 un'altra azienda, lo erano anche gli altri dati della stessa visura.
 
+La contaminazione non era teorica: **8 di quelle 12 avevano anche il comune
+sbagliato**, e due la provincia. `Infissi Nettunense` risultava a Roma ed è
+ad Aprilia (LT), `S.A.F.` a Roma ed è a Fara in Sabina (RI), `Dear srl` a
+Genazzano ed è a Guidonia. Ricostruiti dalla **scheda Maps** in cache, che
+per comune e provincia è anagrafica e non deduzione. È il campo su cui il
+commerciale decide se vale il viaggio.
+
 **Openapi ora chiama diretto.** Con la P.IVA basta `IT-advanced` (una
 chiamata); senza servono `IT-search` più `IT-advanced` (due, e con il
 rischio omonimi). Da 1,32 chiamate per azienda arricchita a **1,04**: circa
