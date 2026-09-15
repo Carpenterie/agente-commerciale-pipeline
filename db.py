@@ -228,6 +228,8 @@ def riga_azienda(scheda: dict, dati: dict | None = None,
         "prodotto_apertura": _testo(dati.get("prodotto_da_proporre")),
         "gamma": _lista(dati.get("gamma")),
         "leva_commerciale": _testo(dati.get("leva_commerciale")),
+        "referente_nome": _testo(dati.get("referente_nome")),
+        "referente_ruolo": _testo(dati.get("referente_ruolo")),
         "livello_fornitura": _fornitura(categoria, officina),
         # valore GREZZO del modello, accanto al giudizio commerciale `classe`
         "esito_analisi": _testo(dati.get("classificazione")),

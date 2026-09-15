@@ -273,6 +273,21 @@ server ha la sua.
 
 ## Quando un ciclo notturno fallisce
 
+**Una chiamata all'API che non risponde non blocca più il ciclo.** Fino al
+2026-09-15 `classify.classifica` non impostava nessun timeout: un giro di
+rianalisi è rimasto fermo **89 minuti su una sola chiamata**, con 6 secondi
+di CPU e il socket verso `api.anthropic.com` in `ESTAB` senza dati. Di notte
+il cron sarebbe rimasto appeso fino al mattino — nessun errore, nessuna
+uscita diversa da zero, nessuna riga nel log. Ora `config.TIMEOUT_ANTHROPIC_S`
+(180 s) vale su ogni chiamata e un assert nel self-check fallisce se
+qualcuno lo toglie. Il client SDK va costruito con `max_retries=1`: ne
+farebbe due per conto suo, che sommate al retry di `classifica` fanno fino a
+18 minuti su una singola scheda incagliata.
+
+Chi lancia un giro lungo sul server usi `python -u` e un avanzamento
+frequente: `print` verso file è bufferizzato a blocchi, e senza quelli un
+processo bloccato sembra identico a uno che lavora.
+
 Il cron scrive in `/var/log/pipeline-<provincia>.log` e **l'ultima riga dice
 in chiaro com'è andata**: `ESITO: ciclo COMPLETATO — 934 aziende lavorate,
 36.69 EUR` oppure `ESITO: ciclo FALLITO — <motivo>`. È la prima cosa da
@@ -626,7 +641,20 @@ per run indipendentemente da quante aziende contiene il campione.
 **Finstral e Loi Carpenterie sono i due casi permanentemente instabili del
 campione.** Se il regression fallisce solo su questi due nomi, **non è una
 regressione**: sono aziende sul confine, e a parità di prompt e
-`temperature=0` oscillano fra TARGET e NON_TARGET. Loi ne ha attraversate
+`temperature=0` oscillano fra TARGET e NON_TARGET.
+
+**Loi vale TARGET dal 2026-09-15, per allineare la baseline al criterio,
+non perché il modello si sia stabilizzato.** In sessione il committente ha
+chiarito che l'autonomia produttiva non è motivo di esclusione — «se vende
+al privato non è il mio concorrente, io non vendo al privato» — e il terzo
+blocco anti-errore lo mette nel prompt. Il vecchio valore NON_TARGET
+proteggeva una regola morta, quindi è stato sostituito.
+
+Ma **Loi continua a oscillare**: nel giro successivo alla ricongelazione il
+modello l'ha riportata a NON_TARGET, citando la regola sulle carpenterie
+strutturali. Congelare TARGET dice qual è il criterio giusto, non rende
+verde il gate. Su questi due nomi il rosso resta atteso circa una volta su
+due, in entrambe le direzioni. Loi ne ha attraversate
 cinque durante l'evoluzione dei criteri; **Finstral ha dato tre esiti in tre
 run consecutivi il 2026-09-07** — TARGET, NON_TARGET, TARGET — a parità di
 prompt, di chiave e di cache. Ogni motivazione era difendibile.

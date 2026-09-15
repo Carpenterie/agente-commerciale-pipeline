@@ -58,6 +58,11 @@ Rispondi con questo schema esatto:
     stabilimenti; impianti interni (verniciatura a polvere, zincatura,
     taglio laser). Una voce per elemento, breve"],
   "segnali_dubbio": ["elementi mancanti o ambigui che abbassano la confidenza"],
+  "specializzazione_esclusiva": "SI se l'azienda dichiara di lavorare un
+    solo materiale (per esempio 'specializzati in alluminio', un unico
+    marchio di sistema) E non mostra alcun prodotto in ferro o acciaio;
+    NO altrimenti. Resta comunque un potenziale cliente: serve solo a dire
+    quanto è probabile che risponda",
   "gamma": ["linee che l'azienda tratta OGGI, scelte fra: persiane, grate,
     cancelli, recinzioni, porte blindate, zanzariere, finestre, portoni,
     ringhiere, scale. Solo quelle documentate sul sito, [] se nessuna"],
@@ -77,11 +82,30 @@ Rispondi con questo schema esatto:
   "partita_iva": "le 11 cifre della partita IVA se compaiono nel sito (di
     solito nel footer, accanto a ragione sociale e sede legale); solo le
     cifre, senza 'IT' e senza punti; null se non c'è",
+  "referente_nome": "nome e cognome di una persona che LAVORA nell'azienda,
+    se il sito lo dichiara; null altrimenti",
+  "referente_ruolo": "il suo ruolo come lo scrive il sito (titolare, socio,
+    responsabile commerciale, referente tecnico...); null altrimenti",
   "email_aziendale": "se presente nel sito, altrimenti null",
   "telefono": "se presente nel sito, altrimenti null",
   "categoria": "fabbro" | "serramentista" | "showroom" | "impresa_edile" |
     "costruttore" | "artigiano" | "montatore" | "ferramenta" | "altro"
 }
+
+CHI E' UN REFERENTE E CHI NO: estrai nome e ruolo solo di persone che
+lavorano nell'azienda — titolare, socio, responsabile commerciale, referente
+tecnico. NON estrarre nomi di clienti, testimonianze, recensioni, fornitori
+o consulenti esterni. Se il nome compare in una citazione di un cliente
+soddisfatto, non è un referente. Se non sei sicuro che la persona lavori
+nell'azienda, lascia vuoto.
+
+LIVELLO DI FORNITURA — l'argomento di vendita deve essere coerente con
+quello che l'azienda può usare. Showroom, rivenditori, montatori e imprese
+edili senza officina acquistano il PRODOTTO FINITO, verniciato e pronto alla
+posa: non proporre loro il kit da assemblare. Fabbri e serramentisti con
+officina propria possono usare il kit semilavorato oppure l'assemblato
+grezzo, e per loro vanno menzionate entrambe le possibilità. Se l'officina
+non è accertata, parla di fornitura senza specificare il livello.
 
 COME SCRIVERE LA LEVA COMMERCIALE — due casi che si sbagliano spesso:
 
@@ -90,7 +114,13 @@ COME SCRIVERE LA LEVA COMMERCIALE — due casi che si sbagliano spesso:
    kit di componenti tagliati, forati e codificati al posto della
    lavorazione interna, che le toglie taglio, foratura, sfridi e
    misurazioni su una lavorazione che fa comunque. Dillo esplicitamente.
-2. Se il sito dichiara VERNICIATURA O ZINCATURA eseguite internamente
+2. Se l'azienda HA OFFICINA, non scegliere tu fra kit e assemblato grezzo:
+   nomina entrambe le possibilità. C'è chi vuole lavorare il pezzo (kit di
+   componenti tagliati e forati) e chi, pur sapendo lavorare il ferro,
+   preferisce ricevere il manufatto già montato e occuparsi solo di
+   verniciatura e posa — per non gestire l'officina su quella commessa o
+   per non avere abbastanza persone.
+3. Se il sito dichiara VERNICIATURA O ZINCATURA eseguite internamente
    (verniciatura a polvere, a forno, impianto di verniciatura, zincatura a
    caldo), l'azienda ha l'impianto ma potrebbe non voler fare taglio e
    assemblaggio: proponi nella leva l'ASSEMBLATO GREZZO, cioè il prodotto
@@ -147,6 +177,13 @@ in acciaio che oggi non riescono a soddisfare: sono target perché possono
 aggiungere quella linea con una fornitura finita, non perché ce l'abbiano
 già. L'assenza di prodotti in acciaio dal catalogo di un serramentista NON
 è motivo di esclusione.
+
+ATTENZIONE — TERZO ERRORE DA NON COMMETTERE: un'azienda con officina
+attrezzata, anche grande e con macchinari a controllo numerico, NON è un
+concorrente. Il committente vende a chi installa, non al cliente finale:
+qualunque azienda venda o installi al cliente finale è un potenziale
+cliente, indipendentemente da quanto sia attrezzata. Non usare mai
+l'autonomia produttiva come argomento per escludere.
 
 ATTENZIONE AL LESSICO: in italiano commerciale 'realizziamo', 'produciamo
 su misura' e 'costruiamo' sono usati anche da rivenditori e installatori

@@ -21,7 +21,8 @@ CAMPI = (
     "segnali_positivi", "segnali_dubbio", "prodotto_da_proporre",
     "sede_comune", "sede_provincia", "sede_regione",
     "email_aziendale", "telefono", "categoria", "partita_iva",
-    "gamma", "leva_commerciale",
+    "gamma", "leva_commerciale", "specializzazione_esclusiva",
+    "referente_nome", "referente_ruolo",
 )
 
 
@@ -49,6 +50,8 @@ def classifica(client, contenuto: str) -> dict:
             risposta = client.messages.create(
                 model=config.MODELLO, max_tokens=config.MAX_TOKENS_RISPOSTA,
                 temperature=0, messages=messaggio,
+                # senza questo una risposta che non arriva blocca tutto
+                timeout=config.TIMEOUT_ANTHROPIC_S,
             )
             testo = next(b.text for b in risposta.content if b.type == "text")
             dati = estrai_json(testo)
@@ -65,7 +68,7 @@ def classifica(client, contenuto: str) -> dict:
 
 
 def classe_db(classificazione: str, confidenza: str, officina: str = "",
-              segnali: list | None = None) -> str:
+              segnali: list | None = None, specializzazione: str = "") -> str:
     """Priorità commerciale, non pertinenza: col perimetro allargato
     (2026-08-26) i TARGET sono la maggioranza, quindi la classe deve dire
     CHI CHIAMARE PRIMA.
@@ -75,17 +78,27 @@ def classe_db(classificazione: str, confidenza: str, officina: str = "",
       compra kit e ordina in continuità. DUE vie e non tre: la classe A
       deve voler dire UNA cosa leggibile ("ha un bisogno visibile, o ha
       un'officina"), altrimenti il commerciale non sa cosa sta guardando.
-    - B: TARGET senza segnali, confidenza alta o media
-    - C: TARGET con confidenza bassa, o INDETERMINATO con confidenza
-      alta o media (dubbio fondato)
+    - B: TARGET senza segnali, con confidenza ALTA
+    - C: TARGET su cui il sistema e' MENO SICURO (confidenza media o
+      bassa). Fino al 2026-09-15 la C era vuota: ci si arrivava solo con
+      TARGET+bassa o INDETERMINATO+alta/media, combinazioni che il modello
+      non produce mai — un TARGET non lo da' mai con confidenza bassa e un
+      INDETERMINATO sempre con confidenza bassa. Le target incerte
+      finivano in B mescolate a quelle certe.
     - indeterminato: il resto
+
+    Una SPECIALIZZAZIONE ESCLUSIVA su un materiale (solo alluminio, un solo
+    sistema, nessun prodotto in ferro) non esclude — resta un potenziale
+    cliente — ma preclude la classe A: se ha scelto una linea precisa, e'
+    piu' probabile che dica di no all'acciaio.
     """
     if classificazione == "TARGET":
-        if segnali:
+        mono = str(specializzazione or "").strip().upper() == "SI"
+        if segnali and not mono:
             return "A"
-        if officina.strip().upper() == "SI" and confidenza == "ALTA":
+        if officina.strip().upper() == "SI" and confidenza == "ALTA" and not mono:
             return "A"
-        return "B" if confidenza in ("ALTA", "MEDIA") else "C"
+        return "B" if confidenza == "ALTA" else "C"
     if classificazione == "INDETERMINATO" and confidenza in ("ALTA", "MEDIA"):
         return "C"
     return "indeterminato"
@@ -110,6 +123,12 @@ if __name__ == "__main__":
     for campo in ('"gamma"', '"leva_commerciale"'):
         assert campo in prompts.PROMPT, campo
     assert "COME SCRIVERE LA LEVA COMMERCIALE" in prompts.PROMPT
+    assert "TERZO ERRORE DA NON COMMETTERE" in prompts.PROMPT
+    assert "LIVELLO DI FORNITURA" in prompts.PROMPT
+    assert "non proporre loro il kit da assemblare" in prompts.PROMPT
+    assert "Non usare mai\nl'autonomia produttiva come argomento per escludere" \
+        in prompts.PROMPT
+    assert '"specializzazione_esclusiva"' in prompts.PROMPT
     assert "ASSEMBLATO GREZZO" in prompts.PROMPT
     assert "UNI EN 1090" in prompts.PROMPT
     for pezzo in ("DEFINIZIONI DEL CLIENTE", "sede_comune", "sede_provincia",
@@ -153,13 +172,20 @@ if __name__ == "__main__":
     # B: TARGET senza segnali
     assert classe_db("TARGET", "ALTA", "NO") == "B"       # niente officina
     assert classe_db("TARGET", "ALTA", "NON_DETERMINABILE") == "B"
-    assert classe_db("TARGET", "MEDIA", "SI") == "B"      # officina ma confidenza media
-    assert classe_db("TARGET", "MEDIA") == "B"
+    # dal 2026-09-15 la confidenza MEDIA porta in C, non in B
+    assert classe_db("TARGET", "MEDIA", "SI") == "C"
+    assert classe_db("TARGET", "MEDIA") == "C"
+    assert classe_db("TARGET", "BASSA") == "C"
+    # la specializzazione esclusiva non esclude, ma preclude la A
+    assert classe_db("TARGET", "ALTA", "SI", None, "SI") == "B"
+    assert classe_db("TARGET", "ALTA", "SI", annuncio, "SI") == "B"
+    assert classe_db("TARGET", "ALTA", "SI", annuncio, "NO") == "A"
+    assert classe_db("TARGET", "MEDIA", "NO", annuncio, "SI") == "C"
     # la REPUTAZIONE non concorre piu' alla classe (rimossa il 2026-09-07):
     # resta nei segnali, visibile in scheda, ma non promuove nessuno. Un
     # rivenditore molto recensito e senza officina deve restare B.
     assert classe_db("TARGET", "ALTA", "NO") == "B"
-    assert classe_db("TARGET", "MEDIA", "NO") == "B"
+    assert classe_db("TARGET", "MEDIA", "NO") == "C"
     assert "reputazione" not in classe_db.__doc__.lower(), \
         "la via 3 e' stata rimossa: non deve tornare nella docstring"
 
@@ -194,6 +220,8 @@ if __name__ == "__main__":
             def create(**kwargs):
                 assert kwargs["temperature"] == 0
                 assert kwargs["model"] == config.MODELLO
+                assert kwargs["timeout"] == config.TIMEOUT_ANTHROPIC_S, \
+                    "senza timeout una chiamata appesa blocca il ciclo"
                 return type("R", (), {"content": [_Blocco()], "usage": _Usage()})()
 
     dati = classifica(_FakeClient(), "contenuto")

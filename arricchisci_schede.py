@@ -12,14 +12,21 @@ I segnali gia' presenti (reputazione, territorio, ex cliente, verniciatura,
 annuncio di lavoro) restano: si sostituiscono solo quelli di tipo
 `dal_sito`, cosi' il comando e' ripetibile senza accumulare doppioni.
 
-    python arricchisci_schede.py                # quante sono, costo stimato
-    python arricchisci_schede.py --applica
+    python arricchisci_schede.py                  # quante sono, costo stimato
+    python arricchisci_schede.py --proponi        # analizza e SALVA le proposte
+    python arricchisci_schede.py --applica-proposte   # scrive quelle salvate
+    python arricchisci_schede.py --applica        # analizza e scrive in un colpo
+
+`--proponi` esiste per non pagare due volte: l'analisi costa, quindi si fa
+una volta sola e il risultato resta su disco finche' non si decide.
 """
 
 from __future__ import annotations
 
 import asyncio
+import collections as _c
 import json
+import pathlib
 import statistics
 import sys
 
@@ -58,7 +65,20 @@ def fotografia(righe: list[dict]) -> dict:
     }
 
 
+PROPOSTE = pathlib.Path("proposte_arricchimento.json")
+
+
+def cambio_classe(r: dict, d: dict) -> bool:
+    """La classificazione cambierebbe? Allora la riga NON si tocca: quella
+    in archivio e' validata, e cambiare la categoria sotto una classe
+    validata lascerebbe la scheda incoerente."""
+    nuovo = d.get("classificazione")
+    return bool(nuovo) and nuovo != r.get("esito_analisi")
+
+
 def main() -> int:
+    proponi = "--proponi" in sys.argv
+    applica_proposte = "--applica-proposte" in sys.argv
     applica = "--applica" in sys.argv
     classe = sys.argv[sys.argv.index("--classe") + 1] if "--classe" in sys.argv else "A"
 
@@ -74,21 +94,35 @@ def main() -> int:
             break
         off += 1000
 
-    fuori = da_arricchire(righe, classe)
+    if applica_proposte:
+        salvate = json.loads(PROPOSTE.read_text(encoding="utf-8"))
+        for riga in salvate["proposte"]:
+            sb.table("aziende").update(riga["agg"]).eq("id", riga["id"]).execute()
+        print(f"{len(salvate['proposte'])} schede aggiornate dalle proposte del "
+              f"{salvate['quando']}.")
+        print(f"bloccate perche' cambierebbe la classificazione: "
+              f"{len(salvate['bloccate'])}")
+        return 0
+
+    classi = [classe] if classe != "TUTTE" else ["A", "B", "C"]
+    fuori = [r for c in classi for r in da_arricchire(righe, c)]
     prima = fotografia(fuori)
-    print(f"classe {classe} con sito: {prima['righe']}")
+    print(f"classi {','.join(classi)} con sito: {prima['righe']}")
     print(f"  PRIMA — gamma {prima['gamma']}, leva {prima['leva']}, "
           f"prodotto {prima['prodotto']}, segnali medi {prima['segnali_medi']}")
     print(f"  costo stimato: ~{prima['righe'] * 0.064:.2f} EUR")
-    if not applica:
-        print("\n(prova: nessuna scrittura. Rilancia con --applica)")
+    if not (applica or proponi):
+        print("\n(prova: nessuna analisi. Rilancia con --proponi)")
         return 0
 
     from anthropic import Anthropic
 
-    client = Anthropic()
+    # max_retries=1: il client SDK ne farebbe due per conto suo, che sommate
+    # al nostro retry fanno fino a 18 minuti su una sola scheda incagliata
+    client = Anthropic(max_retries=1)
     totali = costi.nuovo_ciclo()
     fatte, saltate, cambierebbero = 0, [], []
+    proposte, bloccate, cat_cambiate, liv_cambiati = [], [], [], []
     for i, r in enumerate(fuori, 1):
         nome = (r["ragione_sociale"] or "?")[:40]
         esito, contenuto, _ = asyncio.run(fetch.fetch_azienda(None, r["sito"]))
@@ -114,10 +148,50 @@ def main() -> int:
             agg["prodotto_apertura"] = db._testo(d.get("prodotto_da_proporre"))
         if db._testo(d.get("motivazione")):
             agg["motivazione"] = db._testo(d.get("motivazione"))
-        sb.table("aziende").update(agg).eq("id", r["id"]).execute()
+        # categoria, officina e livello: la categoria in archivio viene da
+        # un prompt precedente al cambio di perimetro, non e' un dato
+        # validato. Ma se cambia anche la CLASSIFICAZIONE la riga si salta:
+        # quella e' validata e la scheda resterebbe incoerente.
+        if cambio_classe(r, d):
+            bloccate.append((nome, r.get("esito_analisi"), d["classificazione"]))
+            continue
+        cat = db._enum(d.get("categoria"), config.ENUM_CATEGORIA, None)
+        off_ = db._enum(d.get("capacita_officina"), config.ENUM_TERNARIO,
+                        "non_determinabile")
+        agg["categoria"] = cat
+        agg["officina_propria"] = off_
+        agg["livello_fornitura"] = db._fornitura(cat, off_)
+        if cat != r.get("categoria"):
+            cat_cambiate.append((r.get("categoria"), cat))
+        if agg["livello_fornitura"] != r.get("livello_fornitura"):
+            liv_cambiati.append((r.get("livello_fornitura"), agg["livello_fornitura"]))
+        proposte.append({"id": r["id"], "nome": nome, "agg": agg})
+        if applica:
+            sb.table("aziende").update(agg).eq("id", r["id"]).execute()
         fatte += 1
-        if i % 20 == 0:
-            print(f"  [{i}/{len(fuori)}]")
+        if i % 10 == 0:
+            # flush: su file il print e' bufferizzato e l'avanzamento
+            # resterebbe invisibile per minuti
+            print(f"  [{i}/{len(fuori)}]", flush=True)
+
+    import datetime
+    if proponi:
+        PROPOSTE.write_text(json.dumps(
+            {"quando": datetime.datetime.now().isoformat(timespec="seconds"),
+             "proposte": proposte, "bloccate": bloccate}), encoding="utf-8")
+        print(f"\nanalizzate {fatte}, salvate in {PROPOSTE.name}. NESSUNA SCRITTURA.")
+        print(f"saltate (pagina non in cache): {len(saltate)}")
+        print(f"\nBLOCCATE perche' cambierebbe la CLASSIFICAZIONE: {len(bloccate)}")
+        for n, a, b_ in bloccate:
+            print(f"    {n[:38]:<40} {a} -> {b_}")
+        print(f"\nCATEGORIE che cambierebbero: {len(cat_cambiate)} su {fatte}")
+        for (da, a), n in _c.Counter(cat_cambiate).most_common():
+            print(f"    {str(da):<16} -> {str(a):<16} {n:>4}")
+        print(f"\nLIVELLO DI FORNITURA che cambierebbe: {len(liv_cambiati)}")
+        for (da, a), n in _c.Counter(liv_cambiati).most_common(8):
+            print(f"    {str(da):<18} -> {str(a):<18} {n:>4}")
+        costi.stampa(totali)
+        return 0
 
     dopo, off = [], 0
     while True:

@@ -28,6 +28,12 @@ PREZZO_OUTPUT_USD_PER_TOKEN = 15.00 / 1_000_000
 # ponytail: cambio fisso, non una chiamata a un servizio FX. Aggiornalo a mano se conta.
 USD_EUR = 0.92
 MAX_TOKENS_RISPOSTA = 2000
+# Senza timeout esplicito una risposta che non arriva blocca il processo per
+# sempre: il 2026-09-15 un giro di rianalisi e' rimasto fermo 89 minuti su
+# una sola chiamata, con 6 secondi di CPU e il socket in ESTAB. Di notte il
+# cron sarebbe rimasto appeso allo stesso modo, senza che nessuno lo sapesse.
+# 180 secondi sono larghi per una pagina da 15.000 parole ma finiti.
+TIMEOUT_ANTHROPIC_S = 180
 
 # --- Sourcing Maps via Apify (§4, dal test comparato) ---
 ATTORE_MAPS = "compass/crawler-google-places"  # store Apify: "Google Maps Scraper"
@@ -307,11 +313,16 @@ MOTIVO_EX_CLIENTE = "ex cliente"
 # classificata A, correttamente — non poteva sapere che era lei. Non e' un
 # cliente, quindi ha un motivo suo, ma ESCLUDE come loro.
 MOTIVO_COMMITTENTE = "azienda committente"
+# I fornitori del committente non sono prospect: gli vendono, non comprano.
+# Erano una categoria che non esisteva, e uno (Codognola Serramenti) e'
+# finito in elenco. Il committente fornisce la lista.
+MOTIVO_FORNITORE = "fornitore"
 # Chi porta uno di questi motivi esce dalla ricerca; tutto il resto sono ex
 # clienti, che si marcano e restano. Il confronto era `== MOTIVO_CLIENTE_ATTIVO`
 # in tre punti: un motivo nuovo sarebbe finito fra gli ex e avrebbe MARCATO
 # il committente invece di escluderlo.
-MOTIVI_CHE_ESCLUDONO = (MOTIVO_CLIENTE_ATTIVO, MOTIVO_COMMITTENTE)
+MOTIVI_CHE_ESCLUDONO = (MOTIVO_CLIENTE_ATTIVO, MOTIVO_COMMITTENTE,
+                        MOTIVO_FORNITORE)
 
 
 def esclude(motivo: str | None) -> bool:
@@ -364,8 +375,10 @@ FIRMA_EMAIL = "Carpenterie Laziali"
 SITO_EMAIL = ""
 # Link usati dai due testi del catalogo. Vuoti finche' non arrivano: la
 # frase che li conterrebbe sparisce, mai un segnaposto in chiaro.
+# versione leggera, 3 MB invece di 29: un allegato da 29 MB rimbalza su
+# molte caselle aziendali
 LINK_CATALOGO = ("https://pvxzrfthfhbhslxhjihu.supabase.co/storage/v1/object/"
-                 "public/catalogo%20pubblico/Catalogo%20Carpenterie%20Laziali.pdf")
+                 "public/catalogo%20pubblico/Catalogo-Carpenterie-Laziali.pdf")
 LINK_PRENOTAZIONE = ""    # es. "cal.com/carpenterielaziali/10min"
 # Parole che non devono MAI comparire in una bozza: il PDF vieta di citare
 # gli annunci di lavoro, e la guida vieta claim su tempi e certificazioni.
@@ -396,6 +409,7 @@ if __name__ == "__main__":
         assert sigla in PROVINCE
 
     assert esclude(MOTIVO_CLIENTE_ATTIVO) and esclude(MOTIVO_COMMITTENTE)
+    assert esclude(MOTIVO_FORNITORE) and esclude(" Fornitore ")
     assert esclude(" Cliente Attivo ")          # il file e' compilato a mano
     assert not esclude(f"{MOTIVO_EX_CLIENTE}: perso per prezzo")
     assert not esclude("") and not esclude(None)
