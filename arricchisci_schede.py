@@ -36,6 +36,16 @@ import costi
 import db
 import fetch
 
+# Campi che il modello produce e che questo script DEVE scrivere. Il
+# 2026-09-15 referente_nome e referente_ruolo erano nel prompt, in
+# classify.CAMPI e in db.riga_azienda, ma non qui: sono stati estratti su
+# 265 schede e buttati, e il giro e' costato 20 EUR da rifare. Il self-check
+# confronta questa lista con i campi che l'aggiornamento scrive davvero.
+CAMPI_SCRITTI = ("gamma", "leva_commerciale", "referente_nome",
+                 "referente_ruolo", "segnali", "prodotto_apertura",
+                 "motivazione", "categoria", "officina_propria",
+                 "livello_fornitura")
+
 CONSERVATI = ("annuncio_lavoro", "reputazione_google", "territorio",
               "ex_cliente", "verniciatura_interna", "chiusa_temporaneamente",
               "fuori_territorio_sede_dichiarata")
@@ -140,6 +150,8 @@ def main() -> int:
         agg = {
             "gamma": db._lista(d.get("gamma")),
             "leva_commerciale": db._testo(d.get("leva_commerciale")),
+            "referente_nome": db._testo(d.get("referente_nome")),
+            "referente_ruolo": db._testo(d.get("referente_ruolo")),
             "segnali": segnali_uniti(r.get("segnali"),
                                      [db._testo(x) for x in
                                       (d.get("segnali_positivi") or []) if db._testo(x)]),
@@ -232,6 +244,11 @@ if __name__ == "__main__":
                  {"classe": "A", "stato": "da_lavorare", "sito": ""},
                  {"classe": "B", "stato": "da_lavorare", "sito": "http://z.it"}]
         assert len(da_arricchire(righe, "A")) == 1
+        # ogni campo dichiarato deve comparire davvero nel codice che scrive
+        sorgente = pathlib.Path(__file__).read_text(encoding="utf-8")
+        corpo = sorgente[sorgente.index("agg = {"):sorgente.index("proposte.append")]
+        for campo in CAMPI_SCRITTI:
+            assert f'"{campo}"' in corpo, f"{campo} dichiarato ma mai scritto"
         f = fotografia([{"segnali": [1, 2]}, {"segnali": []}, {"gamma": ["x"]}])
         assert f["segnali_medi"] == 0.67 and f["gamma"] == 1
         print("ok")

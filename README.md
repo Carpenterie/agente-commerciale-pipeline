@@ -580,6 +580,14 @@ officina, numero di sedi, impianti interni — entrano nei `segnali` con tipo
 
 `arricchisci_schede.py` popola le righe scritte prima, rileggendo dalla
 **cache** (nessun sito riscaricato) e **conservando la classificazione**.
+Un campo aggiunto al prompt va aggiunto **anche qui**: `CAMPI_SCRITTI`
+elenca quelli che lo script deve scrivere, e il self-check legge il proprio
+sorgente e fallisce se uno di essi non compare fra i campi aggiornati. Il
+2026-09-15 `referente_nome` e `referente_ruolo` erano nel prompt, in
+`classify.CAMPI` e in `db.riga_azienda` ma non nello script: il modello li
+ha prodotti su 265 schede e sono stati buttati, e il giro è costato 20 EUR
+da rifare.
+
 Eseguito il 2026-09-14 sulla classe A: **162 su 167** (5 senza pagina in
 cache), 12,47 EUR. `gamma` da 0 a 157, `leva_commerciale` da 0 a 159,
 segnali da **2,5 a 8,2 per scheda**. Tre classificazioni sarebbero cambiate

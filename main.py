@@ -350,7 +350,7 @@ async def esegui(args) -> int:
     # 3. analisi + scrittura, una alla volta: un crash a metà non lascia
     # il ciclo incoerente, le aziende già scritte restano (§12)
     client = Anthropic()
-    valutazioni, esiti_scrittura, n_in_target = [], [], 0
+    valutazioni, esiti_scrittura, n_in_target, esiti_righe = [], [], 0, []
     errori_di_fila, interrotto = 0, ""
     stat = {"classi": Counter(), "ruoli": Counter(), "con_segnale": 0,
             "saliti_ad_A": 0, "scesi_per_organico": 0, "arricchite": 0,
@@ -380,6 +380,7 @@ async def esegui(args) -> int:
                     anagrafica=anagrafica, segnali=segnali, classe=esito["classe"],
                     esito_fetch=esito["esito_fetch"], ciclo_id=ciclo_id,
                     pagine=esito["pagine"], costo=esito["costo"])
+                esiti_righe.append(riga)
                 if any(s.get("tipo") == "ex_cliente"
                        for s in (riga["segnali"] or [])):
                     stat["ex_in_riga"] += 1
@@ -471,6 +472,20 @@ async def esegui(args) -> int:
     if not ex_marcati:
         print("  nessun ex cliente fra le aziende trovate: la marcatura non è "
               "stata esercitata in questo ciclo")
+
+    # livello_fornitura vuoto: se diventa una quota alta il campo va
+    # ripensato. Resta vuoto di proposito quando l'officina non e'
+    # accertata — meglio nessuna proposta che la linea sbagliata.
+    ab = [r for r in esiti_righe if r.get("classe") in ("A", "B")]
+    senza_livello = [r for r in ab if not (r.get("livello_fornitura") or "").strip()]
+    if ab:
+        print(f"\nLIVELLO DI FORNITURA — classe A e B: {len(ab)} schede, "
+              f"{len(senza_livello)} senza livello "
+              f"({100 * len(senza_livello) / len(ab):.0f}%)")
+        if len(senza_livello) > len(ab) / 3:
+            print("  ATTENZIONE: piu' di un terzo senza livello. Il campo si "
+                  "svuota quando l'officina non e' accertata: se la quota "
+                  "resta alta, la regola va ripensata.")
 
     territorio.riepilogo(valutazioni)
     riepilogo = costi.stampa(totali, credito=sourcing_maps.credito())
