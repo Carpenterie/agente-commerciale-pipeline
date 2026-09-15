@@ -541,6 +541,35 @@ Le schede già `scartato` non entrano nel campione: sono fuori per decisione
 presa, non da giudicare. E il segnale `territorio` non si stampa — il comune
 si vede due righe sopra, e in sessione è rumore.
 
+## Cosa dire a questa azienda: `leva_commerciale` e `gamma`
+
+`leva_commerciale` è **una frase**, non un'etichetta: perché *questa* azienda
+dovrebbe interessarsi, basata su cosa dice il suo sito, nominando qualcosa
+di specifico e verificabile — un prodotto, una lavorazione, un impianto.
+
+Due casi che il prompt tratta a parte perché si sbagliano facilmente:
+
+- **se l'azienda produce già internamente** il prodotto che le proporremmo,
+  l'argomento non è il prodotto (ce l'ha) ma il **modo**: il kit al posto
+  della lavorazione interna, che le toglie taglio, foratura, sfridi e
+  misurazioni su una lavorazione che fa comunque;
+- **se dichiara verniciatura o zincatura interne**, ha l'impianto ma
+  potrebbe non voler fare taglio e assemblaggio: la leva propone
+  l'**assemblato grezzo**, che lei finisce con il proprio impianto.
+
+`gamma` elenca le linee trattate oggi (persiane, grate, cancelli, porte
+blindate, zanzariere…), e i `segnali_positivi` letti dal sito — anni di
+attività, certificazioni UNI EN 1090 / CE / ISO, showroom, metri quadri di
+officina, numero di sedi, impianti interni — entrano nei `segnali` con tipo
+`dal_sito` invece di restare sepolti nella motivazione.
+
+`arricchisci_schede.py` popola le righe scritte prima, rileggendo dalla
+**cache** (nessun sito riscaricato) e **conservando la classificazione**.
+Eseguito il 2026-09-14 sulla classe A: **162 su 167** (5 senza pagina in
+cache), 12,47 EUR. `gamma` da 0 a 157, `leva_commerciale` da 0 a 159,
+segnali da **2,5 a 8,2 per scheda**. Tre classificazioni sarebbero cambiate
+e sono rimaste come validate.
+
 ## La motivazione la legge il commerciale
 
 Il prompt vieta di citare i **numeri delle regole** e di usare le etichette

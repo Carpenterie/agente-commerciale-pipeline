@@ -50,10 +50,26 @@ Rispondi con questo schema esatto:
   "confidenza": "ALTA" | "MEDIA" | "BASSA",
   "motivazione": "2-3 frasi: perché questa classificazione, citando elementi
     CONCRETI trovati nel sito (frasi, prodotti, foto descritte)",
-  "segnali_positivi": ["elementi specifici che rendono l'azienda interessante"],
+  "segnali_positivi": ["elementi specifici e VERIFICABILI sul sito che
+    rendono l'azienda interessante. Includi sempre, quando il sito li
+    dichiara: anni di attività o anno di fondazione; certificazioni
+    (UNI EN 1090, marcatura CE, ISO 9001); presenza di showroom o sala
+    mostra; superficie dell'officina in metri quadri; numero di sedi o
+    stabilimenti; impianti interni (verniciatura a polvere, zincatura,
+    taglio laser). Una voce per elemento, breve"],
   "segnali_dubbio": ["elementi mancanti o ambigui che abbassano la confidenza"],
+  "gamma": ["linee che l'azienda tratta OGGI, scelte fra: persiane, grate,
+    cancelli, recinzioni, porte blindate, zanzariere, finestre, portoni,
+    ringhiere, scale. Solo quelle documentate sul sito, [] se nessuna"],
   "prodotto_da_proporre": "quale linea proporre per prima: persiane | grate |
     cancelli | recinzioni | kit generico | nessuno",
+  "leva_commerciale": "UNA frase che dica perché QUESTA azienda dovrebbe
+    interessarsi, basata su cosa dice il suo sito. Deve nominare qualcosa di
+    specifico e verificabile di lei — un prodotto, una lavorazione, un
+    impianto, una frase del sito — non un argomento buono per chiunque.
+    Esempio: 'Produce già grate e persiane blindate internamente: il kit le
+    fa risparmiare taglio, foratura e sfridi su una lavorazione che fa
+    comunque.' null se il sito non dà appigli",
   "sede_comune": "comune della sede, letto dalla pagina contatti; null se
     assente — MAI dedotto dal nome dell'azienda o dal dominio",
   "sede_provincia": "provincia della sede, stessa regola; null se assente",
@@ -66,6 +82,19 @@ Rispondi con questo schema esatto:
   "categoria": "fabbro" | "serramentista" | "showroom" | "impresa_edile" |
     "costruttore" | "artigiano" | "montatore" | "ferramenta" | "altro"
 }
+
+COME SCRIVERE LA LEVA COMMERCIALE — due casi che si sbagliano spesso:
+
+1. Se l'azienda PRODUCE GIÀ INTERNAMENTE il prodotto che le proporremmo,
+   l'argomento non è il prodotto: ce l'ha già. L'argomento è il MODO — il
+   kit di componenti tagliati, forati e codificati al posto della
+   lavorazione interna, che le toglie taglio, foratura, sfridi e
+   misurazioni su una lavorazione che fa comunque. Dillo esplicitamente.
+2. Se il sito dichiara VERNICIATURA O ZINCATURA eseguite internamente
+   (verniciatura a polvere, a forno, impianto di verniciatura, zincatura a
+   caldo), l'azienda ha l'impianto ma potrebbe non voler fare taglio e
+   assemblaggio: proponi nella leva l'ASSEMBLATO GREZZO, cioè il prodotto
+   montato e non verniciato, che lei finisce con il proprio impianto.
 
 COME SCRIVERE LA MOTIVAZIONE: la motivazione è letta dal commerciale, non da
 chi ha scritto le regole. Non citare mai i numeri delle regole, e non usare

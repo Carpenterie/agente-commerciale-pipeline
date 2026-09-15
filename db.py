@@ -171,6 +171,10 @@ def riga_azienda(scheda: dict, dati: dict | None = None,
     if verniciatura_interna(dati):
         segnali_finali.append({"tipo": "verniciatura_interna",
                                "nota": config.NOTA_VERNICIATURA})
+    for voce in (dati.get("segnali_positivi") or [])[:6]:
+        voce = _testo(voce)
+        if voce:
+            segnali_finali.append({"tipo": "dal_sito", "nota": voce})
     if scheda.get("ex_cliente"):
         # il commerciale deve sapere che ci ha già lavorato
         segnali_finali.insert(0, scheda["ex_cliente"])
@@ -222,6 +226,8 @@ def riga_azienda(scheda: dict, dati: dict | None = None,
         "motivazione": motivazione,
         "segnali": segnali_finali or None,
         "prodotto_apertura": _testo(dati.get("prodotto_da_proporre")),
+        "gamma": _lista(dati.get("gamma")),
+        "leva_commerciale": _testo(dati.get("leva_commerciale")),
         "livello_fornitura": _fornitura(categoria, officina),
         # valore GREZZO del modello, accanto al giudizio commerciale `classe`
         "esito_analisi": _testo(dati.get("classificazione")),

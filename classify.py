@@ -21,6 +21,7 @@ CAMPI = (
     "segnali_positivi", "segnali_dubbio", "prodotto_da_proporre",
     "sede_comune", "sede_provincia", "sede_regione",
     "email_aziendale", "telefono", "categoria", "partita_iva",
+    "gamma", "leva_commerciale",
 )
 
 
@@ -106,6 +107,11 @@ if __name__ == "__main__":
     # serramenti al cliente finale"). Il campione resta la baseline storica;
     # qui si verifica che il prompt di produzione sia completo e coerente.
     assert '"partita_iva"' in prompts.PROMPT
+    for campo in ('"gamma"', '"leva_commerciale"'):
+        assert campo in prompts.PROMPT, campo
+    assert "COME SCRIVERE LA LEVA COMMERCIALE" in prompts.PROMPT
+    assert "ASSEMBLATO GREZZO" in prompts.PROMPT
+    assert "UNI EN 1090" in prompts.PROMPT
     for pezzo in ("DEFINIZIONI DEL CLIENTE", "sede_comune", "sede_provincia",
                   "sede_regione", "email_aziendale", '"categoria"',
                   "MAI dedotto dal nome"):
