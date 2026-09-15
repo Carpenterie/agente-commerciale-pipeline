@@ -340,6 +340,40 @@ Un solo testo per azienda, scelto in quest'ordine di precedenza:
 | `livello_fornitura = kit` | *Fornitura componenti in acciaio* |
 | serramentista, montatore, artigiano | *Persiane e grate in acciaio* |
 
+### Le bozze sono personalizzate sulla scheda
+
+Dal 2026-09-15 `bozze_email.py` **genera** la bozza invece di stampare il
+testo fisso: il modello riceve la scheda — categoria, gamma, segnali,
+livello di fornitura, argomento di vendita, referente — e **il testo
+approvato come traccia**, e lo adatta. Non scrive da zero. `--fisso` forza
+il testo approvato.
+
+Puo' cambiare l'apertura (che deve agganciarsi a qualcosa di specifico di
+quell'azienda), l'argomento centrale e il prodotto nominato. **Non puo'
+cambiare**: lunghezza, una sola domanda, firma, link al catalogo, e i
+divieti su tempi, certificazioni e annunci di lavoro. Ogni bozza ripassa da
+`verifica(forma=True)` e, **se non e' conforme, si ripiega sul testo
+approvato**: un testo approvato vale piu' di uno personalizzato ma fuori
+regola. Misurato su 30 schede: **28 generate, 2 ripieghi, il 7%**, lunghezza
+50-70 parole con mediana 63.
+
+L'annuncio di lavoro **non viene nemmeno passato al modello**: non puo'
+citare cio' che non sa.
+
+`accorcia()` taglia a valle quando il modello sfora — e sfora spesso,
+perche' contare le parole e' una delle cose che fa peggio. Toglie **frasi**
+dall'ultima verso l'alto, mai l'apertura ne' la domanda, e si ferma prima di
+scendere sotto il minimo: un primo tentativo tagliava per paragrafi e
+portava via l'argomento commerciale insieme al dettaglio di troppo,
+lasciando 41 parole di gancio e domanda.
+
+**Il livello di fornitura ha la precedenza sul segnale di lavoro.**
+`carico_produttivo` parla di kit gia' tagliato, e a chi compra il prodotto
+finito il kit non si propone: il segnale sceglie il testo solo quando il
+livello e' `kit` o non assegnato. Difetto trovato il 2026-09-15 e presente
+anche nei testi fissi, indipendentemente dalla generazione: **sette aziende
+di classe A** ricevevano un testo che contraddiceva la propria scheda.
+
 ### La logica di scelta esiste in DUE posti — vanno allineati a mano
 
 `bozze_email.py` nella pipeline, e l'app Lovable, che ha il suo pannello con

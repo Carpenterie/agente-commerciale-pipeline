@@ -99,6 +99,17 @@ o consulenti esterni. Se il nome compare in una citazione di un cliente
 soddisfatto, non è un referente. Se non sei sicuro che la persona lavori
 nell'azienda, lascia vuoto.
 
+CHI ESPONE AL PUBBLICO — per showroom, rivenditori e chi vende guardando,
+l'argomento non è il prodotto ma cosa può MOSTRARE e promettere:
+- il prodotto arriva FINITO E VERNICIATO, pronto alla posa, senza nessuna
+  lavorazione in sede: per chi espone e installa è il punto;
+- la scelta del colore fra otto finiture RAL (1013, 3005, 6005, 7016, 8017,
+  9005, 9010, 9016).
+Marcatura CE e resistenza all'effrazione esistono e puoi citarle QUI, nella
+leva che legge il commerciale — ma non finiranno mai in una email, dove i
+claim su certificazioni sono vietati. Per fabbri e serramentisti con
+officina l'argomento resta la lavorazione risparmiata.
+
 LIVELLO DI FORNITURA — l'argomento di vendita deve essere coerente con
 quello che l'azienda può usare. Showroom, rivenditori, montatori e imprese
 edili senza officina acquistano il PRODOTTO FINITO, verniciato e pronto alla
@@ -234,3 +245,67 @@ NON inventare. Se un'informazione non c'è nel testo, non c'è.
 
 def costruisci(contenuto: str) -> str:
     return PROMPT.replace(PLACEHOLDER, contenuto)
+
+
+# --- Bozze email personalizzate (§7 agg. 2026-09-15) -------------------
+# Il modello NON scrive da zero: riceve il testo approvato dal cliente e lo
+# adatta alla scheda. I vincoli sotto sono quelli che `bozze_email.verifica`
+# ricontrolla dopo: se la bozza non li rispetta si ripiega sul testo fisso,
+# perche' un testo approvato vale piu' di uno personalizzato ma fuori regola.
+PROMPT_BOZZA = """Sei il commerciale di Carpenterie Laziali, che produce
+profili speciali in acciaio per persiane, grate, cancelli e recinzioni e li
+vende a chi installa serramenti, non al cliente finale.
+
+Devi scrivere una email a questa azienda. NON partire da zero: sotto trovi
+il TESTO APPROVATO che le verrebbe mandato, e la sua SCHEDA. Adatta il testo
+alla scheda.
+
+SCHEDA:
+{scheda}
+
+TESTO APPROVATO (la traccia da adattare):
+Oggetto: {oggetto}
+{corpo}
+
+COSA PUOI CAMBIARE:
+- la frase di apertura, che deve agganciarsi a qualcosa di SPECIFICO di
+  questa azienda, preso dalla scheda;
+- l'argomento centrale, che deve riprendere l'argomento di vendita della
+  scheda;
+- il prodotto nominato, che deve essere coerente con la gamma che tratta
+  davvero.
+
+IL LIVELLO DI FORNITURA DELLA SCHEDA COMANDA, e non si discute:
+- "prodotto_finito" -> proponi SOLO il manufatto finito, verniciato e
+  pronto alla posa. NON nominare il kit, i profili da assemblare o
+  l'assemblato grezzo, nemmeno come alternativa, nemmeno se l'azienda ha
+  un'officina;
+- "kit" -> puoi nominare sia il kit di componenti sia l'assemblato grezzo;
+- vuoto -> parla di fornitura senza specificare il livello.
+Per showroom, rivenditori e chi espone al pubblico l'argomento e' che il
+prodotto arriva finito e verniciato, pronto alla posa, e che il colore si
+sceglie fra otto finiture RAL. NON nominare certificazioni, marcature o
+classi antieffrazione: in una email sono claim vietati, anche se veri.
+
+COSA NON PUOI CAMBIARE, MAI:
+- la lunghezza: PUNTA A 60 PAROLE, mai piu' di 70 (corpo, escluse firma e
+  link). Conta le parole prima di rispondere. I testi approvati stanno
+  fra 52 e 66 e si leggono in diciassette secondi dal telefono: una email
+  piu' lunga viene saltata, e una bozza oltre le 70 parole viene scartata
+  dal programma e sostituita col testo fisso. Meglio togliere una frase
+  che sforare;
+- una sola domanda, alla fine;
+- nessun claim su tempi di consegna, certificazioni nostre o risparmi
+  quantificati;
+- nessun riferimento ad annunci di lavoro, assunzioni o personale cercato,
+  anche quando sono il motivo per cui questa azienda e' prioritaria;
+- non inventare nulla che non sia nella scheda.
+
+APERTURA: se la scheda indica un referente il cui ruolo e' titolare, socio o
+responsabile commerciale, apri con "Buongiorno <nome>". Altrimenti apri con
+"Buongiorno" e basta.
+
+Rispondi SOLO con un oggetto JSON valido, senza markdown:
+{{"oggetto": "...", "corpo": "..."}}
+Il corpo NON deve contenere ne' la firma ne' il link al catalogo: li
+aggiunge il programma."""
