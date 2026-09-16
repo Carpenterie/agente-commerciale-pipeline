@@ -33,7 +33,11 @@ import prompts
 
 APERTURA = "Buongiorno,"
 CHIUSURA = "Un saluto,"
-# I testi APPROVATI vanno da 52 a 66 parole (misurati). Una prima finestra
+# Scritta da `_chiudi`, tolta dal conteggio parole da `_senza_accessori`:
+# una costante sola perche' le due non possano divergere.
+RIGA_CATALOGO = "Le lasciamo il nostro catalogo: "
+# I testi APPROVATI vanno da 48 a 63 parole (misurati dopo la riscrittura
+# di registro del 2026-09-16; prima 52-66). Una prima finestra
 # larga (45-95) lasciava passare bozze da 86 parole: il 50% piu' lunghe,
 # venticinque secondi di lettura contro diciassette. Su un'email letta dal
 # telefono quella differenza e' fra leggerla e saltarla, quindi la finestra
@@ -44,6 +48,14 @@ PAROLE_MIN, PAROLE_MAX = 50, 70
 # tecnico non si salutano per nome in una prima email.
 RUOLI_SALUTABILI = ("titolare", "socio", "responsabile commerciale",
                     "amministratore", "fondatore", "socio fondatore")
+# La firma e' "Carpenterie Laziali", non una persona: il singolare stona
+# accanto a "produciamo" tre righe sopra. Vale per i nove testi (self-check)
+# e per le bozze generate (`verifica(forma=True)`): il 2026-09-16 tre bozze
+# su 252 erano uscite con "ho visto", che il prompt da solo non fermava.
+VIETATE_SINGOLARE = ("mi dica", "mi indica", "le scrivo", "le avevo",
+                     "le riscrivo", "sono a disposizione", "non la disturbo",
+                     "ho visto", "le allego", "le lascio ", "le mostro",
+                     "la ricontatti")
 
 # id -> (quando si usa, oggetto, corpo). {materiali} è l'unico campo
 # variabile: la frase che lo contiene sparisce se il dato manca.
@@ -57,23 +69,24 @@ TESTI = {
         "Chi ha officina propria lo usa per assorbire i periodi più carichi: una\n"
         "persiana si assembla in circa quaranta minuti, senza misurazioni e senza\n"
         "sfridi da smaltire.\n\n"
-        "Vi capita di avere commesse in cui potrebbe tornarvi utile?"),
+        "Avete commesse in cui potrebbe esservi utile?"),
     "finito_serramentista": (
         "serramentista o rivenditore senza officina — prodotto finito",
         "Persiane e grate in acciaio",
-        "{frase_materiali}Noi produciamo persiane, grate, cancelli e recinzioni in\n"
+        "{frase_materiali}Produciamo persiane, grate, cancelli e recinzioni in\n"
         "acciaio e li forniamo finiti e verniciati, pronti alla posa — oppure\n"
         "assemblati grezzi, se preferite gestire voi la verniciatura.\n\n"
         "È il modo con cui diversi serramentisti completano la gamma quando arriva\n"
         "una richiesta in acciaio, senza doverla lavorare internamente.\n\n"
-        "Vi capita di riceverne?"),
+        "Ricevete richieste di questo tipo?"),
     "finito_showroom": (
         "showroom — prodotto finito",
         "Gamma serramenti in acciaio",
         "produciamo persiane, grate, cancelli e recinzioni in acciaio e li forniamo\n"
         "finiti, pronti da esporre e installare.\n\n"
         "Per uno showroom è un modo di rispondere alle richieste in acciaio senza\n"
-        "gestire una produzione: il cliente resta vostro, noi restiamo dietro.\n\n"
+        "gestire una produzione: il cliente resta vostro, la produzione resta\n"
+        "nostra.\n\n"
         "Avete già un fornitore per questa parte della gamma?"),
     "commessa_edile": (
         "impresa edile o costruttore — prodotto finito per commessa",
@@ -82,7 +95,7 @@ TESTI = {
         "commessa, anche interi immobili: un solo interlocutore per tutta la parte in\n"
         "acciaio, con tempi concordati sul cantiere.\n\n"
         "Avete cantieri in cui questa parte è ancora da assegnare?\n"
-        "Se non segue lei gli acquisti, mi indica il collega di riferimento?"),
+        "Se non segue lei gli acquisti, ci può indicare il collega di riferimento?"),
     "carico_produttivo": (
         "azienda con carico produttivo elevato (segnale di lavoro rilevato)",
         "Fornitura nei periodi di carico",
@@ -91,40 +104,47 @@ TESTI = {
         "Il sistema a incastro riduce la necessità di manodopera specializzata:\n"
         "diversi fabbri lo usano nei periodi in cui la produzione è piena, per\n"
         "assemblare e consegnare nei tempi senza aggiungere lavorazioni.\n\n"
-        "Nei mesi più carichi potrebbe esservi utile?"),
+        "Nei mesi di maggior carico potrebbe esservi utile?"),
     "follow_up": (
         "follow-up a 10 giorni dal primo contatto senza risposta",
         "Re: {oggetto_precedente}",
-        "le avevo scritto qualche giorno fa a proposito di persiane, grate, cancelli\n"
-        "e recinzioni in acciaio.\n"
+        "le avevamo scritto qualche giorno fa a proposito di persiane, grate,\n"
+        "cancelli e recinzioni in acciaio.\n"
         "{frase_catalogo}\n"
-        "Se non è il momento nessun problema: mi dica solo se preferisce che la\n"
-        "ricontatti più avanti, oppure se è meglio lasciar perdere."),
+        "Se non è il momento non c'è problema: ci faccia sapere se preferisce che la\n"
+        "ricontattiamo più avanti, oppure che non la disturbiamo oltre."),
     "risposta_interesse": (
         "risposta a chi ha manifestato interesse — SOLO su richiesta esplicita",
         "Catalogo e prossimi passi",
-        "grazie del riscontro.\n"
+        "la ringraziamo del riscontro.\n"
         "{frase_catalogo_esteso}"
         "{frase_prenotazione}"),
     "ricontatto": (
         "ricontatto a distanza di mesi — massimo due volte, poi stop",
         "Prodotti in acciaio — Carpenterie Laziali",
-        "le avevo scritto qualche mese fa: produciamo persiane, grate, cancelli e\n"
+        "le avevamo scritto qualche mese fa: produciamo persiane, grate, cancelli e\n"
         "recinzioni in acciaio per aziende del settore, in kit o finiti.\n\n"
-        "Le cose cambiano, quindi le riscrivo una volta: se oggi vi serve un\n"
-        "fornitore per questa parte, sono a disposizione. Altrimenti non la\n"
-        "disturbo oltre."),
+        "Le cose cambiano, quindi le riscriviamo una volta: se oggi vi serve un\n"
+        "fornitore per questa parte, siamo a disposizione. Altrimenti non la\n"
+        "disturbiamo oltre."),
     "ex_cliente": (
         "ex cliente da riattivare — sa già chi siamo",
+        # colloquiale di proposito: scrive a qualcuno che vi conosce gia',
+        # e "Riprendiamo i contatti" suonerebbe come una circolare
         "Ci risentiamo",
-        "abbiamo lavorato insieme in passato e da un po' non ci sentiamo.\n\n"
+        "abbiamo lavorato insieme in passato e da tempo non ci sentiamo.\n\n"
         "Abbiamo ampliato la gamma su persiane, grate, cancelli e recinzioni, con la\n"
-        "possibilità di fornire il kit o il prodotto finito a seconda di come vi è\n"
-        "più comodo.\n\n"
-        "Se le fa piacere, mi dica come state messi adesso e vediamo se ha senso\n"
+        "possibilità di fornire il kit o il prodotto finito a seconda di come\n"
+        "preferite.\n\n"
+        "Ci faccia sapere come siete organizzati oggi e valutiamo se ha senso\n"
         "riprendere."),
 }
 
+# Testi il cui OGGETTO non si personalizza. "Ci risentiamo" e' colloquiale
+# di proposito, e "Ci risentiamo - grate per Tal dei Tali" perde proprio
+# quello per cui il colloquiale era stato tenuto. Il follow-up deve
+# ripetere l'oggetto del primo messaggio, altrimenti non e' un "Re:".
+OGGETTO_FISSO = ("ex_cliente", "follow_up")
 # il follow-up chiude senza sito (è una riga sola, il sito l'ha già visto)
 SENZA_SITO = ("follow_up", "ex_cliente")
 # testi che nascono da un fatto che il sistema NON vede (una risposta umana,
@@ -182,14 +202,14 @@ def componi(azienda: dict, testo_id: str = "", oggetto_precedente: str = "") -> 
     if testo_id == "risposta_interesse" and not catalogo:
         return None      # e' il testo che serve a mandare il catalogo
     corpo = corpo.replace("{frase_catalogo}", (
-        f"\nLe lascio comunque il nostro catalogo, così ce l'ha se dovesse\n"
-        f"servirle: {catalogo}.\n" if catalogo else ""))
+        f"\nLe lasciamo comunque il nostro catalogo, così da averlo a\n"
+        f"disposizione se dovesse servire: {catalogo}.\n" if catalogo else ""))
     corpo = corpo.replace("{frase_catalogo_esteso}", (
-        f"\nLe allego il catalogo aggiornato: trova le linee complete di persiane,\n"
-        f"grate, cancelli e recinzioni, con le versioni in kit e finite.\n"
+        f"\nLe alleghiamo il catalogo aggiornato: trova le linee complete di\n"
+        f"persiane, grate, cancelli e recinzioni, con le versioni in kit e finite.\n"
         f"{catalogo}\n" if catalogo else ""))
     corpo = corpo.replace("{frase_prenotazione}", (
-        f"\nSe le è comodo, in una chiamata di dieci minuti le mostro quale\n"
+        f"\nSe le è utile, in una chiamata di dieci minuti le mostriamo quale\n"
         f"configurazione ha senso per il vostro lavoro e come funziona l'ordine.\n"
         f"{prenotazione}\n" if prenotazione else ""))
 
@@ -197,7 +217,7 @@ def componi(azienda: dict, testo_id: str = "", oggetto_precedente: str = "") -> 
     if isinstance(materiali, str):
         materiali = [m.strip() for m in materiali.split(";") if m.strip()]
     # la frase esiste solo se il dato esiste: niente "[materiali rilevati]"
-    frase = (f"ho visto che trattate serramenti in {_elenco(materiali)}.\n"
+    frase = (f"abbiamo visto che trattate serramenti in {_elenco(materiali)}.\n"
              if materiali else "")
     corpo = corpo.replace("{frase_materiali}", frase)
     oggetto = oggetto.replace("{oggetto_precedente}", oggetto_precedente or oggetto)
@@ -257,7 +277,7 @@ def _chiudi(corpo: str, sito: bool = False) -> str:
     """
     pezzi = [corpo.rstrip()]
     if config.LINK_CATALOGO and config.LINK_CATALOGO not in corpo:
-        pezzi.append(f"\nLe lascio il nostro catalogo: {config.LINK_CATALOGO}")
+        pezzi.append(f"\n{RIGA_CATALOGO}{config.LINK_CATALOGO}")
     firma = [CHIUSURA]
     if config.FIRMA_EMAIL:
         firma.append(config.FIRMA_EMAIL)
@@ -283,7 +303,7 @@ def _senza_accessori(corpo: str) -> str:
     testo su cui giudicare.
     """
     righe = [r for r in corpo.split("\n")
-             if "Le lascio il nostro catalogo" not in r
+             if RIGA_CATALOGO.rstrip(": ") not in r
              and not r.strip().startswith(CHIUSURA)]
     corpo = "\n".join(righe)
     for link in (config.LINK_CATALOGO, config.LINK_PRENOTAZIONE):
@@ -319,6 +339,9 @@ def verifica(bozza: dict, forma: bool = False) -> list[str]:
         problemi.append(f"deve esserci UNA sola domanda, trovate {corpo.count('?')}")
     if config.FIRMA_EMAIL and config.FIRMA_EMAIL not in bozza["corpo"]:
         problemi.append("manca la firma")
+    for sing in VIETATE_SINGOLARE:
+        if sing in testo:
+            problemi.append(f"parla al singolare: '{sing}'")
     return problemi
 
 
@@ -366,31 +389,51 @@ def genera(azienda: dict, client, testo_id: str = "",
     richiesta = prompts.PROMPT_BOZZA.format(
         scheda=_scheda_per_modello(azienda),
         oggetto=fissa["oggetto"], corpo=fissa["corpo"])
-    try:
-        risposta = client.messages.create(
-            model=config.MODELLO, max_tokens=1000, temperature=0,
-            timeout=config.TIMEOUT_ANTHROPIC_S,
-            messages=[{"role": "user", "content": richiesta}])
-        testo = next(b.text for b in risposta.content if b.type == "text")
-        dati = classify.estrai_json(testo)
-        uso = {"token_input": risposta.usage.input_tokens,
-               "token_output": risposta.usage.output_tokens}
-    except Exception as e:  # noqa: BLE001 - il ripiego non e' un errore
-        log(f"bozza generata non riuscita ({type(e).__name__}): uso il testo fisso")
-        return {**fissa, "generata": False, "token_input": 0, "token_output": 0}
+    # Un tentativo + un retry, come `classify.classifica`. Non e' difensivo:
+    # a temperatura 0 il modello non e' comunque deterministico, e il
+    # 2026-09-16 ventidue ripieghi su trenta passavano al secondo tentativo
+    # con lo stesso identico prompt. Senza retry si buttava via una bozza
+    # personalizzata su dieci per una sfortuna di un giro.
+    uso = {"token_input": 0, "token_output": 0}
+    for tentativo in (1, 2):
+        try:
+            risposta = client.messages.create(
+                model=config.MODELLO, max_tokens=1000, temperature=0,
+                timeout=config.TIMEOUT_ANTHROPIC_S,
+                messages=[{"role": "user", "content": richiesta}])
+            dati = classify.estrai_json(
+                next(b.text for b in risposta.content if b.type == "text"))
+        except Exception as e:  # noqa: BLE001 - il ripiego non e' un errore
+            motivo, dati = f"{type(e).__name__}", None
+        else:
+            motivo = ""
+        uso = {"token_input": uso["token_input"] + risposta.usage.input_tokens,
+               "token_output": uso["token_output"] + risposta.usage.output_tokens} \
+            if dati is not None else uso
+        if dati is None:
+            if tentativo == 2:
+                log(f"bozza generata non riuscita ({motivo}): uso il testo fisso")
+                return {**fissa, "generata": False, **uso}
+            continue
 
-    corpo = (dati.get("corpo") or "").strip()
-    if not corpo:
-        return {**fissa, "generata": False, **uso}
-    # il modello sfora spesso: si taglia qui invece di buttare la bozza
-    corpo = accorcia(corpo)
-    bozza = {**fissa, "oggetto": (dati.get("oggetto") or fissa["oggetto"]).strip(),
-             "corpo": _chiudi(corpo), "generata": True, **uso}
-    problemi = verifica(bozza, forma=True)
-    if problemi:
-        log(f"bozza generata scartata ({'; '.join(problemi)}): uso il testo fisso")
-        return {**fissa, "generata": False, **uso}
-    return bozza
+        corpo = (dati.get("corpo") or "").strip()
+        if not corpo:
+            if tentativo == 2:
+                log("bozza generata vuota: uso il testo fisso")
+                return {**fissa, "generata": False, **uso}
+            continue
+        # il modello sfora spesso: si taglia qui invece di buttare la bozza
+        oggetto = fissa["oggetto"] if fissa["testo_id"] in OGGETTO_FISSO \
+            else (dati.get("oggetto") or fissa["oggetto"]).strip()
+        bozza = {**fissa, "oggetto": oggetto,
+                 "corpo": _chiudi(accorcia(corpo)), "generata": True, **uso}
+        problemi = verifica(bozza, forma=True)
+        if not problemi:
+            return bozza
+        if tentativo == 2:
+            log(f"bozza generata scartata ({'; '.join(problemi)}): uso il testo fisso")
+            return {**fissa, "generata": False, **uso}
+    return {**fissa, "generata": False, **uso}
 
 
 def main() -> int:
@@ -481,7 +524,7 @@ if __name__ == "__main__" and "--test" in sys.argv:
                    "materiali": ["alluminio", "pvc", "legno"]})
     assert "alluminio, pvc e legno" in con["corpo"]
     senza = componi({"categoria": "serramentista", "livello_fornitura": "prodotto_finito"})
-    assert "ho visto che trattate" not in senza["corpo"]
+    assert "abbiamo visto che trattate" not in senza["corpo"]
     assert "[" not in senza["corpo"] and "{" not in senza["corpo"]
     assert not verifica(senza)
 
@@ -554,6 +597,26 @@ if __name__ == "__main__" and "--test" in sys.argv:
     assert len(intatto.split()) == len(breve.split()), "non deve togliere parole"
     assert TESTI["ex_cliente"][1] == "Ci risentiamo"
 
+    # 4d. PERSONA: la firma e' "Carpenterie Laziali", quindi il plurale
+    # ovunque. Il singolare ("mi dica", "le scrivo", "sono a disposizione")
+    # e' l'incoerenza tolta il 2026-09-16: convive male con "produciamo" a
+    # tre righe di distanza.
+    _cat2, _pren2 = config.LINK_CATALOGO, config.LINK_PRENOTAZIONE
+    config.LINK_CATALOGO, config.LINK_PRENOTAZIONE = "cat.pdf", "cal.com/x"
+    for tid in TESTI:
+        b = componi({"categoria": "fabbro", "materiali": ["alluminio"]},
+                    testo_id=tid, oggetto_precedente="X")
+        testo_b = f"{b['oggetto']}\n{b['corpo']}".lower()
+        for sing in VIETATE_SINGOLARE:
+            assert sing not in testo_b, (tid, sing)
+    config.LINK_CATALOGO, config.LINK_PRENOTAZIONE = _cat2, _pren2
+
+    # 4e. i claim sui tempi di consegna, in tutte le forme note
+    for vietata in ("immediata", "in tempi brevi", "subito disponibile"):
+        assert vietata in config.VIETATE_EMAIL, vietata
+        finta = {"oggetto": "x", "corpo": f"Buongiorno,\nla fornitura e' {vietata}."}
+        assert verifica(finta), vietata
+
     # 5. firma vuota -> si chiude senza segnaposto, non con "[Firma]"
     b = componi({"categoria": "showroom"})
     assert "[Firma]" not in b["corpo"] and "[Sito]" not in b["corpo"]
@@ -572,7 +635,7 @@ if __name__ == "__main__" and "--test" in sys.argv:
     f = componi({"categoria": "fabbro"}, testo_id="follow_up",
                 oggetto_precedente="Fornitura componenti in acciaio")
     assert "catalogo" not in f["corpo"].lower(), f["corpo"]
-    assert "le avevo scritto qualche giorno fa" in f["corpo"]
+    assert "le avevamo scritto qualche giorno fa" in f["corpo"]
     assert not verifica(f)
     # e la risposta-interesse non si produce affatto: serve a mandare il catalogo
     assert componi({"categoria": "fabbro"}, testo_id="risposta_interesse") is None
@@ -598,7 +661,7 @@ if __name__ == "__main__" and "--test" in sys.argv:
     r = componi({"categoria": "fabbro"}, testo_id="risposta_interesse")
     assert config.LINK_CATALOGO in r["corpo"]
     assert config.LINK_PRENOTAZIONE in r["corpo"]
-    assert "grazie del riscontro" in r["corpo"]
+    assert "ringraziamo del riscontro" in r["corpo"]
     assert not verifica(r), verifica(r)
 
     # solo il catalogo: la frase della chiamata sparisce, niente segnaposto

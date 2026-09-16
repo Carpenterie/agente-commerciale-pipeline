@@ -382,9 +382,14 @@ LINK_CATALOGO = ("https://pvxzrfthfhbhslxhjihu.supabase.co/storage/v1/object/"
 LINK_PRENOTAZIONE = ""    # es. "cal.com/carpenterielaziali/10min"
 # Parole che non devono MAI comparire in una bozza: il PDF vieta di citare
 # gli annunci di lavoro, e la guida vieta claim su tempi e certificazioni.
+# La lista elenca ESEMPI, non e' esaustiva: la regola del cliente vieta i
+# claim sui tempi di consegna, e ogni modo nuovo di dirlo va aggiunto qui.
+# "immediata", "in tempi brevi" e "subito disponibile" arrivano dal
+# 2026-09-16, da una bozza generata che diceva "la fornitura e' immediata".
 VIETATE_EMAIL = ("saldator", "annuncio", "assunzione", "cercate", "offerta di lavoro",
                  "garantiam", "certificat", "risparmi", "sconto", "24 ore",
-                 "48 ore", "consegna rapida", "prezzi imbattibili")
+                 "48 ore", "consegna rapida", "prezzi imbattibili",
+                 "immediata", "in tempi brevi", "subito disponibile")
 
 
 if __name__ == "__main__":

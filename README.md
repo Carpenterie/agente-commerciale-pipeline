@@ -403,17 +403,37 @@ e va usato dopo ogni rianalisi che tocchi `leva_commerciale`, `gamma` o
 `livello_fornitura` — sono gli ingressi della personalizzazione, e una
 bozza vecchia racconta una scheda che non esiste più.
 
-Primo giro, 2026-09-16: 284 schede, **282 salvate**, 2.07 EUR. Le due senza
-bozza hanno `categoria = altro` e il livello di fornitura vuoto: è la
-regola 7 della tabella qui sotto, e si leggono a mano — fermarsi è meglio
-che scegliere un testo che contraddice la scheda.
+Stato al 2026-09-16: 284 schede, **282 salvate — 267 personalizzate, 15 di
+ripiego (5%)**, corpo fra 50 e 70 parole, mediana 62. Le due senza bozza
+hanno `categoria = altro` e il livello di fornitura vuoto: è la regola 7
+della tabella qui sotto, e si leggono a mano — fermarsi è meglio che
+scegliere un testo che contraddice la scheda.
 
-**Il catalogo chiude ogni email**, generata o di ripiego. Il primo giro ne
-aveva lasciate 32 senza, perché il link lo metteva solo il ramo generato:
-ora lo mette `_chiudi()`, che chiude entrambi i rami e non lo stampa due
-volte sui due testi che lo portano già nel corpo. Rigenerate quelle 32, e
-20 sono passate da ripiego a personalizzata — la traccia era cambiata.
-Ripiego finale: **12 su 282, il 4%**.
+**Il catalogo chiude ogni email**, generata o di ripiego. Lo mette
+`_chiudi()`, che chiude entrambi i rami e non lo stampa due volte sui due
+testi che lo portano già nel corpo.
+
+### Tre cose imparate facendo girare le bozze in blocco
+
+**Non chiedere al modello di contare le parole.** Il prompt diceva "conta
+le parole prima di rispondere" e lui obbediva alla lettera: scriveva la
+bozza, poi contava a voce — `Buongiorno(1) Ettore(2) dal(3)…` — e su una
+parte delle schede esauriva i mille token prima di emettere il JSON.
+Risposta troncata (`stop_reason: max_tokens`), `JSONDecodeError`, ripiego.
+Era il 45% dei ripieghi. Tolta l'istruzione, l'output è passato da 574-1000
+token a 146-191. Contare le parole è proprio ciò che il modello non sa
+fare: per quello esiste `accorcia()`.
+
+**Un tentativo solo non basta.** A temperatura 0 il modello non è
+deterministico: 22 ripieghi su 30 passavano al secondo tentativo con lo
+stesso identico prompt. `genera()` fa un tentativo più un retry, come
+`classify.classifica`. Da solo ha portato il ripiego dall'11% al 5%.
+
+**Dire una regola al modello non è farla rispettare.** La regola del
+plurale era nel prompt, e tre bozze su 252 sono uscite lo stesso con "ho
+visto". Ora `VIETATE_SINGOLARE` è una costante sola, usata dal self-check
+sui nove testi *e* da `verifica(forma=True)` sulle generate: una bozza al
+singolare ripiega invece di finire in archivio.
 
 ### La logica di scelta esiste in DUE posti — vanno allineati a mano
 
@@ -437,6 +457,12 @@ Cosa va tenuto allineato, in questo ordine di precedenza (è
 | 5 | `livello_fornitura = kit` | `kit_officina` |
 | 6 | categoria `serramentista`, `montatore`, `artigiano`, **oppure** `livello_fornitura = prodotto_finito` | `finito_serramentista` |
 | 7 | nessuna delle precedenti | **nessuna bozza** |
+
+Due testi hanno l'**oggetto fisso**, che il modello non personalizza
+(`OGGETTO_FISSO`): `ex_cliente`, perché "Ci risentiamo" è colloquiale di
+proposito e "Ci risentiamo — grate per Tal dei Tali" perde proprio quello
+per cui il colloquiale era stato tenuto; e `follow_up`, il cui oggetto è
+`Re: <primo messaggio>` e riscritto non sarebbe più un "Re:".
 
 L'ordine è una precedenza, non una preferenza: 1 e 2 vincono sulla categoria,
 e la 5 viene prima della 6 perché un fabbro con officina è `kit` anche se la
