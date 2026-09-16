@@ -365,21 +365,23 @@ def genera(azienda: dict, client, testo_id: str = "",
             messages=[{"role": "user", "content": richiesta}])
         testo = next(b.text for b in risposta.content if b.type == "text")
         dati = classify.estrai_json(testo)
+        uso = {"token_input": risposta.usage.input_tokens,
+               "token_output": risposta.usage.output_tokens}
     except Exception as e:  # noqa: BLE001 - il ripiego non e' un errore
         log(f"bozza generata non riuscita ({type(e).__name__}): uso il testo fisso")
-        return {**fissa, "generata": False}
+        return {**fissa, "generata": False, "token_input": 0, "token_output": 0}
 
     corpo = (dati.get("corpo") or "").strip()
     if not corpo:
-        return {**fissa, "generata": False}
+        return {**fissa, "generata": False, **uso}
     # il modello sfora spesso: si taglia qui invece di buttare la bozza
     corpo = accorcia(corpo)
     bozza = {**fissa, "oggetto": (dati.get("oggetto") or fissa["oggetto"]).strip(),
-             "corpo": _chiudi(corpo), "generata": True}
+             "corpo": _chiudi(corpo), "generata": True, **uso}
     problemi = verifica(bozza, forma=True)
     if problemi:
         log(f"bozza generata scartata ({'; '.join(problemi)}): uso il testo fisso")
-        return {**fissa, "generata": False}
+        return {**fissa, "generata": False, **uso}
     return bozza
 
 
@@ -392,6 +394,8 @@ def main() -> int:
                         "senza, lo sceglie da categoria e fornitura")
     p.add_argument("--oggetto-precedente", default="",
                    help="per il follow-up: l'oggetto del primo messaggio")
+    p.add_argument("--fisso", action="store_true",
+                   help="il testo approvato cosi' com'e', senza personalizzare")
     args = p.parse_args()
 
     import db

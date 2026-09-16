@@ -314,6 +314,8 @@ Una scrittura `duplicata` **non** conta come errore: è il dedup che lavora.
 ## Bozze email
 
 ```bash
+python salva_bozze.py                # prova: quante schede, quale testo
+python salva_bozze.py --scrivi       # genera e salva in archivio
 python bozze_email.py <uuid-azienda>
 python bozze_email.py <uuid-azienda> --testo follow_up
 ```
@@ -321,8 +323,8 @@ python bozze_email.py <uuid-azienda> --testo follow_up
 Genera la bozza dai testi approvati dal cliente (PDF del 2026-08-31; i
 testi 1, 2 e 5 riscritti il 2026-09-09 con gli argomenti del catalogo).
 **Una azienda per volta, su richiesta**: la bozza si produce quando il
-commerciale apre la scheda, non in blocco su una lista — non esiste una
-funzione che generi per liste, ed è deliberato.
+commerciale apre la scheda. Da riga di comando è la strada giusta e resta
+il default.
 **Non invia nulla e non tocca la casella email**: il §2 del PRD lo mette
 fuori perimetro, il comando produce testo da rileggere. L'invio avviene
 dall'app, dove il cliente ha collegato il connettore **Outlook** di Lovable.
@@ -374,6 +376,38 @@ livello e' `kit` o non assegnato. Difetto trovato il 2026-09-15 e presente
 anche nei testi fissi, indipendentemente dalla generazione: **sette aziende
 di classe A** ricevevano un testo che contraddiceva la propria scheda.
 
+### Le bozze stanno in archivio, l'app le legge
+
+L'app Lovable non esegue Python e non puo' chiamare il modello: la bozza
+personalizzata la vede solo se qualcuno gliela mette nel database.
+`salva_bozze.py` la genera per tutte le schede in classe A, B e C e la
+scrive su cinque colonne di `aziende`:
+
+| colonna | cosa contiene |
+|---|---|
+| `bozza_oggetto` | l'oggetto |
+| `bozza_corpo` | il corpo, firma e catalogo inclusi |
+| `bozza_testo_id` | quale dei nove testi ha fatto da traccia |
+| `bozza_generata` | `true` personalizzata, `false` ripiego sul testo approvato |
+| `bozza_creata_il` | quando — serve a riconoscere le bozze vecchie |
+
+**`bozza_corpo` resta sempre la bozza GENERATA.** L'app non ci riscrive
+sopra la versione corretta dal commerciale: quella vive in `attivita`, che
+è già il registro di cosa è partito davvero. Le due cose non vanno
+mescolate — se l'app risalvasse la modifica qui, una rigenerazione la
+cancellerebbe.
+
+Di suo `salva_bozze.py` tocca **solo le schede senza bozza**: chi lo
+rilancia per sbaglio non perde niente. Serve `--rigenera` per riscriverle,
+e va usato dopo ogni rianalisi che tocchi `leva_commerciale`, `gamma` o
+`livello_fornitura` — sono gli ingressi della personalizzazione, e una
+bozza vecchia racconta una scheda che non esiste più.
+
+Primo giro, 2026-09-16: 284 schede, **282 salvate** (250 personalizzate, 32
+di ripiego, 11%), 1.86 EUR. Le due senza bozza hanno `categoria = altro` e
+il livello di fornitura vuoto: è la regola 7 della tabella qui sotto, e si
+leggono a mano.
+
 ### La logica di scelta esiste in DUE posti — vanno allineati a mano
 
 `bozze_email.py` nella pipeline, e l'app Lovable, che ha il suo pannello con
@@ -390,7 +424,7 @@ Cosa va tenuto allineato, in questo ordine di precedenza (è
 | # | condizione | testo |
 |---|---|---|
 | 1 | segnale `ex_cliente` | `ex_cliente` |
-| 2 | segnale `annuncio_lavoro` | `carico_produttivo` |
+| 2 | segnale `annuncio_lavoro` **e** `livello_fornitura` diverso da `prodotto_finito` | `carico_produttivo` |
 | 3 | categoria `impresa_edile` o `costruttore` | `commessa_edile` |
 | 4 | categoria `showroom` | `finito_showroom` |
 | 5 | `livello_fornitura = kit` | `kit_officina` |
