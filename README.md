@@ -403,10 +403,17 @@ e va usato dopo ogni rianalisi che tocchi `leva_commerciale`, `gamma` o
 `livello_fornitura` — sono gli ingressi della personalizzazione, e una
 bozza vecchia racconta una scheda che non esiste più.
 
-Primo giro, 2026-09-16: 284 schede, **282 salvate** (250 personalizzate, 32
-di ripiego, 11%), 1.86 EUR. Le due senza bozza hanno `categoria = altro` e
-il livello di fornitura vuoto: è la regola 7 della tabella qui sotto, e si
-leggono a mano.
+Primo giro, 2026-09-16: 284 schede, **282 salvate**, 2.07 EUR. Le due senza
+bozza hanno `categoria = altro` e il livello di fornitura vuoto: è la
+regola 7 della tabella qui sotto, e si leggono a mano — fermarsi è meglio
+che scegliere un testo che contraddice la scheda.
+
+**Il catalogo chiude ogni email**, generata o di ripiego. Il primo giro ne
+aveva lasciate 32 senza, perché il link lo metteva solo il ramo generato:
+ora lo mette `_chiudi()`, che chiude entrambi i rami e non lo stampa due
+volte sui due testi che lo portano già nel corpo. Rigenerate quelle 32, e
+20 sono passate da ripiego a personalizzata — la traccia era cambiata.
+Ripiego finale: **12 su 282, il 4%**.
 
 ### La logica di scelta esiste in DUE posti — vanno allineati a mano
 

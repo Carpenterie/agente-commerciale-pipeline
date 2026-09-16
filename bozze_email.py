@@ -202,13 +202,9 @@ def componi(azienda: dict, testo_id: str = "", oggetto_precedente: str = "") -> 
     corpo = corpo.replace("{frase_materiali}", frase)
     oggetto = oggetto.replace("{oggetto_precedente}", oggetto_precedente or oggetto)
 
-    firma = [CHIUSURA]
-    if config.FIRMA_EMAIL:
-        firma.append(config.FIRMA_EMAIL)
-    if config.SITO_EMAIL and testo_id not in SENZA_SITO:
-        firma.append(f"— {config.SITO_EMAIL}")
     return {"testo_id": testo_id, "perche": perche, "oggetto": oggetto,
-            "corpo": f"{APERTURA}\n{corpo}\n\n{' '.join(firma)}"}
+            "corpo": _chiudi(f"{APERTURA}\n{corpo}",
+                             sito=testo_id not in SENZA_SITO)}
 
 
 def accorcia(corpo: str, massimo: int = 0, minimo: int = 0) -> str:
@@ -246,15 +242,27 @@ def accorcia(corpo: str, massimo: int = 0, minimo: int = 0) -> str:
     return "\n".join(pezzi).strip()
 
 
-def _chiudi(corpo: str) -> str:
+def _chiudi(corpo: str, sito: bool = False) -> str:
     """Catalogo e firma li mette il programma, non il modello: sono le due
-    cose che non devono mai dipendere da come e' andata la generazione."""
+    cose che non devono mai dipendere da come e' andata la generazione.
+
+    Chiude TUTTE le bozze, generate e no. Fino al 2026-09-16 chiudeva solo
+    le generate, e in archivio finivano 250 bozze col catalogo e 32 senza:
+    il cliente lo vuole in ogni email, e nell'app i nove testi fissi ce
+    l'hanno gia'. Era il ripiego a essere disallineato, non le generate.
+
+    `LINK_CATALOGO not in corpo`: due testi portano gia' il link nel corpo
+    (il follow-up e la risposta a chi mostra interesse) e stamparlo due
+    volte in fondo alla stessa email e' peggio che non stamparlo.
+    """
     pezzi = [corpo.rstrip()]
-    if config.LINK_CATALOGO:
+    if config.LINK_CATALOGO and config.LINK_CATALOGO not in corpo:
         pezzi.append(f"\nLe lascio il nostro catalogo: {config.LINK_CATALOGO}")
     firma = [CHIUSURA]
     if config.FIRMA_EMAIL:
         firma.append(config.FIRMA_EMAIL)
+    if sito and config.SITO_EMAIL:
+        firma.append(f"— {config.SITO_EMAIL}")
     pezzi.append(f"\n{' '.join(firma)}")
     return "\n".join(pezzi)
 
@@ -568,6 +576,18 @@ if __name__ == "__main__" and "--test" in sys.argv:
     assert not verifica(f)
     # e la risposta-interesse non si produce affatto: serve a mandare il catalogo
     assert componi({"categoria": "fabbro"}, testo_id="risposta_interesse") is None
+
+    # il catalogo chiude OGNI testo, e mai due volte: i due testi che lo
+    # portano gia' nel corpo non se lo ritrovano anche in fondo
+    config.LINK_CATALOGO = "carpenterielaziali.it/catalogo.pdf"
+    for tid in TESTI:
+        b = componi({"categoria": "fabbro"}, testo_id=tid, oggetto_precedente="X")
+        assert b["corpo"].count(config.LINK_CATALOGO) == 1, (tid, b["corpo"])
+        assert not verifica(b), (tid, verifica(b))
+    # e nemmeno sul ramo generato, dove il modello puo' averlo ricopiato
+    doppio = _chiudi(f"Buongiorno,\nGia' qui: {config.LINK_CATALOGO}\n\nDomanda?")
+    assert doppio.count(config.LINK_CATALOGO) == 1, doppio
+    config.LINK_CATALOGO = ""
 
     # con i link: entrambe le frasi compaiono, nessun segnaposto
     config.LINK_CATALOGO = "carpenterielaziali.it/catalogo.pdf"

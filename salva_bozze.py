@@ -14,6 +14,7 @@ queste colonne per sapere cosa e' stato mandato.
     python salva_bozze.py --scrivi        # genera e SALVA le schede SENZA bozza
     python salva_bozze.py --scrivi --classe A
     python salva_bozze.py --scrivi --rigenera   # riscrive anche quelle che ce l'hanno
+    python salva_bozze.py --scrivi --ripieghi   # solo quelle finite sul testo fisso
 
 Di suo tocca SOLO le schede senza bozza: chi lo rilancia per sbaglio non
 cancella niente. Serve `--rigenera` per riscriverle, e va usato dopo una
@@ -46,17 +47,22 @@ CAMPI_SCRITTI = ("bozza_oggetto", "bozza_corpo", "bozza_testo_id",
 CAMPI_LETTI = ("id,ragione_sociale,classe,stato,categoria,livello_fornitura,"
                "segnali,materiali,gamma,comune,officina_propria,"
                "prodotto_apertura,leva_commerciale,referente_nome,"
-               "referente_ruolo,bozza_corpo")
+               "referente_ruolo,bozza_corpo,bozza_generata")
 
 
-def da_scrivere(righe: list[dict], classi: list[str], solo_mancanti: bool) -> list[dict]:
-    return [r for r in righe
-            if r.get("classe") in classi and r.get("stato") != "scartato"
-            and not (solo_mancanti and (r.get("bozza_corpo") or "").strip())]
+def da_scrivere(righe: list[dict], classi: list[str], solo_mancanti: bool,
+                solo_ripieghi: bool = False) -> list[dict]:
+    vive = [r for r in righe
+            if r.get("classe") in classi and r.get("stato") != "scartato"]
+    if solo_ripieghi:
+        return [r for r in vive if r.get("bozza_generata") is False]
+    return [r for r in vive
+            if not (solo_mancanti and (r.get("bozza_corpo") or "").strip())]
 
 
 def main() -> int:
     scrivi = "--scrivi" in sys.argv
+    solo_ripieghi = "--ripieghi" in sys.argv
     solo_mancanti = "--rigenera" not in sys.argv
     classe = sys.argv[sys.argv.index("--classe") + 1] if "--classe" in sys.argv else "TUTTE"
     classi = ["A", "B", "C"] if classe == "TUTTE" else [classe]
@@ -70,8 +76,10 @@ def main() -> int:
             break
         off += 1000
 
-    fuori = da_scrivere(righe, classi, solo_mancanti)
-    if not solo_mancanti:
+    fuori = da_scrivere(righe, classi, solo_mancanti, solo_ripieghi)
+    if solo_ripieghi:
+        print("--ripieghi: solo le bozze finite sul testo approvato")
+    elif not solo_mancanti:
         print("--rigenera: riscrive anche le bozze gia' in archivio")
     scelte = _c.Counter(bozze_email.scegli_testo(r) or "NESSUNA" for r in fuori)
     print(f"classi {','.join(classi)}: {len(fuori)} schede")
@@ -148,6 +156,11 @@ if __name__ == "__main__":
         assert len(da_scrivere(righe, ["A", "B", "C"], False)) == 2
         assert len(da_scrivere(righe, ["A", "B", "C"], True)) == 1
         assert len(da_scrivere(righe, ["A"], False)) == 1
+        ripieghi = [{"classe": "A", "stato": "da_lavorare", "bozza_generata": False},
+                    {"classe": "A", "stato": "da_lavorare", "bozza_generata": True},
+                    {"classe": "A", "stato": "da_lavorare", "bozza_generata": None},
+                    {"classe": "A", "stato": "scartato", "bozza_generata": False}]
+        assert len(da_scrivere(ripieghi, ["A"], True, True)) == 1
         # ogni campo dichiarato deve comparire davvero nell'update
         sorgente = pathlib.Path(__file__).read_text(encoding="utf-8")
         corpo = sorgente[sorgente.index("agg = {"):sorgente.index(".update(agg)")]
