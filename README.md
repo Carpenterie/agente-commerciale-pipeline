@@ -203,6 +203,32 @@ rischio omonimi). Da 1,32 chiamate per azienda arricchita a **1,04**: circa
 **11 EUR in meno** sulle quattro province restanti, il 21% della voce
 Openapi — e soprattutto senza più omonimi.
 
+### La visura per nome non si fida più (2026-09-19)
+
+Il caso che ha fatto cambiare la regola: il cliente apre la prima scheda
+dell'elenco, **A.C. Infissi**, e la trova a Colleferro quando Maps e sito
+dicono Anzio. La visura era di *"AC Infissi di Ciamberlano Antonio"*,
+Colleferro, **CESSATA**: tre omonimi in camera di commercio, la pipeline
+prendeva il primo, e l'ordine dei risultati non è nemmeno stabile fra due
+chiamate. Nessuno dei tre era l'azienda di Anzio — probabilmente è
+registrata a nome del titolare, quindi la ricerca per nome non poteva
+trovarla. Misurato su tutto l'archivio: 2 schede certamente sbagliate + 3
+sospette su 782 confrontabili, tutte corrette a mano il 19/9.
+
+La fiducia ora dipende dall'**aggancio** (`arricchimento.decidi()`, con
+self-check):
+
+- **per P.IVA** (dal sito dell'azienda): fiducia piena, come prima — è
+  l'azienda a dichiarare chi è;
+- **per nome**: gli omonimi si verificano uno per uno (`IT-advanced`
+  ciascuno, tetto `MAX_OMONIMI = 4`), le **CESSATA e INATTIVA si scartano
+  subito**, e fra i vivi si aggancia solo chi **concorda col comune** di
+  Maps o della sede letta dal sito. Zero concordi, più d'uno, o un unico
+  omonimo che contraddice il comune noto: **nessun aggancio** — la scheda
+  resta senza visura, con il segnale `visura_non_agganciata` e il motivo.
+  Meglio un campo vuoto che la visura di un altro, che porta con sé anche
+  dipendenti (e quindi la modulazione di classe) di un'altra azienda.
+
 ## Deploy su Hetzner
 
 ```bash

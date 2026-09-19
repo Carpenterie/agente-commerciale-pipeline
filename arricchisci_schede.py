@@ -48,7 +48,7 @@ CAMPI_SCRITTI = ("gamma", "leva_commerciale", "referente_nome",
 
 CONSERVATI = ("annuncio_lavoro", "reputazione_google", "territorio",
               "ex_cliente", "verniciatura_interna", "chiusa_temporaneamente",
-              "fuori_territorio_sede_dichiarata")
+              "fuori_territorio_sede_dichiarata", "visura_non_agganciata")
 
 
 def da_arricchire(righe: list[dict], classe: str) -> list[dict]:

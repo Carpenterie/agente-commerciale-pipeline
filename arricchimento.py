@@ -19,6 +19,11 @@ import urllib.request
 import config
 
 BASE = "https://company.openapi.com"
+# Tetto di spesa sugli omonimi: la verifica costa una IT-advanced ciascuno.
+# Oltre questo numero non si aggancia niente: con cinque o piu' omonimi la
+# probabilita' di scegliere giusto non vale cinque chiamate.
+MAX_OMONIMI = 4
+STATI_MORTI = ("CESSATA", "INATTIVA")
 
 
 def _numero(valore) -> int | None:
@@ -44,6 +49,7 @@ def _normalizza(dati: dict) -> dict:
     return {
         "piva": (dati.get("vatCode") or dati.get("taxCode") or "").strip(),
         "denominazione": (dati.get("companyName") or "").strip(),
+        "stato": (dati.get("activityStatus") or "").strip().upper(),
         "sede_comune": (sede.get("town") or "").strip(),
         "sede_provincia": (sede.get("province") or "").strip(),
         "sede_cap": (sede.get("zipCode") or "").strip(),
@@ -68,54 +74,119 @@ def _chiama(percorso: str, token: str, log) -> dict | list | None:
     return corpo.get("data")
 
 
-def cerca_id(nome: str, provincia: str, token: str, log) -> str | None:
-    """IT-search per denominazione: restituisce solo l'id interno Openapi.
-    La provincia restringe e riduce le omonimie (in Italia i "Fabbro
-    Rossi" sono molti)."""
+def cerca_omonimi(nome: str, provincia: str, token: str, log) -> list[str]:
+    """IT-search per denominazione: TUTTI gli id, non il primo. "Prendo il
+    primo" ha scritto in archivio la visura di un'AC Infissi CESSATA di
+    Colleferro al posto di quella di Anzio (2026-09-19): l'ordine dei
+    risultati non e' nemmeno stabile fra una chiamata e l'altra."""
     qs = f"companyName={urllib.parse.quote(nome)}"
     if provincia:
         qs += f"&province={urllib.parse.quote(provincia)}"
     dati = _chiama(f"IT-search?{qs}", token, log)
-    if not isinstance(dati, list) or not dati:
-        return None
+    if not isinstance(dati, list):
+        return []
     if len(dati) > 1:
-        log(f"openapi: {len(dati)} omonimi per '{nome}', prendo il primo")
-    return dati[0].get("id")
+        log(f"openapi: {len(dati)} omonimi per '{nome}'")
+    return [d.get("id") for d in dati if d.get("id")]
+
+
+def _concorde(comune: str | None, noti: set[str]) -> bool:
+    c = (comune or "").strip().casefold()
+    return bool(c) and c in noti
+
+
+def decidi(candidati: list[dict], comuni_noti=()) -> tuple[dict | None, str]:
+    """Quale omonimo agganciare, se uno. -> (visura, "") o (None, motivo).
+
+    Pura e testabile: qui sta la regola decisa il 2026-09-19.
+    - le CESSATA e INATTIVA si scartano subito: una visura morta non si
+      scrive mai in una scheda consegnabile;
+    - fra piu' omonimi vivi aggancia solo quello che concorda col comune
+      noto (Maps o sede letta dal sito). Zero concordi, o piu' d'uno:
+      nessun aggancio — meglio un campo vuoto che la visura di un altro;
+    - anche l'omonimo UNICO deve concordare, quando un comune noto c'e':
+      il caso AC Infissi era proprio una visura che contraddiceva Maps e
+      sito concordi fra loro. Una visura senza sede non puo' concordare,
+      quindi non si aggancia: e' la stessa regola, non un caso a parte.
+    """
+    noti = {str(c).strip().casefold() for c in comuni_noti if c and str(c).strip()}
+    vivi = [c for c in candidati if c.get("stato") not in STATI_MORTI]
+    if not vivi:
+        return None, "in visura solo omonimi cessati o inattivi"
+    if len(vivi) > 1:
+        concordi = [c for c in vivi if _concorde(c.get("sede_comune"), noti)]
+        if len(concordi) != 1:
+            quanti = "nessuno" if not concordi else f"{len(concordi)}"
+            return None, (f"{len(vivi)} omonimi attivi in visura, "
+                          f"{quanti} concorde con Maps o col sito")
+        return concordi[0], ""
+    scelto = vivi[0]
+    if noti and not _concorde(scelto.get("sede_comune"), noti):
+        dove = scelto.get("sede_comune") or "senza sede"
+        return None, (f"la visura ({dove}) contraddice il comune noto "
+                      f"({', '.join(sorted(noti))})")
+    return scelto, ""
+
+
+def _advanced(chiave: str, token: str, log) -> dict | None:
+    dati = _chiama(f"{config.ENDPOINT_OPENAPI}/{urllib.parse.quote(chiave)}",
+                   token, log)
+    if isinstance(dati, list):
+        dati = dati[0] if dati else None
+    return dati
 
 
 def arricchisci(nome: str, piva: str = "", provincia: str = "",
-                log=print) -> dict | None:
-    """-> dati anagrafici, o None se non trovata / errore (non è fatale:
-    l'azienda resta in DB senza arricchimento).
+                comuni_noti=(), log=print) -> dict | None:
+    """-> visura agganciata, oppure {"chiamate", "non_agganciata": motivo}
+    quando la visura c'e' ma non e' affidabile, oppure None (token assente,
+    nessun risultato, errore rete — non e' fatale, la scheda resta senza).
 
-    Le schede di Maps ed Exa non portano la P.IVA, quindi quasi sempre si
-    passa dal nome: IT-search dà l'id, IT-advanced i dati. Sono DUE
-    chiamate, e il contatore dei costi le registra entrambe.
+    L'AGGANCIO decide la fiducia (regola del 2026-09-19):
+    - per P.IVA (dal sito dell'azienda): una chiamata, fiducia piena —
+      e' l'azienda a dichiarare chi e';
+    - per NOME: IT-search da' gli omonimi, IT-advanced UNO PER UNO (si
+      registrano tutte), e `decidi()` sceglie o rinuncia. `comuni_noti`
+      sono i comuni di Maps e della sede letta dal sito: la visura che li
+      contraddice non scrive niente.
     """
     token = os.environ.get("OPENAPI_TOKEN", "").strip()
     if not token:
         log("openapi: OPENAPI_TOKEN non configurato, arricchimento saltato")
         return None
 
-    chiave, chiamate = piva.strip(), 1
-    if not chiave:
-        chiave = cerca_id(nome, provincia, token, log)
-        chiamate = 2
-        if not chiave:
-            log(f"openapi: nessuna corrispondenza per '{nome}'"
-                + (f" in provincia {provincia}" if provincia else ""))
+    if piva.strip():
+        dati = _advanced(piva.strip(), token, log)
+        if not dati:
+            log(f"openapi: nessun dato per '{nome}'")
             return None
+        esito = _normalizza(dati)
+        esito["chiamate"], esito["aggancio"] = 1, "piva"
+        return esito
 
-    dati = _chiama(f"{config.ENDPOINT_OPENAPI}/{urllib.parse.quote(chiave)}",
-                   token, log)
-    if isinstance(dati, list):
-        dati = dati[0] if dati else None
-    if not dati:
+    ids = cerca_omonimi(nome, provincia, token, log)
+    if not ids:
+        log(f"openapi: nessuna corrispondenza per '{nome}'"
+            + (f" in provincia {provincia}" if provincia else ""))
+        return None
+    if len(ids) > MAX_OMONIMI:
+        return {"chiamate": 1, "non_agganciata":
+                f"{len(ids)} omonimi in visura, oltre il tetto di {MAX_OMONIMI}"}
+    chiamate, candidati = 1, []
+    for oid in ids:
+        d = _advanced(oid, token, log)
+        chiamate += 1
+        if d:
+            candidati.append(_normalizza(d))
+    if not candidati:
         log(f"openapi: nessun dato per '{nome}'")
         return None
-    esito = _normalizza(dati)
-    esito["chiamate"] = chiamate
-    return esito
+    scelto, motivo = decidi(candidati, comuni_noti)
+    if not scelto:
+        log(f"openapi: visura non agganciata per '{nome}' — {motivo}")
+        return {"chiamate": chiamate, "non_agganciata": motivo}
+    scelto["chiamate"], scelto["aggancio"] = chiamate, "nome"
+    return scelto
 
 
 def da_arricchire(aziende: list[dict]) -> list[dict]:
@@ -137,7 +208,8 @@ if __name__ == "__main__":
 
     # risposta povera: niente indirizzo, dipendenti assenti -> None, non crash
     p = _normalizza({"companyName": "X", "vatCode": "1"})
-    assert p["dipendenti"] is None and p["sede_comune"] == ""
+    assert p["dipendenti"] is None and p["sede_comune"] == "" and p["stato"] == ""
+    assert _normalizza({"activityStatus": "cessata"})["stato"] == "CESSATA"
     # i dipendenti stanno nell'ultimo bilancio, non top-level
     b = _normalizza({"companyName": "Y", "vatCode": "1",
                      "balanceSheets": {"last": {"year": 2024, "employees": 24}}})
@@ -147,6 +219,36 @@ if __name__ == "__main__":
     assert _normalizza({"balanceSheets": {"last": {}}})["dipendenti"] is None
     assert _numero({"value": "7"}) == 7
     assert _numero("n.d.") is None and _numero(None) is None
+
+    # --- decidi(): il caso AC Infissi non deve ripetersi ---
+    # tre omonimi reali del 2026-09-19: attiva a Roma, CESSATA a
+    # Colleferro, INATTIVA a Genazzano. Maps e sito concordi su Anzio:
+    # NESSUNA delle tre deve scrivere.
+    tre = [{"stato": "ATTIVA", "sede_comune": "ROMA", "piva": "1"},
+           {"stato": "CESSATA", "sede_comune": "COLLEFERRO", "piva": "2"},
+           {"stato": "INATTIVA", "sede_comune": "GENAZZANO", "piva": "3"}]
+    v, motivo = decidi(tre, comuni_noti=("Anzio", "Anzio"))
+    assert v is None and "contraddice" in motivo, (v, motivo)
+    # le morte si scartano anche da sole
+    assert decidi([tre[1]], ("Colleferro",))[0] is None
+    assert "cessati" in decidi([tre[1], tre[2]], ())[1]
+    # unico vivo e concorde: si aggancia
+    v, _ = decidi(tre, comuni_noti=("Roma",))
+    assert v and v["piva"] == "1"
+    # unico vivo, nessun comune noto (riga Exa senza sede): come prima
+    assert decidi([tre[0]], ())[0] is not None
+    # piu' vivi: aggancia SOLO quello concorde...
+    due = [dict(tre[0]), {"stato": "ATTIVA", "sede_comune": "Anzio", "piva": "4"}]
+    v, _ = decidi(due, ("ANZIO",))
+    assert v and v["piva"] == "4"
+    # ...e con zero concordi non aggancia nessuno
+    v, motivo = decidi(due, ("Latina",))
+    assert v is None and "nessuno concorde" in motivo, motivo
+    # la visura senza sede non puo' concordare: non scrive
+    assert decidi([{"stato": "ATTIVA", "sede_comune": ""}], ("Anzio",))[0] is None
+    # maiuscole e spazi non contano
+    assert decidi([{"stato": "ATTIVA", "sede_comune": " Fonte Nuova "}],
+                  ("fonte nuova",))[0] is not None
 
     aziende = [{"classe": "A"}, {"classe": "B"}, {"classe": "C"},
                {"classe": "indeterminato"}, {}]

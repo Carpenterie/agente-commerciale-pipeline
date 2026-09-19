@@ -352,8 +352,11 @@ def _scheda_per_modello(azienda: dict) -> str:
                for s in (azienda.get("segnali") or [])
                # l'annuncio di lavoro NON si passa nemmeno al modello: non
                # puo' citare cio' che non sa
+               # visura_non_agganciata e' manutenzione, non un argomento
+               # di vendita: al modello non si passa
                if s.get("tipo") not in ("annuncio_lavoro", "territorio",
-                                        "reputazione_google")]
+                                        "reputazione_google",
+                                        "visura_non_agganciata")]
     campi = [
         ("azienda", azienda.get("ragione_sociale")),
         ("comune", azienda.get("comune")),

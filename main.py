@@ -201,7 +201,17 @@ def arricchisci_ab(azienda: dict, esito: dict, totali: dict,
     stat["arricchibili"] = stat.get("arricchibili", 0) + 1
     anagrafica = arricchimento_sicuro(
         azienda, nome, totali, provincia,
-        piva=(dati.get("partita_iva") or "").strip())
+        piva=(dati.get("partita_iva") or "").strip(),
+        comuni_noti=(azienda.get("comune", ""), dati.get("sede_comune") or ""))
+    motivo_visura = (anagrafica or {}).pop("non_agganciata", "")
+    if motivo_visura:
+        # la visura c'e' ma non e' affidabile: non scrive NIENTE (nemmeno
+        # i dipendenti, che modulerebbero la classe con l'organico di
+        # un'altra azienda) e lo si vede in scheda
+        print(f"  visura NON agganciata: {motivo_visura}")
+        segnali.append({"tipo": "visura_non_agganciata", "nota": motivo_visura})
+        anagrafica = {}
+        stat["visure_non_agganciate"] = stat.get("visure_non_agganciate", 0) + 1
     if anagrafica:
         stat["arricchite"] += 1
         comune_sito = (dati.get("sede_comune") or "").strip()
@@ -231,16 +241,19 @@ def arricchisci_ab(azienda: dict, esito: dict, totali: dict,
 
 
 def arricchimento_sicuro(azienda: dict, nome: str, totali: dict,
-                         provincia: str = "", piva: str = "") -> dict:
-    """Con la P.IVA basta UNA chiamata (IT-advanced diretta); senza, ne
-    servono due (IT-search per l'id, poi IT-advanced) e la ricerca per nome
-    "prende il primo" fra gli omonimi. Da quando il modello estrae la P.IVA
-    dal sito, la strada corta e' quella normale: costa meta' ed e' esatta.
+                         provincia: str = "", piva: str = "",
+                         comuni_noti=()) -> dict:
+    """Con la P.IVA basta UNA chiamata (IT-advanced diretta) e la fiducia
+    e' piena: e' l'azienda a dichiararla sul proprio sito. Senza, si passa
+    dal nome: IT-search da' gli omonimi e ognuno costa una IT-advanced di
+    verifica (tetto in arricchimento.MAX_OMONIMI). `comuni_noti` sono il
+    comune della scheda Maps e la sede letta dal sito: la visura che li
+    contraddice torna con `non_agganciata` e non scrive niente.
     Le chiamate si registrano tutte, altrimenti il costo del ciclo e'
     sottostimato."""
     piva = (piva or azienda.get("piva") or "").strip()
     dati = arricchimento.arricchisci(
-        nome, piva=piva, provincia=provincia) or {}
+        nome, piva=piva, provincia=provincia, comuni_noti=comuni_noti) or {}
     costi.registra_openapi(totali, dati.get("chiamate", 1) if dati else 1)
     return dati
 
