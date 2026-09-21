@@ -226,6 +226,23 @@ def arricchisci_ab(azienda: dict, esito: dict, totali: dict,
             "corretto": bool(comune_sito and comune_openapi
                              and comune_sito.lower() != comune_openapi.lower()),
         })
+    if anagrafica:
+        # anche la SEDE DELLA VISURA passa dal controllo territoriale
+        # (2026-09-21): Door Al e' entrata in classe A con provincia CN
+        # dalla visura, mentre verifica_sede() guardava solo la sede letta
+        # dal sito — e il modello, su una pagina rivenditore, aveva pure
+        # dichiarato "Lazio"
+        sigla_v = (config.sigla_provincia(
+            anagrafica.get("sede_provincia") or "") or "").upper()
+        if len(sigla_v) == 2 and sigla_v in config.SIGLE_PROVINCE.values() \
+                and sigla_v not in config.SIGLE_LAZIO:
+            sede_v = anagrafica.get("sede_comune") or "?"
+            segnali.append({
+                "tipo": "fuori_territorio_sede_dichiarata",
+                "sede": f"{sede_v} ({sigla_v})",
+                "segnale": f"sede in visura: {sede_v} ({sigla_v}), "
+                           f"fuori da {config.REGIONE_CICLO}"})
+            print(f"  sede in visura fuori territorio: {sede_v} ({sigla_v})")
     if anagrafica and anagrafica.get("dipendenti"):
         prima = esito["classe"]
         esito["classe"] = classify.modula_dipendenti(

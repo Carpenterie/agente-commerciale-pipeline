@@ -45,6 +45,7 @@ PAESE_MAPS = "it"   # senza, l'attore geolocalizza dagli USA (Rome, NY)
 PROVINCE = {"RM": "Roma", "LT": "Latina", "FR": "Frosinone",
             "RI": "Rieti", "VT": "Viterbo"}
 REGIONE_CICLO = "Lazio"   # perimetro del primo ciclo (§1)
+SIGLE_LAZIO = ("RM", "LT", "FR", "VT", "RI")
 
 # Il modello restituisce `sede_provincia` a volte come sigla ("RM") e a
 # volte per esteso ("Roma"); Google Maps mette in `state` il nome

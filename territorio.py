@@ -149,11 +149,24 @@ def verifica_sede(dati: dict, regione_ciclo: str = config.REGIONE_CICLO) -> dict
 
     -> segnale da aggiungere alla riga, o None se la sede non contraddice.
     """
+    sede = ", ".join(str(dati.get(c) or "").strip()
+                     for c in ("sede_comune", "sede_provincia") if dati.get(c))
+    # La PROVINCIA dichiarata basta da sola (2026-09-21): "Lastra a Signa,
+    # FI" senza regione passava indenne, perche' il controllo guardava solo
+    # `sede_regione`. La sigla e' piu' specifica della regione e non mente:
+    # se e' una provincia italiana fuori dal Lazio, la sede e' fuori.
+    sigla = (config.sigla_provincia((dati.get("sede_provincia") or "").strip())
+             or "").upper()
+    if len(sigla) == 2 and sigla in config.SIGLE_PROVINCE.values() \
+            and sigla not in config.SIGLE_LAZIO:
+        regione = (dati.get("sede_regione") or "").strip()
+        return {"tipo": "fuori_territorio_sede_dichiarata",
+                "regione": regione or None, "sede": sede or None,
+                "segnale": f"sede dichiarata dal sito: {sede or '?'} "
+                           f"(provincia {sigla}), fuori da {regione_ciclo}"}
     regione = (dati.get("sede_regione") or "").strip()
     if not regione or regione.lower() in ("null", "none", regione_ciclo.lower()):
         return None
-    sede = ", ".join(str(dati.get(c) or "").strip()
-                     for c in ("sede_comune", "sede_provincia") if dati.get(c))
     return {"tipo": "fuori_territorio_sede_dichiarata",
             "regione": regione, "sede": sede or None,
             "segnale": f"sede dichiarata dal sito: {sede or '?'} ({regione}), "
@@ -177,7 +190,29 @@ def riepilogo(valutazioni: list[dict], log=print) -> None:
         log(f"  fuori per {segnale}: {n}")
 
 
+def _test_sede():
+    # i due casi reali del 2026-09-21, sfuggiti al controllo sulla regione:
+    # provincia dichiarata senza regione (Sycurferr, Lastra a Signa FI)...
+    v = verifica_sede({"sede_comune": "LASTRA A SIGNA", "sede_provincia": "FI"})
+    assert v and "provincia FI" in v["segnale"], v
+    # ...e regione dichiarata "Lazio" con provincia fuori (Door Al, CN):
+    # la sigla e' piu' specifica e vince sulla regione sbagliata
+    v = verifica_sede({"sede_comune": "TORRE SAN GIORGIO",
+                       "sede_provincia": "CN", "sede_regione": "Lazio"})
+    assert v and "provincia CN" in v["segnale"], v
+    # provincia laziale: nessun segnale, con e senza regione
+    assert verifica_sede({"sede_provincia": "RM"}) is None
+    assert verifica_sede({"sede_provincia": "Latina", "sede_regione": "Lazio"}) is None
+    # regione fuori senza provincia: scatta come prima
+    v = verifica_sede({"sede_comune": "Rodano", "sede_regione": "Lombardia"})
+    assert v and "Lombardia" in v["segnale"]
+    # niente sede -> niente segnale; valore ignoto -> non e' una sigla
+    assert verifica_sede({}) is None
+    assert verifica_sede({"sede_provincia": "Oltrepo"}) is None
+
+
 if __name__ == "__main__":
+    _test_sede()
     # --- casi sintetici: le regole una per una ---
     v = valuta("# PAGINA: https://x.it/contatti\n\nVia Roma 1, 20121 Milano - Tel 02 1234567")
     assert v["esito"] == "fuori" and "cap 20121" in v["segnale"], v
