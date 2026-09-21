@@ -379,6 +379,10 @@ SITO_EMAIL = ""
 # molte caselle aziendali
 LINK_CATALOGO = ("https://pvxzrfthfhbhslxhjihu.supabase.co/storage/v1/object/"
                  "public/catalogo%20pubblico/Catalogo-Carpenterie-Laziali.pdf")
+# Funzione di tracciamento click (Lovable, 2026-09-21): registra il click
+# in `click_catalogo` e reindirizza al PDF. Il link nelle bozze e'
+# PER-AZIENDA: base + id. Vuota -> si torna al PDF diretto.
+LINK_TRACCIAMENTO = "https://commercialecarpenterie.lovable.app/api/public/catalogo?a="
 LINK_PRENOTAZIONE = ""    # es. "cal.com/carpenterielaziali/10min"
 # Parole che non devono MAI comparire in una bozza: il PDF vieta di citare
 # gli annunci di lavoro, e la guida vieta claim su tempi e certificazioni.

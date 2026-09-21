@@ -156,6 +156,22 @@ def _ha_segnale(azienda: dict, tipo: str) -> bool:
     return any(s.get("tipo") == tipo for s in (azienda.get("segnali") or []))
 
 
+# Il testo "abbiamo lavorato insieme in passato" afferma un rapporto: si usa
+# solo quando il riconoscimento e' CERTO (P.IVA, dominio, o stesso comune).
+# Le marcature INCERTE restano in scheda come indicazione al commerciale ma
+# non guidano ne' la scelta del testo ne' il contenuto della bozza (regola
+# del 2026-09-21, nata da 57 falsi ex clienti agganciati a "COSTRUZIONI SRL").
+CRITERI_EX_CERTI = ("piva", "dominio", "ragione+comune", "stesso comune")
+
+
+def _ex_certo(azienda: dict) -> bool:
+    for s in (azienda.get("segnali") or []):
+        if s.get("tipo") == "ex_cliente":
+            crit = (s.get("riconosciuto_per") or "").lower()
+            return any(c in crit for c in CRITERI_EX_CERTI)
+    return False
+
+
 def scegli_testo(azienda: dict) -> str:
     """Un solo testo per azienda. L'ordine è una precedenza, non una
     preferenza: un ex cliente non riceve MAI un testo da azienda nuova, e
@@ -170,7 +186,7 @@ def scegli_testo(azienda: dict) -> str:
     categoria = (azienda.get("categoria") or "").strip()
     fornitura = (azienda.get("livello_fornitura") or "").strip()
 
-    if _ha_segnale(azienda, "ex_cliente"):
+    if _ex_certo(azienda):
         return "ex_cliente"
     # Il LIVELLO ha la precedenza sul segnale di lavoro: `carico_produttivo`
     # parla di kit gia' tagliato, e a chi compra il prodotto finito il kit
@@ -190,6 +206,16 @@ def scegli_testo(azienda: dict) -> str:
     return ""            # non abbastanza informazioni: nessuna bozza
 
 
+def link_catalogo(azienda_id: str = "") -> str:
+    """Il link del catalogo PER-AZIENDA: la funzione di tracciamento di
+    Lovable registra il click e reindirizza al PDF. Senza id (o senza la
+    base configurata) resta il PDF diretto: la bozza non si rompe mai per
+    un id mancante."""
+    if config.LINK_TRACCIAMENTO and azienda_id:
+        return f"{config.LINK_TRACCIAMENTO}{azienda_id}"
+    return config.LINK_CATALOGO
+
+
 def componi(azienda: dict, testo_id: str = "", oggetto_precedente: str = "") -> dict | None:
     """-> {'oggetto', 'corpo', 'testo_id', 'perche'} oppure None."""
     testo_id = testo_id or scegli_testo(azienda)
@@ -198,7 +224,8 @@ def componi(azienda: dict, testo_id: str = "", oggetto_precedente: str = "") -> 
     perche, oggetto, corpo = TESTI[testo_id]
 
     # i link vivono in config: se mancano, sparisce la frase intera
-    catalogo, prenotazione = config.LINK_CATALOGO, config.LINK_PRENOTAZIONE
+    catalogo = link_catalogo(str(azienda.get("id") or ""))
+    prenotazione = config.LINK_PRENOTAZIONE
     if testo_id == "risposta_interesse" and not catalogo:
         return None      # e' il testo che serve a mandare il catalogo
     corpo = corpo.replace("{frase_catalogo}", (
@@ -223,8 +250,8 @@ def componi(azienda: dict, testo_id: str = "", oggetto_precedente: str = "") -> 
     oggetto = oggetto.replace("{oggetto_precedente}", oggetto_precedente or oggetto)
 
     return {"testo_id": testo_id, "perche": perche, "oggetto": oggetto,
-            "corpo": _chiudi(f"{APERTURA}\n{corpo}",
-                             sito=testo_id not in SENZA_SITO)}
+            "corpo": _chiudi(f"{APERTURA}\n{corpo}", sito=testo_id not in SENZA_SITO,
+                             link=catalogo)}
 
 
 def accorcia(corpo: str, massimo: int = 0, minimo: int = 0) -> str:
@@ -262,7 +289,7 @@ def accorcia(corpo: str, massimo: int = 0, minimo: int = 0) -> str:
     return "\n".join(pezzi).strip()
 
 
-def _chiudi(corpo: str, sito: bool = False) -> str:
+def _chiudi(corpo: str, sito: bool = False, link: str = "") -> str:
     """Catalogo e firma li mette il programma, non il modello: sono le due
     cose che non devono mai dipendere da come e' andata la generazione.
 
@@ -275,9 +302,10 @@ def _chiudi(corpo: str, sito: bool = False) -> str:
     (il follow-up e la risposta a chi mostra interesse) e stamparlo due
     volte in fondo alla stessa email e' peggio che non stamparlo.
     """
+    link = link or config.LINK_CATALOGO
     pezzi = [corpo.rstrip()]
-    if config.LINK_CATALOGO and config.LINK_CATALOGO not in corpo:
-        pezzi.append(f"\n{RIGA_CATALOGO}{config.LINK_CATALOGO}")
+    if link and link not in corpo:
+        pezzi.append(f"\n{RIGA_CATALOGO}{link}")
     firma = [CHIUSURA]
     if config.FIRMA_EMAIL:
         firma.append(config.FIRMA_EMAIL)
@@ -309,6 +337,8 @@ def _senza_accessori(corpo: str) -> str:
     for link in (config.LINK_CATALOGO, config.LINK_PRENOTAZIONE):
         if link:
             corpo = corpo.replace(link, "")
+    if config.LINK_TRACCIAMENTO:
+        corpo = re.sub(re.escape(config.LINK_TRACCIAMENTO) + r"\S*", "", corpo)
     return corpo
 
 
@@ -328,6 +358,17 @@ def verifica(bozza: dict, forma: bool = False) -> list[str]:
         problemi.append("segnaposto non compilato rimasto nel corpo")
     if "{" in bozza["corpo"] or "}" in bozza["corpo"]:
         problemi.append("campo template non sostituito")
+    # il link del catalogo: MAI piu' di una volta; almeno una quando il
+    # PDF di ripiego e' configurato (il tracciato dipende dall'id, che
+    # verifica() non conosce — ma col ripiego un link c'e' sempre)
+    n_link = 0
+    if config.LINK_TRACCIAMENTO:
+        n_link += bozza["corpo"].count(config.LINK_TRACCIAMENTO)
+    if config.LINK_CATALOGO:
+        n_link += bozza["corpo"].count(config.LINK_CATALOGO)
+    if n_link > 1 or (config.LINK_CATALOGO and n_link != 1):
+        problemi.append(f"il link del catalogo deve comparire UNA volta, "
+                        f"trovate {n_link}")
     if not forma:
         return problemi
     corpo = _senza_accessori(bozza["corpo"])
@@ -348,15 +389,19 @@ def verifica(bozza: dict, forma: bool = False) -> list[str]:
 def _scheda_per_modello(azienda: dict) -> str:
     """Solo i campi che servono a personalizzare: dare tutta la riga
     inviterebbe a citare dati che in una prima email non si citano."""
+    certo = _ex_certo(azienda)
     segnali = [s.get("nota") or s.get("tipo", "")
                for s in (azienda.get("segnali") or [])
                # l'annuncio di lavoro NON si passa nemmeno al modello: non
                # puo' citare cio' che non sa
                # visura_non_agganciata e' manutenzione, non un argomento
                # di vendita: al modello non si passa
+               # ex_cliente INCERTO nemmeno: il modello non deve poter
+               # alludere a un rapporto passato non accertato
                if s.get("tipo") not in ("annuncio_lavoro", "territorio",
                                         "reputazione_google",
-                                        "visura_non_agganciata")]
+                                        "visura_non_agganciata")
+               and not (s.get("tipo") == "ex_cliente" and not certo)]
     campi = [
         ("azienda", azienda.get("ragione_sociale")),
         ("comune", azienda.get("comune")),
@@ -429,7 +474,9 @@ def genera(azienda: dict, client, testo_id: str = "",
         oggetto = fissa["oggetto"] if fissa["testo_id"] in OGGETTO_FISSO \
             else (dati.get("oggetto") or fissa["oggetto"]).strip()
         bozza = {**fissa, "oggetto": oggetto,
-                 "corpo": _chiudi(accorcia(corpo)), "generata": True, **uso}
+                 "corpo": _chiudi(accorcia(corpo),
+                                  link=link_catalogo(str(azienda.get("id") or ""))),
+                 "generata": True, **uso}
         problemi = verifica(bozza, forma=True)
         if not problemi:
             return bozza
@@ -492,9 +539,38 @@ def main() -> int:
 
 if __name__ == "__main__" and "--test" in sys.argv:
     # 1. selezione: un solo testo, e le precedenze del PDF
-    ex = {"segnali": [{"tipo": "ex_cliente"}], "categoria": "fabbro",
-          "livello_fornitura": "kit"}
-    assert scegli_testo(ex) == "ex_cliente", "ex cliente ha la precedenza su tutto"
+    ex = {"segnali": [{"tipo": "ex_cliente",
+                       "riconosciuto_per": "ragione+comune"}],
+          "categoria": "fabbro", "livello_fornitura": "kit"}
+    assert scegli_testo(ex) == "ex_cliente", "ex cliente CERTO ha la precedenza"
+    # ...ma il rapporto passato si afferma solo se e' CERTO: l'incerto
+    # riceve il testo normale della sua categoria, e resta solo in scheda
+    incerto = {"segnali": [{"tipo": "ex_cliente", "riconosciuto_per":
+                            "nome contenuto (comune diverso: INCERTO)",
+                            "nota": "possibile ex cliente (da verificare)"}],
+               "categoria": "fabbro", "livello_fornitura": "kit"}
+    assert scegli_testo(incerto) == "kit_officina", scegli_testo(incerto)
+    # un segnale senza criterio (mai successo in archivio) e' prudente: non certo
+    assert scegli_testo({"segnali": [{"tipo": "ex_cliente"}], "categoria": "fabbro",
+                         "livello_fornitura": "kit"}) == "kit_officina"
+    # e l'incerto non arriva nemmeno al modello che personalizza
+    assert "possibile ex cliente" not in _scheda_per_modello(incerto)
+    assert "ex_cliente" not in _scheda_per_modello(incerto)
+    per_certo = _scheda_per_modello({**ex, "gamma": ["grate"]})
+    assert "ex_cliente" in per_certo or "gamma" in per_certo  # il certo passa
+    # il link tracciato: per-azienda quando c'e' l'id, PDF diretto senza
+    _b = config.LINK_TRACCIAMENTO
+    config.LINK_TRACCIAMENTO = "https://x.app/c?a="
+    con_id = componi({"categoria": "fabbro", "livello_fornitura": "kit",
+                      "id": "abc-123"})
+    assert "https://x.app/c?a=abc-123" in con_id["corpo"]
+    assert config.LINK_CATALOGO not in con_id["corpo"]
+    assert not verifica(con_id), verifica(con_id)
+    doppio_t = dict(con_id, corpo=con_id["corpo"] + "\nhttps://x.app/c?a=abc-123")
+    assert any("UNA volta" in x for x in verifica(doppio_t))
+    senza_id = componi({"categoria": "fabbro", "livello_fornitura": "kit"})
+    assert config.LINK_CATALOGO in senza_id["corpo"]
+    config.LINK_TRACCIAMENTO = _b
     # il livello vince sul segnale di lavoro: a chi compra finito niente kit
     annuncio = [{"tipo": "annuncio_lavoro", "ruolo": "saldatore"}]
     assert scegli_testo({"segnali": annuncio, "categoria": "fabbro",

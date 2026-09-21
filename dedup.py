@@ -202,7 +202,17 @@ def cerca_riferimento(s: dict, rif: dict,
         return None, None
     for nome, comune_rif, riga in rif["nomi_lunghi"]:
         if rag in nome or nome in rag:
-            if com and comune_rif and com == comune_rif:
+            stesso = bool(com and comune_rif and com == comune_rif)
+            # Un nome di UNA sola parola aggancia solo a parita' di comune
+            # (regola del 2026-09-21): "COSTRUZIONI SRL" normalizza a
+            # "costruzioni", 11 caratteri — passa la soglia degli 8 pensata
+            # per "Z Srl" — e per sottostringa agganciava ogni impresa con
+            # "costruzioni" nel nome: 57 falsi ex clienti in archivio, 3
+            # bozze col testo "abbiamo lavorato insieme" a sconosciuti.
+            # La lunghezza para i nomi corti, non le parole generiche lunghe.
+            if not stesso and (len(rag.split()) == 1 or len(nome.split()) == 1):
+                continue
+            if stesso:
                 return "nome contenuto (stesso comune)", riga
             return "nome contenuto (comune diverso: INCERTO)", riga
     return None, None
@@ -243,6 +253,11 @@ def marca(schede: list[dict], rif: dict, log=print,
             "riconosciuto_per": criterio,
             "ragione_sociale_elenco": riga.get("ragione_sociale") or "",
         }
+        if "INCERTO" in criterio:
+            # visibile in scheda, ma NON guida il testo della bozza: una
+            # email che afferma un rapporto passato richiede certezza,
+            # un'indicazione al commerciale no (regola del 2026-09-21)
+            s["ex_cliente"]["nota"] = "possibile ex cliente (da verificare)"
         marcate += 1
         log(f"ex cliente [{criterio}]: {s.get('nome', '?')} "
             f"({s['ex_cliente']['motivo']})")
@@ -262,6 +277,27 @@ if __name__ == "__main__":
     # codici fiscali di persona fisica: non sono P.IVA, non fanno da chiave
     assert norm_piva("DLLCST60B22G659U") == ""
     assert norm_piva("RPNMRC89R29A123D") == ""
+
+    # il caso COSTRUZIONI SRL (2026-09-21): una parola sola non aggancia
+    # fuori dal proprio comune, dentro si'
+    rif_c = riferimenti([{"ragione_sociale": "COSTRUZIONI SRL",
+                          "comune": "Carpineto Romano"}])
+    assert cerca_riferimento({"nome": "Martini Costruzioni", "comune": "Roma"},
+                             rif_c, permissivo=True) == (None, None)
+    c, _ = cerca_riferimento({"nome": "Rossi Costruzioni Edili",
+                              "comune": "Carpineto Romano"}, rif_c, permissivo=True)
+    assert c == "nome contenuto (stesso comune)", c
+    # ...e vale anche al contrario: scheda dal nome monoparola contro un
+    # elenco multiparola in un altro comune
+    rif_m = riferimenti([{"ragione_sociale": "MARTINI COSTRUZIONI SRL",
+                          "comune": "Roma"}])
+    assert cerca_riferimento({"nome": "Costruzioni", "comune": "Latina"},
+                             rif_m, permissivo=True) == (None, None)
+    # i multi-parola restano come prima: Comerci deve continuare a funzionare
+    rif_x = riferimenti([{"ragione_sociale": "COMERCI SERRAMENTI", "comune": "Roma"}])
+    c, _ = cerca_riferimento({"nome": "Show Room Comerci Serramenti",
+                              "comune": "Guidonia"}, rif_x, permissivo=True)
+    assert c == "nome contenuto (comune diverso: INCERTO)", c
     assert norm_piva("123") == ""                    # spezzone: non identifica
     assert norm_dominio("https://www.fabbrox.it/chi-siamo?x=1") == "fabbrox.it"
     assert norm_dominio("WWW.FabbroX.IT") == "fabbrox.it"
