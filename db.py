@@ -307,6 +307,26 @@ def chiudi_ciclo(sb, ciclo_id: str, riepilogo: dict, n_trovate: int,
     }).eq("id", ciclo_id).execute()
 
 
+def _nessun_delete_nel_repo() -> list[str]:
+    """L'id di una riga vale per la vita dell'azienda: i link tracciati
+    nelle email inviate puntano a quello. Percio' nel repository nessuno
+    cancella o riscrive righe — la scrittura e' un insert e il conflitto
+    e' il dedup. Questo controllo scansiona i sorgenti: se un giorno serve
+    davvero cancellare (su un'ALTRA tabella), chi lo scrive deve passare
+    consapevolmente da qui.
+    """
+    import pathlib as _pl
+    # i pattern si compongono a runtime: scritti per esteso farebbero
+    # scattare la guardia su questo stesso file
+    vietati = (".dele" + "te(", ".upse" + "rt(")
+    colpevoli = []
+    for f in _pl.Path(__file__).parent.glob("*.py"):
+        testo = f.read_text(encoding="utf-8")
+        if any(v in testo for v in vietati):
+            colpevoli.append(f.name)
+    return colpevoli
+
+
 if __name__ == "__main__":
     assert _enum("SI", config.ENUM_TERNARIO, "non_determinabile") == "si"
     assert _enum("ALTA", config.ENUM_CONFIDENZA, "bassa") == "alta"
@@ -417,6 +437,9 @@ if __name__ == "__main__":
     assert post["classe"] == "C"
     assert post["regione"] == "Lombardia"   # il filtro lo fa questo campo
     assert post["segnali"][0]["tipo"] == "fuori_territorio_sede_dichiarata"
+
+    # l'id e' per la vita dell'azienda: mai cancella-e-riscrivi (2026-09-21)
+    assert _nessun_delete_nel_repo() == [], _nessun_delete_nel_repo()
 
     # ex cliente: marcato nei segnali, non escluso dai risultati
     exc = riga_azienda({"nome": "Officina Y", "fonte": "maps", "comune": "Tivoli",

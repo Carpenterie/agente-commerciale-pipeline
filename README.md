@@ -417,6 +417,15 @@ scrive su cinque colonne di `aziende`:
 | `bozza_generata` | `true` personalizzata, `false` ripiego sul testo approvato |
 | `bozza_creata_il` | quando — serve a riconoscere le bozze vecchie |
 
+**Una riga di `aziende` non si cancella e riscrive MAI: si aggiorna sul
+posto.** L'`id` vale per la vita dell'azienda — i link tracciati del
+catalogo nelle email gia' inviate e i deep-link dell'app puntano a quello,
+e un cancella-e-riscrivi li romperebbe in silenzio. Per questo in tutto il
+repository non esistono `.delete()` ne' `.upsert()`: la scrittura e' un
+`insert` e il conflitto sugli indici unici e' il dedup che lavora
+(la riga esistente resta intatta, id compreso). Un self-check in `db.py`
+scansiona i sorgenti e fallisce se qualcuno introduce i due metodi.
+
 **`bozza_corpo` resta sempre la bozza GENERATA.** L'app non ci riscrive
 sopra la versione corretta dal commerciale: quella vive in `attivita`, che
 è già il registro di cosa è partito davvero. Le due cose non vanno
