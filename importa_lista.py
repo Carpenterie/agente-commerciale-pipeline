@@ -162,15 +162,18 @@ def main_() -> int:
             "ex_in_riga": 0, "ex_scritti": 0}
     esiti_fetch, scritture = Counter(), Counter()
     email_lista_usate, tel_lista_usati = 0, 0
-    errori_di_fila = 0
+    errori_di_fila, serie_analisi, interrotto = 0, ("", 0), ""
 
     async def giro():
-        nonlocal email_lista_usate, tel_lista_usati, errori_di_fila
+        nonlocal email_lista_usate, tel_lista_usati, errori_di_fila, \
+            serie_analisi, interrotto
         async with AsyncWebCrawler(verbose=False) as crawler:
             for i, azienda in enumerate(schede, 1):
                 print(f"[{i}/{len(schede)}] {azienda.get('nome', '?')[:60]}")
                 try:
                     esito = await ciclo.analizza(azienda, crawler, client, totali)
+                    serie_analisi = ciclo.aggiorna_serie(
+                        serie_analisi, esito.get("errore_analisi", ""))
                     anagrafica, segnali = ciclo.arricchisci_ab(
                         azienda, esito, totali, stat,
                         provincia=azienda.get("provincia", ""))
@@ -195,7 +198,15 @@ def main_() -> int:
                     scritture[scritta] += 1
                     errori_di_fila = errori_di_fila + 1 if scritta == "errore" else 0
                     if errori_di_fila >= ciclo.MAX_ERRORI_SCRITTURA:
-                        print("STOP: il database non risponde")
+                        interrotto = "il database non risponde"
+                        print(f"STOP: {interrotto}")
+                        break
+                    if serie_analisi[1] >= ciclo.MAX_ERRORI_ANALISI:
+                        interrotto = (f"{serie_analisi[1]} analisi fallite di "
+                                      f"fila con lo stesso errore "
+                                      f"({serie_analisi[0]}): probabile causa "
+                                      f"esterna — credito API o rete")
+                        print(f"STOP: {interrotto}")
                         break
                 except Exception as e:  # noqa: BLE001 - una riga non ferma il giro
                     print(f"  SALTATA {azienda.get('nome')}: {type(e).__name__}: {e}")
@@ -204,6 +215,8 @@ def main_() -> int:
 
     morti = esiti_fetch.get("FETCH_FALLITO", 0)
     print("\n" + "=" * 52)
+    if interrotto:
+        print(f"ESITO: import INTERROTTO — {interrotto}")
     print(f"importate: {sum(scritture.values())}  {dict(scritture)}")
     print(f"SITI MORTI (fetch fallito, restano come anagrafica): {morti}")
     print(f"esiti fetch: {dict(esiti_fetch)}")
@@ -215,7 +228,7 @@ def main_() -> int:
                     sum(scritture.values()),
                     note="import lista direttore commerciale")
     costi.stampa(totali)
-    return 0
+    return 1 if interrotto else 0
 
 
 if __name__ == "__main__":
@@ -226,6 +239,13 @@ if __name__ == "__main__":
         assert norm_tel("3927452682") == "3927452682"          # cellulare NUDO: 39 resta
         assert norm_tel("06.81102427") == "0681102427"
         assert norm_tel("123") == ""
+        import main as _c
+        serie = ("", 0)
+        for _ in range(3):
+            serie = _c.aggiorna_serie(serie, "BadRequestError")
+        assert serie == ("BadRequestError", 3)
+        assert _c.aggiorna_serie(serie, "TimeoutError") == ("TimeoutError", 1)
+        assert _c.aggiorna_serie(serie, "") == ("", 0), "un successo azzera la serie"
         idx = {"domini": {"allartcenter.it"}, "telefoni": {"0681102427"},
                "ragioni_comune": {("met serramenti", "roma")},
                "ragioni_lunghe": ["met serramenti"]}

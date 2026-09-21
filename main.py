@@ -106,7 +106,7 @@ async def analizza(azienda: dict, crawler, client, totali: dict) -> dict:
     azienda non ferma il ciclo (§10)."""
     esito = {"esito_fetch": "", "dati": None, "territorio": None,
              "pagine": 0, "costo": 0.0, "classe": "indeterminato",
-             "segnale_sede": None}
+             "segnale_sede": None, "errore_analisi": ""}
 
     sito = (azienda.get("sito") or "").strip()
     if not sito or dedup.e_portale(sito):
@@ -141,6 +141,10 @@ async def analizza(azienda: dict, crawler, client, totali: dict) -> dict:
     except Exception as e:  # noqa: BLE001
         print(f"  analisi KO {azienda.get('nome')}: {type(e).__name__}: {e}")
         esito["esito_fetch"] = "ERRORE_ANALISI"
+        # la firma dell'errore serve al salvavita del chiamante: dieci
+        # UGUALI di fila non sono dieci aziende sfortunate, sono una causa
+        # esterna (credito API finito, rete giu')
+        esito["errore_analisi"] = type(e).__name__
         return esito
 
     esito["dati"] = dati
@@ -279,6 +283,20 @@ def arricchimento_sicuro(azienda: dict, nome: str, totali: dict,
 # il database: continuare significa analizzare (e pagare) centinaia di
 # aziende per buttarle.
 MAX_ERRORI_SCRITTURA = 10
+# Stessa logica sulle ANALISI: il 2026-09-21 il credito Anthropic e'
+# finito a meta' import e il giro ha continuato a scaricar siti per 290
+# righe senza poterle analizzare. Dieci fallite DI FILA con la stessa
+# firma d'errore = causa esterna, ci si ferma e lo si scrive nell'ESITO.
+MAX_ERRORI_ANALISI = 10
+
+
+def aggiorna_serie(serie: tuple, firma: str) -> tuple:
+    """(firma, quante) degli errori consecutivi UGUALI. Firma vuota o
+    diversa azzera: dieci errori misti sono sfortuna, dieci uguali no."""
+    if not firma:
+        return ("", 0)
+    vecchia, n = serie
+    return (firma, n + 1 if firma == vecchia else 1)
 
 
 def _verdetto(ok: bool, motivo: str = "") -> int:
@@ -382,6 +400,7 @@ async def esegui(args) -> int:
     client = Anthropic()
     valutazioni, esiti_scrittura, n_in_target, esiti_righe = [], [], 0, []
     errori_di_fila, interrotto = 0, ""
+    serie_analisi = ("", 0)
     stat = {"classi": Counter(), "ruoli": Counter(), "con_segnale": 0,
             "saliti_ad_A": 0, "scesi_per_organico": 0, "arricchite": 0,
             # la marcatura ex cliente e' una richiesta esplicita del
@@ -394,6 +413,8 @@ async def esegui(args) -> int:
             print(f"[{i}/{len(schede)}] {azienda.get('nome', '?')[:60]}")
             try:
                 esito = await analizza(azienda, crawler, client, totali)
+                serie_analisi = aggiorna_serie(serie_analisi,
+                                               esito.get("errore_analisi", ""))
                 anagrafica, segnali = arricchisci_ab(azienda, esito, totali,
                                                      stat, args.provincia)
                 if esito["segnale_sede"]:
@@ -431,6 +452,13 @@ async def esegui(args) -> int:
                         print(f"  STOP: {interrotto}. Le {i} aziende gia' "
                               f"lavorate restano, le altre no.")
                         break
+                if serie_analisi[1] >= MAX_ERRORI_ANALISI:
+                    interrotto = (f"{serie_analisi[1]} analisi fallite di fila "
+                                  f"con lo stesso errore ({serie_analisi[0]}): "
+                                  f"probabile causa esterna — credito API o rete")
+                    print(f"  STOP: {interrotto}. Le {i} aziende gia' "
+                          f"lavorate restano, le altre no.")
+                    break
                 else:
                     print("  --- riga che verrebbe scritta:")
                     for campo, valore in riga.items():
