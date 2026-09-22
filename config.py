@@ -227,14 +227,16 @@ ENDPOINT_OPENAPI = "IT-advanced"
 # il report costi (§9) usa questo valore, non quello del PRD.
 COSTO_OPENAPI_EUR = 0.10
 CHIAMATE_OPENAPI_GRATUITE_MESE = 30
-# Quali classi arricchire. Il §9 dice A e B.
-# ATTENZIONE al risparmio atteso: il "circa due terzi" scritto qui prima
-# nasceva da un campione piccolo ed e' FALSO. Misurato sul ciclo Roma del
-# 2026-09-07, 194 aziende: A=55, B=20 — le A sono il 73% delle A+B, non il
-# 40%. Restringere ad ("A",) taglia Openapi del 27%, non di due terzi.
-# Openapi serve a P.IVA, sede e dipendenti: sulle classi escluse la
-# modulazione organico non si applica e la scheda resta senza P.IVA.
-CLASSI_DA_ARRICCHIRE = ("A",)
+# Quali classi arricchire con la visura Openapi (P.IVA, sede, dipendenti).
+# TUTTE, dal 2026-09-22 con l'ok del cliente: la restrizione ad ("A",)
+# dell'8/9 era una scelta di costo sul ciclo Roma, e ha lasciato B e C
+# senza visura (dipendenti al 3% e 2% contro il 26% delle A) — pareggiate
+# a mano il 22/9 sulle righe con P.IVA in scheda. Costo della regola sui
+# cicli mensili: ~10-20 EUR/mese di voce Openapi in piu', dentro i consumi
+# ordinari. Non e' una scelta di codice: il filtro sta in
+# arricchimento.da_arricchire, e con l'aggancio per nome valgono le regole
+# prudenti di arricchimento.decidi().
+CLASSI_DA_ARRICCHIRE = ("A", "B", "C")
 
 # --- Reputazione Google (dalla scheda Maps) ---
 # ATTENZIONE: dal 2026-09-07 queste soglie NON assegnano piu' la classe A.
