@@ -15,14 +15,48 @@ echo "==> gitleaks prima di copiare (obbligo di consegna)"
 # scansione git-aware: guarda i file TRACCIATI, che sono quelli che rsync
 # copia. Con --no-git vedrebbe anche .env (non tracciato, escluso dal
 # rsync) e bloccherebbe ogni deploy per un falso positivo.
-if command -v gitleaks >/dev/null; then
-    gitleaks detect --source . --redact || {
-        echo "!! gitleaks ha trovato qualcosa nei file versionati: NON procedo"
-        exit 1; }
-else
-    echo "!! gitleaks non installato: NON procedo (e' un obbligo di consegna)"
-    exit 1
+# Se gitleaks non e' sul PATH si scarica da solo, UNA volta, in una cache
+# fuori dal repo: versione PINNATA e checksum verificato contro il file
+# ufficiale della release. Prima viveva nello scratchpad di sessione, che
+# si ripulisce tra un riavvio e l'altro, e il riscarico era un rito a mano.
+GITLEAKS_VER="8.30.1"
+GITLEAKS_CACHE="$HOME/.cache/carpenterie-gitleaks"
+GITLEAKS_BIN="$GITLEAKS_CACHE/gitleaks-$GITLEAKS_VER"
+if ! command -v gitleaks >/dev/null && [ ! -x "$GITLEAKS_BIN" ]; then
+    case "$(uname -s)-$(uname -m)" in
+        Darwin-x86_64) GITLEAKS_PIATTAFORMA="darwin_x64" ;;
+        Darwin-arm64)  GITLEAKS_PIATTAFORMA="darwin_arm64" ;;
+        Linux-x86_64)  GITLEAKS_PIATTAFORMA="linux_x64" ;;
+        *) echo "!! piattaforma non prevista: installa gitleaks a mano"; exit 1 ;;
+    esac
+    echo "==> scarico gitleaks v$GITLEAKS_VER ($GITLEAKS_PIATTAFORMA) nella cache"
+    mkdir -p "$GITLEAKS_CACHE"
+    BASE_URL="https://github.com/gitleaks/gitleaks/releases/download/v$GITLEAKS_VER"
+    curl -sL -o "$GITLEAKS_CACHE/gl.tar.gz" \
+        "$BASE_URL/gitleaks_${GITLEAKS_VER}_${GITLEAKS_PIATTAFORMA}.tar.gz"
+    curl -sL -o "$GITLEAKS_CACHE/sums.txt" \
+        "$BASE_URL/gitleaks_${GITLEAKS_VER}_checksums.txt"
+    ATTESO=$(grep "_${GITLEAKS_PIATTAFORMA}.tar.gz" "$GITLEAKS_CACHE/sums.txt" | cut -d' ' -f1)
+    REALE=$(shasum -a 256 "$GITLEAKS_CACHE/gl.tar.gz" | cut -d' ' -f1)
+    if [ -z "$ATTESO" ] || [ "$ATTESO" != "$REALE" ]; then
+        echo "!! checksum di gitleaks NON corrisponde: NON procedo"
+        rm -f "$GITLEAKS_CACHE/gl.tar.gz"
+        exit 1
+    fi
+    tar xzf "$GITLEAKS_CACHE/gl.tar.gz" -C "$GITLEAKS_CACHE" gitleaks
+    mv "$GITLEAKS_CACHE/gitleaks" "$GITLEAKS_BIN"
+    chmod +x "$GITLEAKS_BIN"
+    rm -f "$GITLEAKS_CACHE/gl.tar.gz" "$GITLEAKS_CACHE/sums.txt"
 fi
+if command -v gitleaks >/dev/null; then
+    GITLEAKS=gitleaks
+else
+    GITLEAKS="$GITLEAKS_BIN"
+fi
+"$GITLEAKS" version >/dev/null || { echo "!! gitleaks non eseguibile"; exit 1; }
+"$GITLEAKS" detect --source . --redact || {
+    echo "!! gitleaks ha trovato qualcosa nei file versionati: NON procedo"
+    exit 1; }
 
 echo "==> rsync verso $SERVER:$REMOTA"
 rsync -az --delete \
