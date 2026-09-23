@@ -36,6 +36,10 @@ CHIUSURA = "Un saluto,"
 # Scritta da `_chiudi`, tolta dal conteggio parole da `_senza_accessori`:
 # una costante sola perche' le due non possano divergere.
 RIGA_CATALOGO = "Le lasciamo il nostro catalogo: "
+# "Ci trova": la forma di cortesia che rispetta il registro plurale
+# ("trova tutto sul nostro sito" sarebbe un tu). Nei testi SENZA_SITO la
+# riga non si mette: chi risponde o e' gia' cliente il sito l'ha visto.
+RIGA_SITO = "Ci trova anche sul nostro sito: "
 # I testi APPROVATI vanno da 48 a 63 parole (misurati dopo la riscrittura
 # di registro del 2026-09-16; prima 52-66). Una prima finestra
 # larga (45-95) lasciava passare bozze da 86 parole: il 50% piu' lunghe,
@@ -306,11 +310,11 @@ def _chiudi(corpo: str, sito: bool = False, link: str = "") -> str:
     pezzi = [corpo.rstrip()]
     if link and link not in corpo:
         pezzi.append(f"\n{RIGA_CATALOGO}{link}")
+    if sito and config.SITO_EMAIL and config.SITO_EMAIL not in corpo:
+        pezzi.append(f"\n{RIGA_SITO}{config.SITO_EMAIL}")
     firma = [CHIUSURA]
     if config.FIRMA_EMAIL:
         firma.append(config.FIRMA_EMAIL)
-    if sito and config.SITO_EMAIL:
-        firma.append(f"— {config.SITO_EMAIL}")
     pezzi.append(f"\n{' '.join(firma)}")
     return "\n".join(pezzi)
 
@@ -332,6 +336,7 @@ def _senza_accessori(corpo: str) -> str:
     """
     righe = [r for r in corpo.split("\n")
              if RIGA_CATALOGO.rstrip(": ") not in r
+             and RIGA_SITO.rstrip(": ") not in r
              and not r.strip().startswith(CHIUSURA)]
     corpo = "\n".join(righe)
     for link in (config.LINK_CATALOGO, config.LINK_PRENOTAZIONE):
@@ -369,6 +374,14 @@ def verifica(bozza: dict, forma: bool = False) -> list[str]:
     if n_link > 1 or (config.LINK_CATALOGO and n_link != 1):
         problemi.append(f"il link del catalogo deve comparire UNA volta, "
                         f"trovate {n_link}")
+    if config.SITO_EMAIL:
+        n_sito = bozza["corpo"].count(config.SITO_EMAIL)
+        attesi = 0 if bozza.get("testo_id") in SENZA_SITO else 1
+        if bozza.get("testo_id") and n_sito != attesi:
+            problemi.append(f"il sito deve comparire {attesi} volte in "
+                            f"'{bozza['testo_id']}', trovate {n_sito}")
+        elif not bozza.get("testo_id") and n_sito > 1:
+            problemi.append(f"il sito compare {n_sito} volte")
     if not forma:
         return problemi
     corpo = _senza_accessori(bozza["corpo"])
@@ -475,6 +488,7 @@ def genera(azienda: dict, client, testo_id: str = "",
             else (dati.get("oggetto") or fissa["oggetto"]).strip()
         bozza = {**fissa, "oggetto": oggetto,
                  "corpo": _chiudi(accorcia(corpo),
+                                  sito=fissa["testo_id"] not in SENZA_SITO,
                                   link=link_catalogo(str(azienda.get("id") or ""))),
                  "generata": True, **uso}
         problemi = verifica(bozza, forma=True)
@@ -695,6 +709,23 @@ if __name__ == "__main__" and "--test" in sys.argv:
         assert vietata in config.VIETATE_EMAIL, vietata
         finta = {"oggetto": "x", "corpo": f"Buongiorno,\nla fornitura e' {vietata}."}
         assert verifica(finta), vietata
+
+    # 4f. il sito nella chiusura: una volta nei testi normali, MAI nei
+    # SENZA_SITO (follow-up ed ex cliente l'hanno gia' visto), e non conta
+    # nelle parole
+    b_sito = componi({"categoria": "fabbro", "livello_fornitura": "kit"})
+    assert b_sito["corpo"].count(config.SITO_EMAIL) == 1, b_sito["corpo"]
+    assert RIGA_SITO in b_sito["corpo"]
+    for tid in SENZA_SITO:
+        b_no = componi({"categoria": "fabbro",
+                        "segnali": [{"tipo": "ex_cliente",
+                                     "riconosciuto_per": "piva"}]}, testo_id=tid,
+                       oggetto_precedente="X")
+        assert config.SITO_EMAIL not in b_no["corpo"], tid
+    b_acc2 = {"oggetto": "x", "corpo": _chiudi("Buongiorno,\nUna frase.\n\nDomanda?",
+                                               sito=True)}
+    assert len(_senza_accessori(b_acc2["corpo"]).split()) == 4, \
+        _senza_accessori(b_acc2["corpo"])
 
     # 5. firma vuota -> si chiude senza segnaposto, non con "[Firma]"
     b = componi({"categoria": "showroom"})

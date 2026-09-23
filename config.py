@@ -375,7 +375,10 @@ FORNITURA_PER_CATEGORIA = {
 FIRMA_EMAIL = "Carpenterie Laziali"
 # In chiusura andra' il link al CATALOGO, non al sito: si compila quando il
 # cliente lo manda. Finche' e' vuoto, la chiusura resta la sola firma.
-SITO_EMAIL = ""
+# Forma CANONICA verificata il 2026-09-23: risponde 200 diretta; senza
+# www (e in http) fa 301 verso questa. Nelle email va quella che non
+# fa redirect.
+SITO_EMAIL = "https://www.carpenterielaziali.it"
 # Link usati dai due testi del catalogo. Vuoti finche' non arrivano: la
 # frase che li conterrebbe sparisce, mai un segnaposto in chiaro.
 # versione leggera, 3 MB invece di 29: un allegato da 29 MB rimbalza su
