@@ -37,8 +37,9 @@ CHIUSURA = "Un saluto,"
 # una costante sola perche' le due non possano divergere.
 RIGA_CATALOGO = "Le lasciamo il nostro catalogo: "
 # "Ci trova": la forma di cortesia che rispetta il registro plurale
-# ("trova tutto sul nostro sito" sarebbe un tu). Nei testi SENZA_SITO la
-# riga non si mette: chi risponde o e' gia' cliente il sito l'ha visto.
+# ("trova tutto sul nostro sito" sarebbe un tu). Va in OGNI bozza, ex
+# clienti e follow-up compresi (decisione del 23/9): il sito ufficiale
+# non e' un argomento da dosare, e' un recapito.
 RIGA_SITO = "Ci trova anche sul nostro sito: "
 # I testi APPROVATI vanno da 48 a 63 parole (misurati dopo la riscrittura
 # di registro del 2026-09-16; prima 52-66). Una prima finestra
@@ -149,8 +150,6 @@ TESTI = {
 # quello per cui il colloquiale era stato tenuto. Il follow-up deve
 # ripetere l'oggetto del primo messaggio, altrimenti non e' un "Re:".
 OGGETTO_FISSO = ("ex_cliente", "follow_up")
-# il follow-up chiude senza sito (è una riga sola, il sito l'ha già visto)
-SENZA_SITO = ("follow_up", "ex_cliente")
 # testi che nascono da un fatto che il sistema NON vede (una risposta umana,
 # il tempo trascorso): si chiedono per testo_id, non si scelgono mai da soli
 SOLO_SU_RICHIESTA = ("follow_up", "ricontatto", "risposta_interesse")
@@ -254,8 +253,7 @@ def componi(azienda: dict, testo_id: str = "", oggetto_precedente: str = "") -> 
     oggetto = oggetto.replace("{oggetto_precedente}", oggetto_precedente or oggetto)
 
     return {"testo_id": testo_id, "perche": perche, "oggetto": oggetto,
-            "corpo": _chiudi(f"{APERTURA}\n{corpo}", sito=testo_id not in SENZA_SITO,
-                             link=catalogo)}
+            "corpo": _chiudi(f"{APERTURA}\n{corpo}", link=catalogo)}
 
 
 def accorcia(corpo: str, massimo: int = 0, minimo: int = 0) -> str:
@@ -293,7 +291,7 @@ def accorcia(corpo: str, massimo: int = 0, minimo: int = 0) -> str:
     return "\n".join(pezzi).strip()
 
 
-def _chiudi(corpo: str, sito: bool = False, link: str = "") -> str:
+def _chiudi(corpo: str, link: str = "") -> str:
     """Catalogo e firma li mette il programma, non il modello: sono le due
     cose che non devono mai dipendere da come e' andata la generazione.
 
@@ -310,7 +308,7 @@ def _chiudi(corpo: str, sito: bool = False, link: str = "") -> str:
     pezzi = [corpo.rstrip()]
     if link and link not in corpo:
         pezzi.append(f"\n{RIGA_CATALOGO}{link}")
-    if sito and config.SITO_EMAIL and config.SITO_EMAIL not in corpo:
+    if config.SITO_EMAIL and config.SITO_EMAIL not in corpo:
         pezzi.append(f"\n{RIGA_SITO}{config.SITO_EMAIL}")
     firma = [CHIUSURA]
     if config.FIRMA_EMAIL:
@@ -376,12 +374,8 @@ def verifica(bozza: dict, forma: bool = False) -> list[str]:
                         f"trovate {n_link}")
     if config.SITO_EMAIL:
         n_sito = bozza["corpo"].count(config.SITO_EMAIL)
-        attesi = 0 if bozza.get("testo_id") in SENZA_SITO else 1
-        if bozza.get("testo_id") and n_sito != attesi:
-            problemi.append(f"il sito deve comparire {attesi} volte in "
-                            f"'{bozza['testo_id']}', trovate {n_sito}")
-        elif not bozza.get("testo_id") and n_sito > 1:
-            problemi.append(f"il sito compare {n_sito} volte")
+        if n_sito != 1:
+            problemi.append(f"il sito deve comparire UNA volta, trovate {n_sito}")
     if not forma:
         return problemi
     corpo = _senza_accessori(bozza["corpo"])
@@ -488,7 +482,6 @@ def genera(azienda: dict, client, testo_id: str = "",
             else (dati.get("oggetto") or fissa["oggetto"]).strip()
         bozza = {**fissa, "oggetto": oggetto,
                  "corpo": _chiudi(accorcia(corpo),
-                                  sito=fissa["testo_id"] not in SENZA_SITO,
                                   link=link_catalogo(str(azienda.get("id") or ""))),
                  "generata": True, **uso}
         problemi = verifica(bozza, forma=True)
@@ -710,20 +703,19 @@ if __name__ == "__main__" and "--test" in sys.argv:
         finta = {"oggetto": "x", "corpo": f"Buongiorno,\nla fornitura e' {vietata}."}
         assert verifica(finta), vietata
 
-    # 4f. il sito nella chiusura: una volta nei testi normali, MAI nei
-    # SENZA_SITO (follow-up ed ex cliente l'hanno gia' visto), e non conta
-    # nelle parole
-    b_sito = componi({"categoria": "fabbro", "livello_fornitura": "kit"})
-    assert b_sito["corpo"].count(config.SITO_EMAIL) == 1, b_sito["corpo"]
-    assert RIGA_SITO in b_sito["corpo"]
-    for tid in SENZA_SITO:
-        b_no = componi({"categoria": "fabbro",
-                        "segnali": [{"tipo": "ex_cliente",
-                                     "riconosciuto_per": "piva"}]}, testo_id=tid,
-                       oggetto_precedente="X")
-        assert config.SITO_EMAIL not in b_no["corpo"], tid
-    b_acc2 = {"oggetto": "x", "corpo": _chiudi("Buongiorno,\nUna frase.\n\nDomanda?",
-                                               sito=True)}
+    # 4f. il sito nella chiusura di OGNI testo, esattamente una volta,
+    # ex cliente e follow-up compresi (23/9) — e non conta nelle parole
+    for tid in TESTI:
+        b_s = componi({"categoria": "fabbro", "livello_fornitura": "kit",
+                       "segnali": [{"tipo": "ex_cliente",
+                                    "riconosciuto_per": "piva"}]},
+                      testo_id=tid, oggetto_precedente="X")
+        if b_s is None:
+            continue
+        assert b_s["corpo"].count(config.SITO_EMAIL) == 1, (tid, b_s["corpo"])
+    assert RIGA_SITO in componi({"categoria": "fabbro",
+                                 "livello_fornitura": "kit"})["corpo"]
+    b_acc2 = {"oggetto": "x", "corpo": _chiudi("Buongiorno,\nUna frase.\n\nDomanda?")}
     assert len(_senza_accessori(b_acc2["corpo"]).split()) == 4, \
         _senza_accessori(b_acc2["corpo"])
 
