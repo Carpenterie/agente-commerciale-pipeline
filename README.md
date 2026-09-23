@@ -255,12 +255,15 @@ residuo.
 
 Cron: si installa con `crontab cron.example`, **non** ricopiando a mano le
 righe in `crontab -e` — così l'ordine delle province è sempre quello del
-file versionato. **Fermo**: vedi sotto.
+file versionato.
 Il server è su `Etc/UTC`: `0 3` sono le **5:00 italiane** con l'ora legale
 e le 4:00 con quella solare; per averle davvero alle 3 italiane basta
-`CRON_TZ=Europe/Rome` come prima riga. È **mensile**, una provincia
-al giorno, **in ordine di densità: RM il 1°, poi LT, FR, VT, RI il 7, 8, 9
-e 10**. Le quattro non sono di seguito a Roma perché il ciclo di
+`CRON_TZ=Europe/Rome` come prima riga. È **trimestrale** dal 2026-09-23
+(decisione del cliente): **gennaio, aprile, luglio e ottobre**, una
+provincia al giorno **in ordine di densità: RM il 1°, poi LT, FR, VT, RI
+il 7, 8, 9 e 10**. La cadenza sta nel campo mese della schedulazione, non
+in un promemoria; l'unica eccezione è una guardia `202610` che scade da
+sola (il trimestre di ottobre 2026 è stato eseguito a mano il 19-21/9). Le quattro non sono di seguito a Roma perché il ciclo di
 fatturazione Apify va dal 7 di un mese al 6 del successivo: tutte e cinque
 fra l'1 e il 5 cadrebbero nello stesso periodo e il tetto di $19 salterebbe
 sull'ultima. Così Roma chiude un periodo e le altre quattro aprono il
@@ -269,19 +272,13 @@ difesa: se il credito finisse comunque, a saltare è Rieti — 15 comuni, la
 provincia con meno aziende — invece di Viterbo, che ne ha di più e sarebbe
 saltata solo per via dell'ordine alfabetico.
 
-**Tutte e cinque le righe sono commentate dal 2026-09-07**, Roma compresa:
-il preventivo approvato dal cliente (61 EUR per cinque province) è
-sbagliato, perché costruito su un giro da 30 aziende invece che sulle ~1150
-che un ciclo Roma senza limite produce davvero. Il §11 vieta il ciclo pieno
-senza approvazione costi, e quella che c'è non vale per questi numeri —
-nemmeno per Roma, che pur ripartendo su un archivio già pieno ripaga
-comunque il sourcing Apify a ogni giro (~$3,5, la cache dura 24 ore).
-**Si riattivano tutte e cinque insieme** dopo l'approvazione del preventivo
-corretto. Il riepilogo di fine ciclo
+Il riepilogo di fine ciclo
 stampa il credito residuo in USD (non in euro: il tetto è in dollari, e
-convertirlo a cambio fisso farebbe leggere margine dove non ce n'è). La cadenza mensile invece che settimanale è una
-scelta di costo: il sourcing si ripaga a ogni giro ed è l'82% della spesa
-(~66 EUR/mese a cadenza settimanale contro ~18 mensile).
+convertirlo a cambio fisso farebbe leggere margine dove non ce n'è). La
+cadenza trimestrale invece che mensile è una scelta di costo: il sourcing
+si ripaga a ogni giro ed è l'82% della spesa, e a ripassare ogni mese si
+pagherebbero ~240 EUR/trimestre per ritrovare in gran parte le stesse
+aziende, contro ~80.
 
 **Rilancio a richiesta**, senza aspettare il cron:
 
