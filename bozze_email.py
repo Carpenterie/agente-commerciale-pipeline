@@ -407,7 +407,8 @@ def _scheda_per_modello(azienda: dict) -> str:
                # alludere a un rapporto passato non accertato
                if s.get("tipo") not in ("annuncio_lavoro", "territorio",
                                         "reputazione_google",
-                                        "visura_non_agganciata")
+                                        "visura_non_agganciata",
+                                        "recapito_facebook", "fuori_settore")
                and not (s.get("tipo") == "ex_cliente" and not certo)]
     campi = [
         ("azienda", azienda.get("ragione_sociale")),
