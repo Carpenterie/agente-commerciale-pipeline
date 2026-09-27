@@ -419,6 +419,11 @@ def fuori_settore_maps(categoria: str | None) -> bool:
     c = (categoria or "").strip().lower()
     if not c:
         return False            # vecchi sourcing senza il campo: si tiene
+    if "produttore" in c or "produzione" in c or "fabbrica" in c:
+        # chi PRODUCE non e' mai palesemente estraneo: "Produttore di
+        # arredi per negozi e supermercati" conteneva "supermercat" ed era
+        # un falso positivo (caso reale del 28/9). I dubbi restano dentro.
+        return False
     if c == "bar":              # parola intera: "sbarre" non e' un bar
         return True
     return any(k in c for k in CATEGORIE_FUORI_SETTORE)
@@ -459,6 +464,8 @@ if __name__ == "__main__":
     assert not fuori_settore_maps("")   # vecchi sourcing senza campo: dentro
     assert not fuori_settore_maps(None)
     assert not fuori_settore_maps("Barriere e sbarre")  # 'bar' solo parola intera
+    # chi produce non e' mai fuori: il caso reale Artigiana 2m
+    assert not fuori_settore_maps("Produttore di arredi per negozi e supermercati")
     assert esclude(MOTIVO_FORNITORE) and esclude(" Fornitore ")
     assert esclude(" Cliente Attivo ")          # il file e' compilato a mano
     assert not esclude(f"{MOTIVO_EX_CLIENTE}: perso per prezzo")
