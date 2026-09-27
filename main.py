@@ -360,6 +360,13 @@ async def esegui(args) -> int:
         print(f"escluse {len(chiuse)} chiuse definitivamente (Google): "
               + ", ".join(s.get("nome", "?")[:28] for s in chiuse[:5])
               + (" …" if len(chiuse) > 5 else ""))
+    estranee = [s for s in schede if config.fuori_settore_maps(s.get("categoria_maps"))]
+    if estranee:
+        schede = [s for s in schede if not config.fuori_settore_maps(s.get("categoria_maps"))]
+        print(f"escluse {len(estranee)} fuori settore (categoria Google): "
+              + ", ".join(f"{s.get('nome', '?')[:24]} [{s.get('categoria_maps')}]"
+                          for s in estranee[:4])
+              + (" …" if len(estranee) > 4 else ""))
     temporanee = sum(1 for s in schede if s.get("chiusa_temporaneamente"))
     if temporanee:
         print(f"{temporanee} temporaneamente chiuse: entrano marcate, "

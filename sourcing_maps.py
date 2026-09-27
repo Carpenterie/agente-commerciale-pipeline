@@ -39,6 +39,11 @@ def _normalizza(voce: dict) -> dict:
         "punteggio": voce.get("totalScore"),
         "chiusa_definitivamente": bool(voce.get("permanentlyClosed")),
         "chiusa_temporaneamente": bool(voce.get("temporarilyClosed")),
+        # la categoria dichiarata da Google ("Parrucchiere", "Fabbro"...):
+        # dal 2026-09-28 si valuta in scrittura, PRIMA che la riga entri —
+        # il sourcing per parole chiave pesca anche saloni e ristoranti,
+        # e senza questo campo il rumore si vedeva solo in archivio
+        "categoria_maps": (voce.get("categoryName") or "").strip(),
     }
 
 
@@ -111,4 +116,6 @@ if __name__ == "__main__":
     assert v["chiusa_definitivamente"] is False
     assert n["telefono"] == "+39 06 123" and n["comune"] == "Roma"
     assert _normalizza({})["sito"] == ""  # senza sito: campi vuoti, non None/KeyError
+    assert _normalizza({"categoryName": " Parrucchiere "})["categoria_maps"] == "Parrucchiere"
+    assert _normalizza({})["categoria_maps"] == ""
     print("ok")

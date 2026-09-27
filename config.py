@@ -396,6 +396,34 @@ LINK_PRENOTAZIONE = ""    # es. "cal.com/carpenterielaziali/10min"
 # claim sui tempi di consegna, e ogni modo nuovo di dirlo va aggiunto qui.
 # "immediata", "in tempi brevi" e "subito disponibile" arrivano dal
 # 2026-09-16, da una bozza generata che diceva "la fornitura e' immediata".
+# Categorie Google palesemente fuori settore: la voce del sourcing che ne
+# porta una NON entra in archivio (main la esclude come le chiuse, con
+# conteggio nel log). Conservativo per costruzione: si confronta la
+# CATEGORIA dichiarata da Google, non il nome — "Fabbro Barbieri Andrea"
+# ha categoria "Fabbro" e passa; un salone si chiama come vuole ma la
+# categoria dice "Parrucchiere". I dubbi restano dentro: qui solo
+# l'inequivocabile.
+CATEGORIE_FUORI_SETTORE = (
+    "parrucchier", "barbier", "barber", "acconciatur", "estetist", "bellezza",
+    "nail", "solarium", "tatua", "tattoo", "ristorant", "pizzeri",
+    "trattoria", "osteria", "gelateri", "pasticceri", "panifici",
+    "panetteri", "macelleri", "caffetteri", "tabacch", "farmaci",
+    "dentist", "odontoiatr", "veterinari", "fisioterap", "palestra",
+    "gioielleri", "profumeri", "lavanderi", "autoscuol", "supermercat",
+    "alimentari", "abbigliament", "parruc",
+)
+
+
+def fuori_settore_maps(categoria: str | None) -> bool:
+    """La categoria Google e' palesemente estranea al settore?"""
+    c = (categoria or "").strip().lower()
+    if not c:
+        return False            # vecchi sourcing senza il campo: si tiene
+    if c == "bar":              # parola intera: "sbarre" non e' un bar
+        return True
+    return any(k in c for k in CATEGORIE_FUORI_SETTORE)
+
+
 VIETATE_EMAIL = ("saldator", "annuncio", "assunzione", "cercate", "offerta di lavoro",
                  "garantiam", "certificat", "risparmi", "sconto", "24 ore",
                  "48 ore", "consegna rapida", "prezzi imbattibili",
@@ -424,6 +452,13 @@ if __name__ == "__main__":
         assert sigla in PROVINCE
 
     assert esclude(MOTIVO_CLIENTE_ATTIVO) and esclude(MOTIVO_COMMITTENTE)
+    assert fuori_settore_maps("Parrucchiere") and fuori_settore_maps("Barber shop")
+    assert fuori_settore_maps("Salone di bellezza") and fuori_settore_maps("bar")
+    assert fuori_settore_maps("Ristorante italiano")
+    assert not fuori_settore_maps("Fabbro") and not fuori_settore_maps("Carpenteria metallica")
+    assert not fuori_settore_maps("")   # vecchi sourcing senza campo: dentro
+    assert not fuori_settore_maps(None)
+    assert not fuori_settore_maps("Barriere e sbarre")  # 'bar' solo parola intera
     assert esclude(MOTIVO_FORNITORE) and esclude(" Fornitore ")
     assert esclude(" Cliente Attivo ")          # il file e' compilato a mano
     assert not esclude(f"{MOTIVO_EX_CLIENTE}: perso per prezzo")
