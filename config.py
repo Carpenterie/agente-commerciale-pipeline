@@ -63,6 +63,12 @@ SIGLE_LAZIO = ("RM", "LT", "FR", "VT", "RI")
 # Se una provincia mancasse, il valore resta com'e' e viene loggato: nessuna
 # sigla inventata.
 SIGLE_PROVINCE = {
+    # forme storiche e alias (le soppresse sarde -> chi le ha assorbite)
+    "sulcis iglesiente": "SU", "carbonia-iglesias": "SU",
+    "carbonia iglesias": "SU", "medio campidano": "SU",
+    "olbia-tempio": "SS", "olbia tempio": "SS", "ogliastra": "NU",
+    # 'Provincia della Spezia' spogliata del prefisso lascia 'spezia'
+    "spezia": "SP", "aquila": "AQ",
     # Abruzzo
     "l'aquila": "AQ", "aquila": "AQ", "chieti": "CH", "pescara": "PE",
     "teramo": "TE",
@@ -128,9 +134,15 @@ SIGLE_PROVINCE = {
 # comunale di X": Maps usa tutte queste forme. Il nome vero e' quello che
 # resta togliendole.
 _PREFISSI_PROVINCIA = re.compile(
-    r"^(provincia\s+di\s+|provincia\s+dell['’]|provincia\s+del\s+|"
+    r"^(provincia\s+autonoma\s+di\s+|provincia\s+regionale\s+di\s+|"
+    r"provincia\s+di\s+|provincia\s+dell['’]|provincia\s+del(la|lo)?\s+|"
     r"citt[aà]\s+metropolitana\s+di\s+|libero\s+consorzio\s+comunale\s+di\s+)",
     re.IGNORECASE)
+# Province SOPPRESSE: le quattro sarde abolite nel 2016 arrivano ancora
+# dalle schede Maps, sia come sigla ("CI") sia per esteso ("Provincia del
+# Sulcis Iglesiente"). Si normalizzano alla provincia che le ha assorbite:
+# una sigla storica non deve passare per valida ne' per ignota.
+SIGLE_STORICHE = {"CI": "SU", "VS": "SU", "OT": "SS", "OG": "NU"}
 _CODA_PROVINCIA = re.compile(r"\s+capitale$", re.IGNORECASE)
 
 
@@ -144,10 +156,10 @@ def sigla_provincia(valore: str | None, log=None) -> str | None:
     if not v:
         return None
     if len(v) == 2:
-        return v.upper()
+        return SIGLE_STORICHE.get(v.upper(), v.upper())
     nudo = _CODA_PROVINCIA.sub("", _PREFISSI_PROVINCIA.sub("", v)).strip()
     if len(nudo) == 2:
-        return nudo.upper()
+        return SIGLE_STORICHE.get(nudo.upper(), nudo.upper())
     sigla = SIGLE_PROVINCE.get(nudo.lower())
     if sigla:
         return sigla
@@ -505,6 +517,13 @@ VIETATE_EMAIL = ("saldator", "annuncio", "assunzione", "cercate", "offerta di la
 
 
 if __name__ == "__main__":
+    # i tre formati sfuggiti allo sweep del 21/9 (menu Province dell'app)
+    assert sigla_provincia("CI") == "SU"
+    assert sigla_provincia("Provincia autonoma di Trento") == "TN"
+    assert sigla_provincia("Provincia del Sulcis Iglesiente") == "SU"
+    assert sigla_provincia("Provincia della Spezia") == "SP"
+    assert sigla_provincia("OT") == "SS" and sigla_provincia("og") == "NU"
+    assert sigla_provincia("Città metropolitana di Roma Capitale") == "RM"
     # le province italiane sono 107: se questo numero cambia, e' cambiata
     # una legge dello Stato, non un dato di questo progetto
     assert len(set(SIGLE_PROVINCE.values())) == 107, len(set(SIGLE_PROVINCE.values()))
