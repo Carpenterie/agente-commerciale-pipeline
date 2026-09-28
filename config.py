@@ -411,6 +411,73 @@ CATEGORIE_FUORI_SETTORE = (
     "dentist", "odontoiatr", "veterinari", "fisioterap", "palestra",
     "gioielleri", "profumeri", "lavanderi", "autoscuol", "supermercat",
     "alimentari", "abbigliament", "parruc",
+    # dai dubbi risolti il 29/9: mestieri che non comprano ne' rivendono
+    "idraulic", "riscaldament", "condizionament", "rottam", "noleggio",
+)
+
+
+# L'elenco ESATTO delle categorie giudicate fuori settore nella revisione
+# del 2026-09-29 (criterio del cliente: "puo' comprare o rivendere
+# carpenteria metallica e serramenti?"). Congela la decisione voce per
+# voce, dove le parole chiave qui sopra non arrivano. DENTRO per scelta
+# esplicita, quindi MAI qui: Falegname, Duplicazione chiavi, Bricolage,
+# Automazione (cancelli), Appaltatore, casseforti/scaffalature/utensili,
+# ascensori, trattori agricoli, le categorie opache (Ufficio aziendale,
+# Negozio, Laboratorio...) e i PRESCRITTORI (ingegneri, architetti,
+# designer): non comprano ma prescrivono — seme del tema architetti.
+CATEGORIE_FUORI_ESATTE = (
+    'Agenzia di noleggio gru', 'Agriturismo',
+    'Alimentari', 'Alloggio turistico',
+    'Appartamento', 'Artista',
+    'Attrazione turistica', 'Autodemolitore',
+    'Azienda di autotrasporti', 'Azienda informatica',
+    'Banca', 'Barbiere',
+    'Bed & Breakfast', 'Benzinaio',
+    'Calzolaio', 'Casa di campagna',
+    'Casa per vacanze', 'Casalinghi',
+    'Castello', 'Centralina telefonica',
+    'Centro commerciale', 'Centro di riciclaggio',
+    'Centro diagnostico', 'Centro informazioni turistiche',
+    'Centro oculistico', 'Chiesa',
+    'Chiesa cattolica', 'Cioccolateria',
+    'Clinica dentale', 'Clinica medica',
+    'Commercialista', "Commercialista abilitato all'esercizio della professione",
+    'Compravendita rottami', 'Concessionario auto',
+    'Consulente aziendale', 'Consulente del lavoro',
+    'Copisteria', 'Ditta specializzata in impianti di riscaldamento',
+    'Ditta specializzata in telecomunicazioni', 'Elettricista',
+    'Erboristeria', 'Fisioterapista',
+    'Fornaio', 'Fornitore di impianti di riscaldamento',
+    'Gioielleria', 'Gioielliere',
+    'Hotel', 'Idraulico',
+    'Impianto depurazione acque', 'Installatore di impianti di condizionamento',
+    'Istituto religioso', 'Macelleria',
+    'Medico di famiglia', 'Mercato',
+    'Mercato degli agricoltori', 'Municipio',
+    'Museo', 'Negozio di antiquariato',
+    'Negozio di biciclette', 'Negozio di forniture per hotel',
+    "Negozio di fuochi d'artificio", 'Negozio di occhiali da sole',
+    'Negozio di pneumatici', 'Negozio di prodotti agricoli',
+    'Negozio per animali', 'Noleggio carrelli elevatori',
+    'Officina autoriparazioni', 'Officina di riparazioni per camion',
+    'Officina per la riparazione di moto', 'Organizzatore di eventi',
+    'Organizzazione non profit', 'Ospedale',
+    'Ospedale privato', 'Parcheggio gratuito',
+    'Poligono di tiro', 'Progettista grafico',
+    'Psicoterapeuta', 'Punto di riferimento storico',
+    'Ristorante', 'Ristorante italiano',
+    'Salone da parrucchiere', 'Santuario',
+    'Servizi di trasporto', 'Servizio componenti elettrici per auto',
+    'Servizio di gestione dei rifiuti', 'Servizio di pulizia di edifici',
+    'Servizio di riparazione di pianoforti', 'Servizio di spedizione',
+    'Servizio di stampa digitale', 'Servizio di traino',
+    'Servizio per fosse biologiche', 'Servizio taxi',
+    'Servizio traslochi', 'Sindacato',
+    'Stamperia', 'Stamperia commerciale',
+    'Stazione ferroviaria', 'Studio legale',
+    'Tabaccheria', 'Tipografia digitale',
+    'Toelettatura di animali domestici', 'Villa',
+    'fermata trasporto pubblico',
 )
 
 
@@ -425,6 +492,8 @@ def fuori_settore_maps(categoria: str | None) -> bool:
         # un falso positivo (caso reale del 28/9). I dubbi restano dentro.
         return False
     if c == "bar":              # parola intera: "sbarre" non e' un bar
+        return True
+    if any(c == e.lower() for e in CATEGORIE_FUORI_ESATTE):
         return True
     return any(k in c for k in CATEGORIE_FUORI_SETTORE)
 
@@ -466,6 +535,16 @@ if __name__ == "__main__":
     assert not fuori_settore_maps("Barriere e sbarre")  # 'bar' solo parola intera
     # chi produce non e' mai fuori: il caso reale Artigiana 2m
     assert not fuori_settore_maps("Produttore di arredi per negozi e supermercati")
+    # i dubbi risolti dal cliente il 29/9
+    assert fuori_settore_maps("Idraulico") and fuori_settore_maps("Compravendita rottami")
+    assert fuori_settore_maps("Noleggio carrelli elevatori")
+    assert fuori_settore_maps("Villa") and fuori_settore_maps("Servizio taxi")
+    assert not fuori_settore_maps("Automazione e robotica")   # cancelli
+    assert not fuori_settore_maps("Appaltatore")
+    assert not fuori_settore_maps("Ingegnere") and not fuori_settore_maps("Architetto")
+    assert not fuori_settore_maps("Negozio di casseforti")
+    assert not fuori_settore_maps("Installazione e manutenzione ascensori")
+    assert not fuori_settore_maps("Ufficio aziendale")
     assert esclude(MOTIVO_FORNITORE) and esclude(" Fornitore ")
     assert esclude(" Cliente Attivo ")          # il file e' compilato a mano
     assert not esclude(f"{MOTIVO_EX_CLIENTE}: perso per prezzo")
