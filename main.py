@@ -22,6 +22,7 @@ import arricchimento
 import classify
 import config
 import costi
+import crediti
 import db
 import dedup
 import fetch
@@ -333,6 +334,16 @@ async def esegui(args) -> int:
         return _verdetto(False, f"Supabase non raggiungibile "
                                 f"({type(e).__name__}: {e}). Niente sourcing, "
                                 f"nessuna spesa.")
+    # I tre saldi PRIMA di spendere (regola del 2026-09-30: in due
+    # settimane sono finiti tutti e tre, sempre a giro in corso)
+    if not args.dry_run:
+        problemi = crediti.controllo(
+            serve_apify_usd=0 if args.riusa_sourcing else config.STIMA_APIFY_CICLO_USD,
+            serve_anthropic=True,
+            serve_openapi_eur=config.STIMA_OPENAPI_CICLO_EUR)
+        if problemi:
+            return _verdetto(False, "crediti insufficienti, giro NON partito — "
+                             + "; ".join(problemi))
     ciclo_id = None
     if sb and not args.dry_run:
         ciclo_id = db.avvia_ciclo(sb, "Lazio", note=f"provincia {args.provincia}")

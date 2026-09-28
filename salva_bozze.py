@@ -91,6 +91,12 @@ def main() -> int:
 
     from anthropic import Anthropic
 
+    import crediti
+    problemi = crediti.controllo(serve_anthropic=True)
+    if problemi:
+        print("ESITO: bozze NON partite — " + "; ".join(problemi))
+        return 1
+
     client = Anthropic(max_retries=1)
     totali = costi.nuovo_ciclo()
     salvate, ripieghi, senza, errori = 0, [], [], []

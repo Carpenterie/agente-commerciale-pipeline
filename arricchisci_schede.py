@@ -128,6 +128,12 @@ def main() -> int:
 
     from anthropic import Anthropic
 
+    import crediti
+    problemi = crediti.controllo(serve_anthropic=True)
+    if problemi:
+        print("ESITO: rianalisi NON partita — " + "; ".join(problemi))
+        return 1
+
     # max_retries=1: il client SDK ne farebbe due per conto suo, che sommate
     # al nostro retry fanno fino a 18 minuti su una sola scheda incagliata
     client = Anthropic(max_retries=1)

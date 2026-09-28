@@ -40,3 +40,10 @@
 # il ramo || scatterebbe da solo).
 0 4 8 10 * test $(date +\%Y) -eq 2026 && cd /opt/agente-commerciale-pipeline && .venv/bin/python -u recapiti_facebook.py --scrivi --budget-usd 2.5 >> /var/log/pipeline-fb.log 2>&1
 0 4 9 10 * test $(date +\%Y) -eq 2026 && { grep -q 2026-10-08 /opt/agente-commerciale-pipeline/cache/fb_scrappate.json || echo "ESITO: tranche 2 Facebook NON eseguita il giorno 8 — rilanciare: recapiti_facebook.py --scrivi --budget-usd 2.5" >> /var/log/pipeline-fb.log; }
+#
+# I tre saldi (Anthropic, Apify, Openapi) il primo del mese: una riga di
+# log per accorgersi dei crediti PRIMA che li scopra un giro fallito.
+# Alle 2:00, un'ora prima dei cicli trimestrali. Costo: ~0,10 EUR/mese
+# (il canarino Openapi e' una visura vera: e' l'unico modo di leggere
+# quel wallet, vedi crediti.py).
+0 2 1 * * cd /opt/agente-commerciale-pipeline && .venv/bin/python crediti.py >> /var/log/pipeline-crediti.log 2>&1

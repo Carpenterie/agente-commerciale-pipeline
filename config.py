@@ -510,6 +510,12 @@ def fuori_settore_maps(categoria: str | None) -> bool:
     return any(k in c for k in CATEGORIE_FUORI_SETTORE)
 
 
+# Soglie del controllo crediti PRE-giro (crediti.py). Stime dai cicli
+# misurati: sourcing di una provincia 2,4-4,7 USD Apify; visure di un
+# ciclo (A/B/C nuove, ~60-100 teste) 6-10 EUR Openapi.
+STIMA_APIFY_CICLO_USD = 5.0
+STIMA_OPENAPI_CICLO_EUR = 8.0
+
 VIETATE_EMAIL = ("saldator", "annuncio", "assunzione", "cercate", "offerta di lavoro",
                  "garantiam", "certificat", "risparmi", "sconto", "24 ore",
                  "48 ore", "consegna rapida", "prezzi imbattibili",

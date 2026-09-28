@@ -152,6 +152,13 @@ def main_() -> int:
 
     from anthropic import Anthropic
     from crawl4ai import AsyncWebCrawler
+    import crediti
+    problemi = crediti.controllo(serve_anthropic=True,
+                                 serve_openapi_eur=len(schede) * 0.02)
+    if problemi:
+        print("ESITO: import NON partito — " + "; ".join(problemi))
+        return 1
+
 
     totali = costi.nuovo_ciclo(gratuite_openapi=0)   # le gratuite del mese sono finite
     ciclo_id = db.avvia_ciclo(sb, "Lazio", note="import lista direttore commerciale")

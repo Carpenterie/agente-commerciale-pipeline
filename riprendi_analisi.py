@@ -97,6 +97,13 @@ def main_() -> int:
 
     from anthropic import Anthropic
     from crawl4ai import AsyncWebCrawler
+    import crediti
+    problemi = crediti.controllo(serve_anthropic=True,
+                                 serve_openapi_eur=len(righe) * 0.03)
+    if problemi:
+        print("ESITO: ripresa NON partita — " + "; ".join(problemi))
+        return 1
+
 
     totali = costi.nuovo_ciclo(gratuite_openapi=0)
     client = Anthropic()
