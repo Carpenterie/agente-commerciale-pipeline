@@ -32,6 +32,33 @@ import sys
 # il pedaggio da 0,10 almeno interroga un dato reale.
 PIVA_CANARINO = "05962321005"
 RE_SALDO_402 = re.compile(r"Insufficient Credit in Wallet: [\d.]+ > ([\d.]+)")
+# Rispecchiano cron.example: cadenza trimestrale, e il trimestre di ottobre
+# 2026 saltato dalla guardia. Se cambia la cadenza del cron, cambia qui.
+MESI_CICLO = (1, 4, 7, 10)
+GUARDIA_SALTA = (2026, 10)
+
+
+def prossimo_rinnovo_apify(oggi):
+    """Il prossimo 7 del mese (rinnovo del periodo di fatturazione Apify),
+    strettamente futuro: sul 7 stesso il rinnovo di oggi e' gia' passato."""
+    import datetime
+    if oggi.day < 7:
+        return datetime.date(oggi.year, oggi.month, 7)
+    m = oggi.month % 12 + 1
+    return datetime.date(oggi.year + (oggi.month == 12), m, 7)
+
+
+def prossimo_giro_apify(oggi):
+    """La prossima data in cui un ciclo da cron rifa' il sourcing (spende
+    Apify): giorno 1 di un mese trimestrale, saltando il trimestre in
+    guardia. E' RM il giorno 1 a spendere per primo, prima del rinnovo."""
+    import datetime
+    for anno in range(oggi.year, oggi.year + 21):
+        for mese in MESI_CICLO:
+            d = datetime.date(anno, mese, 1)
+            if d > oggi and (d.year, d.month) != GUARDIA_SALTA:
+                return d
+    return None
 
 
 def saldo_apify(log=print) -> float | None:
@@ -117,22 +144,50 @@ def letture(serve_apify_usd: float = 0, serve_anthropic: bool = False,
     che fermano il giro). Ogni problema dice quale credito e di quanto."""
     righe, problemi = [], []
     if serve_apify_usd > 0:
-        r = saldo_apify(log)
-        if r is None:
+        import datetime
+        import sourcing_maps
+        c = sourcing_maps.credito(log)
+        if c is None:
             righe.append(_riga("apify", "non_verificabile", None, "USD",
                                serve_apify_usd, "Saldo Apify non leggibile: "
                                "verificare a mano su console.apify.com", fonte))
-        elif r < serve_apify_usd:
-            m = (f"Credito Apify quasi esaurito ({r:.2f} USD): il prossimo "
-                 f"aggiornamento ne stima {serve_apify_usd:.0f} — attendere "
-                 f"il rinnovo del periodo (il 7 del mese)")
-            righe.append(_riga("apify", "sotto_soglia", r, "USD",
-                               serve_apify_usd, m, fonte))
-            problemi.append(f"credito Apify insufficiente: restano {r:.2f} USD, "
-                            f"il giro ne stima {serve_apify_usd:.2f}")
         else:
-            righe.append(_riga("apify", "ok", r, "USD", serve_apify_usd,
-                               f"Credito Apify: {r:.2f} USD residui", fonte))
+            residuo, tetto = round(c[1] - c[0], 2), c[1]
+            oggi = datetime.date.today()
+            giro = prossimo_giro_apify(oggi)
+            quando = f"{giro:%d/%m/%Y}" if giro else "?"
+            rinnova_prima = giro is None or prossimo_rinnovo_apify(oggi) <= giro
+            # BLOCCO del giro in corso: sempre sul saldo di ADESSO — i soldi
+            # per un giro che parte ora servono ora, non dopo il rinnovo
+            if residuo < serve_apify_usd:
+                problemi.append(f"credito Apify insufficiente: restano "
+                                f"{residuo:.2f} USD, il giro ne stima "
+                                f"{serve_apify_usd:.2f}")
+            # STATO per il banner: guarda avanti. Un banner e' una richiesta
+            # di AZIONE — se il credito si rinnova (il 7) prima del prossimo
+            # giro in calendario, non c'e' niente da chiedere a Claudia
+            effettivo = tetto if rinnova_prima else residuo
+            if effettivo >= serve_apify_usd:
+                if residuo < serve_apify_usd:
+                    m = (f"Credito Apify {residuo:.2f} USD: si rinnova a "
+                         f"{tetto:.0f} il 7, prima del prossimo giro ({quando}) "
+                         f"— sufficiente, nessuna azione")
+                else:
+                    m = f"Credito Apify: {residuo:.2f} USD residui"
+                righe.append(_riga("apify", "ok", residuo, "USD",
+                                   serve_apify_usd, m, fonte))
+            elif rinnova_prima:
+                m = (f"Credito Apify: anche dopo il rinnovo del 7 restano solo "
+                     f"{tetto:.0f} USD, ma un giro ne stima {serve_apify_usd:.0f} "
+                     f"— alzare il tetto del piano")
+                righe.append(_riga("apify", "sotto_soglia", residuo, "USD",
+                                   serve_apify_usd, m, fonte))
+            else:
+                m = (f"Credito Apify quasi esaurito ({residuo:.2f} USD) e il "
+                     f"prossimo giro ({quando}) cade prima del rinnovo del 7: "
+                     f"ricaricare o rinviare il giro")
+                righe.append(_riga("apify", "sotto_soglia", residuo, "USD",
+                                   serve_apify_usd, m, fonte))
     if serve_anthropic:
         ok = anthropic_ok(log)
         if ok is False:
@@ -169,6 +224,35 @@ def letture(serve_apify_usd: float = 0, serve_anthropic: bool = False,
     return righe, problemi
 
 
+def allarmi(sb=None, log=print) -> list[dict]:
+    """Rilegge SOLO i servizi attualmente in allarme (sotto_soglia/esaurito):
+    se Claudia ha ricaricato oggi, il banner si spegne domani invece che al
+    1° del mese. Gratis per Apify e per Openapi a wallet vuoto (la 402); il
+    pedaggio di 0,10 su Openapi si paga solo alla lettura che TROVA credito
+    e scrive ok. I servizi gia' ok restano alla lettura mensile."""
+    import config
+    if sb is None:
+        import db
+        sb = db.client()
+    try:
+        stato = sb.table("stato_sistema").select("servizio,stato").execute().data
+    except Exception as e:  # noqa: BLE001
+        log(f"stato_sistema non leggibile ({type(e).__name__})")
+        return []
+    rossi = {r["servizio"] for r in stato
+             if r["stato"] in ("sotto_soglia", "esaurito")}
+    if not rossi:
+        log("nessun servizio in allarme: niente da rileggere")
+        return []
+    righe, _ = letture(
+        serve_apify_usd=config.STIMA_APIFY_CICLO_USD if "apify" in rossi else 0,
+        serve_anthropic="anthropic" in rossi,
+        serve_openapi_eur=config.STIMA_OPENAPI_CICLO_EUR if "openapi" in rossi else 0,
+        fonte="ricontrollo_allarme", log=log)
+    scrivi_stato(sb, righe, log)
+    return righe
+
+
 def controllo(serve_apify_usd: float = 0, serve_anthropic: bool = False,
               serve_openapi_eur: float = 0, log=print, sb=None) -> list[str]:
     """-> gli avvisi che devono FERMARE il giro (vuota = si parte).
@@ -188,7 +272,21 @@ if __name__ == "__main__":
         r = _riga("openapi", "esaurito", 0.06, "EUR", 8.0, "msg", "log_mensile")
         assert r["servizio"] == "openapi" and r["saldo"] == 0.06
         assert r["letto_il"].endswith("+00:00") and r["fonte_lettura"] == "log_mensile"
+        import datetime
+        assert prossimo_rinnovo_apify(datetime.date(2026, 9, 28)) == datetime.date(2026, 10, 7)
+        assert prossimo_rinnovo_apify(datetime.date(2026, 10, 7)) == datetime.date(2026, 11, 7)
+        assert prossimo_rinnovo_apify(datetime.date(2026, 12, 20)) == datetime.date(2027, 1, 7)
+        # il trimestre di ottobre 2026 e' saltato dalla guardia
+        assert prossimo_giro_apify(datetime.date(2026, 9, 28)) == datetime.date(2027, 1, 1)
+        assert prossimo_giro_apify(datetime.date(2027, 1, 1)) == datetime.date(2027, 4, 1)
+        assert prossimo_giro_apify(datetime.date(2027, 2, 10)) == datetime.date(2027, 4, 1)
         print("ok")
+    elif "--allarmi" in sys.argv:
+        from dotenv import load_dotenv
+        load_dotenv()
+        righe = allarmi()
+        for r in righe:
+            print(f"{r['servizio']:<9}: {r['stato']} — {r['messaggio']}")
     else:
         from dotenv import load_dotenv
         load_dotenv()

@@ -47,3 +47,10 @@
 # (il canarino Openapi e' una visura vera: e' l'unico modo di leggere
 # quel wallet, vedi crediti.py).
 0 2 1 * * cd /opt/agente-commerciale-pipeline && .venv/bin/python crediti.py >> /var/log/pipeline-crediti.log 2>&1
+#
+# Ricontrollo giornaliero dei SOLI servizi in allarme (crediti.py --allarmi):
+# se Claudia ricarica oggi, il banner rosso sparisce domani invece che al
+# 1° del mese. Gratis per Apify e per Openapi a wallet vuoto; il pedaggio
+# di 0,10 su Openapi si paga solo alla lettura che trova credito. I servizi
+# ok restano alla riga mensile. Alle 6:00, dopo eventuali giri notturni.
+0 6 * * * cd /opt/agente-commerciale-pipeline && .venv/bin/python crediti.py --allarmi >> /var/log/pipeline-crediti.log 2>&1
