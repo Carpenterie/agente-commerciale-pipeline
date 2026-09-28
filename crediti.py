@@ -85,30 +85,97 @@ def saldo_openapi(log=print) -> tuple[float | None, str]:
         return None, f"non leggibile ({type(e).__name__})"
 
 
-def controllo(serve_apify_usd: float = 0, serve_anthropic: bool = False,
-              serve_openapi_eur: float = 0, log=print) -> list[str]:
-    """-> gli avvisi che devono FERMARE il giro (vuota = si parte).
-    Ogni avviso dice quale credito ricaricare e di quanto."""
-    problemi = []
+def _riga(servizio, stato, saldo, unita, soglia, messaggio, fonte):
+    import datetime
+    return {"servizio": servizio, "stato": stato, "saldo": saldo,
+            "unita": unita, "soglia": soglia, "messaggio": messaggio,
+            "letto_il": datetime.datetime.now(datetime.timezone.utc)
+            .isoformat(timespec="seconds"), "fonte_lettura": fonte}
+
+
+def scrivi_stato(sb, righe, log=print) -> None:
+    """La lettura arriva in `stato_sistema`, dove la dashboard la mostra a
+    chi puo' ricaricare. Aggiornamento sul posto (mai upsert/delete, vedi
+    db.py); se la tabella non c'e' ancora, il controllo NON si rompe."""
+    if sb is None:
+        return
+    for r in righe:
+        try:
+            fatti = sb.table("stato_sistema").update(r)                 .eq("servizio", r["servizio"]).execute().data
+            if not fatti:
+                sb.table("stato_sistema").insert(r).execute()
+        except Exception as e:  # noqa: BLE001
+            log(f"stato_sistema non scrivibile ({type(e).__name__}): "
+                f"la tabella esiste?")
+            return
+
+
+def letture(serve_apify_usd: float = 0, serve_anthropic: bool = False,
+            serve_openapi_eur: float = 0, fonte: str = "controllo_pre_giro",
+            log=print) -> tuple[list[dict], list[str]]:
+    """Legge SOLO i saldi richiesti. -> (righe per stato_sistema, problemi
+    che fermano il giro). Ogni problema dice quale credito e di quanto."""
+    righe, problemi = [], []
     if serve_apify_usd > 0:
         r = saldo_apify(log)
-        if r is not None and r < serve_apify_usd:
+        if r is None:
+            righe.append(_riga("apify", "non_verificabile", None, "USD",
+                               serve_apify_usd, "Saldo Apify non leggibile: "
+                               "verificare a mano su console.apify.com", fonte))
+        elif r < serve_apify_usd:
+            m = (f"Credito Apify quasi esaurito ({r:.2f} USD): il prossimo "
+                 f"aggiornamento ne stima {serve_apify_usd:.0f} — attendere "
+                 f"il rinnovo del periodo (il 7 del mese)")
+            righe.append(_riga("apify", "sotto_soglia", r, "USD",
+                               serve_apify_usd, m, fonte))
             problemi.append(f"credito Apify insufficiente: restano {r:.2f} USD, "
-                            f"il giro ne stima {serve_apify_usd:.2f} — attendere "
-                            f"il rinnovo del periodo o alzare il tetto")
+                            f"il giro ne stima {serve_apify_usd:.2f}")
+        else:
+            righe.append(_riga("apify", "ok", r, "USD", serve_apify_usd,
+                               f"Credito Apify: {r:.2f} USD residui", fonte))
     if serve_anthropic:
         ok = anthropic_ok(log)
         if ok is False:
+            m = ("Credito Anthropic ESAURITO: ricaricare su "
+                 "console.anthropic.com prima del prossimo aggiornamento")
+            righe.append(_riga("anthropic", "esaurito", None, None, None, m, fonte))
             problemi.append("credito Anthropic ESAURITO: ricaricare su "
                             "console.anthropic.com prima di rilanciare")
+        elif ok is None:
+            righe.append(_riga("anthropic", "non_verificabile", None, None, None,
+                               "Credito Anthropic non verificabile (rete?)", fonte))
+        else:
+            righe.append(_riga("anthropic", "ok", None, None, None,
+                               "Credito Anthropic presente", fonte))
     if serve_openapi_eur > 0:
         saldo, desc = saldo_openapi(log)
         if saldo is not None and saldo < serve_openapi_eur:
+            manca = serve_openapi_eur - saldo
+            m = (f"Credito Openapi esaurito ({saldo:.2f} EUR): ricaricare "
+                 f"almeno {manca:.0f} EUR prima del prossimo aggiornamento")
+            righe.append(_riga("openapi", "esaurito", saldo, "EUR",
+                               serve_openapi_eur, m, fonte))
             problemi.append(f"wallet Openapi insufficiente: {saldo:.2f} EUR, "
                             f"il giro ne stima {serve_openapi_eur:.2f} — "
-                            f"ricaricare almeno {serve_openapi_eur - saldo:.0f} EUR")
-        elif saldo is None and "presente" not in desc and "non configurato" not in desc:
-            log(f"saldo Openapi {desc}: non blocco, ma il salvavita in corsa vigila")
+                            f"ricaricare almeno {manca:.0f} EUR")
+        elif saldo is None and "presente" in desc:
+            righe.append(_riga("openapi", "ok", None, "EUR", serve_openapi_eur,
+                               "Credito Openapi presente", fonte))
+        else:
+            righe.append(_riga("openapi", "non_verificabile", None, "EUR",
+                               serve_openapi_eur,
+                               f"Saldo Openapi {desc}", fonte))
+            log(f"saldo Openapi {desc}: non blocco, il salvavita in corsa vigila")
+    return righe, problemi
+
+
+def controllo(serve_apify_usd: float = 0, serve_anthropic: bool = False,
+              serve_openapi_eur: float = 0, log=print, sb=None) -> list[str]:
+    """-> gli avvisi che devono FERMARE il giro (vuota = si parte).
+    Se `sb` c'e', la lettura finisce anche in `stato_sistema`."""
+    righe, problemi = letture(serve_apify_usd, serve_anthropic,
+                              serve_openapi_eur, "controllo_pre_giro", log)
+    scrivi_stato(sb, righe, log)
     return problemi
 
 
@@ -118,15 +185,24 @@ if __name__ == "__main__":
                                 'Credit in Wallet: 0.1 > 0.057 code 810"}')
         assert m and m.group(1) == "0.057"
         assert RE_SALDO_402.search("altro errore") is None
+        r = _riga("openapi", "esaurito", 0.06, "EUR", 8.0, "msg", "log_mensile")
+        assert r["servizio"] == "openapi" and r["saldo"] == 0.06
+        assert r["letto_il"].endswith("+00:00") and r["fonte_lettura"] == "log_mensile"
         print("ok")
     else:
         from dotenv import load_dotenv
         load_dotenv()
         import datetime
         print(f"=== SALDI {datetime.date.today().isoformat()} ===")
-        r = saldo_apify()
-        print(f"Apify   : {'?' if r is None else f'{r:.2f} USD residui nel periodo'}")
-        ok = anthropic_ok()
-        print(f"Anthropic: {'credito presente' if ok else 'ESAURITO' if ok is False else 'non verificabile'}")
-        saldo, desc = saldo_openapi()
-        print(f"Openapi : {desc}")
+        import config
+        righe, _ = letture(serve_apify_usd=config.STIMA_APIFY_CICLO_USD,
+                           serve_anthropic=True,
+                           serve_openapi_eur=config.STIMA_OPENAPI_CICLO_EUR,
+                           fonte="log_mensile")
+        for r in righe:
+            print(f"{r['servizio']:<9}: {r['messaggio']}")
+        try:
+            import db
+            scrivi_stato(db.client(), righe)
+        except Exception as e:  # noqa: BLE001
+            print(f"stato_sistema non aggiornata ({type(e).__name__})")

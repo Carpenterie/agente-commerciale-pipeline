@@ -340,7 +340,7 @@ async def esegui(args) -> int:
         problemi = crediti.controllo(
             serve_apify_usd=0 if args.riusa_sourcing else config.STIMA_APIFY_CICLO_USD,
             serve_anthropic=True,
-            serve_openapi_eur=config.STIMA_OPENAPI_CICLO_EUR)
+            serve_openapi_eur=config.STIMA_OPENAPI_CICLO_EUR, sb=sb)
         if problemi:
             return _verdetto(False, "crediti insufficienti, giro NON partito — "
                              + "; ".join(problemi))

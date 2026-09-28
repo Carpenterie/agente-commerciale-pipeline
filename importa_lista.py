@@ -154,7 +154,7 @@ def main_() -> int:
     from crawl4ai import AsyncWebCrawler
     import crediti
     problemi = crediti.controllo(serve_anthropic=True,
-                                 serve_openapi_eur=len(schede) * 0.02)
+                                 serve_openapi_eur=len(schede) * 0.02, sb=sb)
     if problemi:
         print("ESITO: import NON partito — " + "; ".join(problemi))
         return 1

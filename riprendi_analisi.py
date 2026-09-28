@@ -99,7 +99,7 @@ def main_() -> int:
     from crawl4ai import AsyncWebCrawler
     import crediti
     problemi = crediti.controllo(serve_anthropic=True,
-                                 serve_openapi_eur=len(righe) * 0.03)
+                                 serve_openapi_eur=len(righe) * 0.03, sb=sb)
     if problemi:
         print("ESITO: ripresa NON partita — " + "; ".join(problemi))
         return 1

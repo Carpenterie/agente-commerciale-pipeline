@@ -129,7 +129,7 @@ def main() -> int:
     from anthropic import Anthropic
 
     import crediti
-    problemi = crediti.controllo(serve_anthropic=True)
+    problemi = crediti.controllo(serve_anthropic=True, sb=sb)
     if problemi:
         print("ESITO: rianalisi NON partita — " + "; ".join(problemi))
         return 1
