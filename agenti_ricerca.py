@@ -118,6 +118,16 @@ def _righe_json(percorso: pathlib.Path):
                 yield None
 
 
+def normalizza_linkedin(url: str | None) -> str | None:
+    """Canonica per il dedup: via sottodominio (it./www.), parametri,
+    frammento e slash finale."""
+    u = (url or "").strip().split("#")[0].split("?")[0].rstrip("/")
+    if not u:
+        return None
+    return re.sub(r"^https?://(?:[a-z]{2}\.|www\.)?linkedin\.com",
+                  "https://linkedin.com", u, flags=re.I)
+
+
 def _exa(query: str, chiave: str, n: int = 20) -> dict:
     req = urllib.request.Request(
         "https://api.exa.ai/search",
@@ -136,7 +146,7 @@ def raccogli(log=print) -> None:
     if RACCOLTA.exists():
         for c in _righe_json(RACCOLTA):
             if c:
-                visti.add(c["url"])
+                visti.add(normalizza_linkedin(c["url"]))
     speso, nuovi = 0.0, 0
     query = [s.format(r=r) for r in REGIONI_ITALIA for s in SAGOME_REGIONE]
     query += list(SAGOME_NAZIONALI)
@@ -152,7 +162,7 @@ def raccogli(log=print) -> None:
                 continue
             speso += (d.get("costDollars") or {}).get("total", 0) or 0
             for res in d.get("results", []):
-                u = (res.get("url") or "").split("?")[0]
+                u = normalizza_linkedin(res.get("url"))
                 if not u or u in visti:
                     continue
                 visti.add(u)
@@ -284,7 +294,7 @@ def scrivi(log=print) -> None:
         c = s.get("conflitto") or {}
         record = {
             "nome_completo": s.get("nome"),
-            "linkedin_url": s.get("url"),
+            "linkedin_url": normalizza_linkedin(s.get("url")),
             "canale_prevalente": s.get("canale_prevalente"),
             "canali_secondari": s.get("canali_secondari") or None,
             "classificazione": "pertinente" if s["pertinente"] == "si" else "da_valutare",
@@ -348,6 +358,10 @@ if __name__ == "__main__":
         assert _regione_di({"province_coperte": ["MI", "TO"], "residenza": ""}) in ("Multiregionali", "Lombardia", "Piemonte")
         assert "conflitto stato=\"attuale\"" in PROMPT_V4 and "coil" in PROMPT_V4
         assert "VERNICI IN POLVERE" in PROMPT_V4
+        assert normalizza_linkedin("https://it.linkedin.com/in/x?trk=p") == "https://linkedin.com/in/x"
+        assert normalizza_linkedin("http://www.linkedin.com/in/x/") == "https://linkedin.com/in/x"
+        assert normalizza_linkedin("https://linkedin.com/in/x#r") == "https://linkedin.com/in/x"
+        assert normalizza_linkedin(None) is None
         import tempfile
         with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False) as t:
             t.write('{"url": "a", "testo": "riga con \u2028 dentro"}\n{rotta\n')
