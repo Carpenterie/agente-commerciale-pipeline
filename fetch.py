@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import re
 from pathlib import Path
 from urllib.parse import urldefrag, urljoin, urlparse
 
@@ -30,7 +31,7 @@ PAROLE_PRODOTTO = (
 PAROLE_GENERICHE = (
     "prodotti", "servizi", "lavorazioni", "chi-siamo", "chi_siamo", "chisiamo",
     "chi siamo", "azienda", "realizzazioni", "lavori", "gallery", "galleria",
-    "portfolio", "contatti",
+    "portfolio", "contatti", "contact",
 )
 PAROLE_CHIAVE = PAROLE_GENERICHE + PAROLE_PRODOTTO
 # blog, news e social parlano dei prodotti ma non provano la produzione:
@@ -97,8 +98,48 @@ def _pagine_rilevanti(home: dict, base_url: str) -> list[str]:
         visti.add(assoluto)
         depri = any(d in assoluto.lower() for d in DEPRIORITA)
         prodotto = any(k in ago for k in PAROLE_PRODOTTO)
-        candidate.append((depri, not prodotto, indice, assoluto))
-    return [url for *_, url in sorted(candidate)[:config.MAX_PAGINE_INTERNE]]
+        contatti = "contatt" in ago or "contact" in ago
+        candidate.append((depri, not prodotto, indice, assoluto, contatti))
+    ordinate = sorted(candidate)
+    scelte = ordinate[:config.MAX_PAGINE_INTERNE]
+    # slot GARANTITO alla pagina contatti: nella diagnosi del 29/9 in 20
+    # casi su 27 perdeva la gara con le pagine prodotto e l'email non
+    # veniva mai scaricata
+    if not any(c[4] for c in scelte):
+        con_contatti = next((c for c in ordinate if c[4]), None)
+        if con_contatti:
+            scelte[-1] = con_contatti
+    return [c[3] for c in scelte]
+
+
+RE_EMAIL = re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9\-]+(?:\.[a-zA-Z0-9\-]+)*\.[a-zA-Z]{2,}")
+# residui tipici del markdown: nomi di file responsive (logo@2x.png) e
+# domini segnaposto dei template
+ESTENSIONI_FILE = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg",
+                   ".css", ".js", ".pdf", ".woff", ".woff2", ".ico", ".mp4")
+DOMINI_FINTI = ("example", "esempio", "sentry", "wixpress", "mysite",
+                "tuodominio", "nomesito", "yourdomain", "domain.com")
+
+
+def estrai_email(testo: str, sito: str = "") -> list[str]:
+    """Email dal testo delle pagine (mailto compresi: nel markdown restano
+    in chiaro), SENZA modello. Ordinate: prima quelle sul dominio del sito,
+    poi info@, poi le piu' frequenti."""
+    dominio = ""
+    if sito:
+        d = urlparse(sito if "//" in sito else "https://" + sito).netloc
+        dominio = d.lower().removeprefix("www.")
+    conta: dict[str, int] = {}
+    for m in RE_EMAIL.findall(testo or ""):
+        e = m.lower().rstrip(".")
+        dom_e = e.split("@")[1]
+        if e.endswith(ESTENSIONI_FILE) or any(f in dom_e for f in DOMINI_FINTI):
+            continue
+        conta[e] = conta.get(e, 0) + 1
+    return sorted(conta, key=lambda e: (
+        0 if dominio and e.endswith("@" + dominio) else 1,
+        0 if e.startswith("info@") else 1,
+        -conta[e], e))
 
 
 def tronca(testo: str, max_parole: int = config.MAX_PAROLE) -> str:

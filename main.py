@@ -107,7 +107,8 @@ async def analizza(azienda: dict, crawler, client, totali: dict) -> dict:
     azienda non ferma il ciclo (§10)."""
     esito = {"esito_fetch": "", "dati": None, "territorio": None,
              "pagine": 0, "costo": 0.0, "classe": "indeterminato",
-             "segnale_sede": None, "errore_analisi": ""}
+             "segnale_sede": None, "segnale_email": None,
+             "errore_analisi": ""}
 
     sito = (azienda.get("sito") or "").strip()
     if not sito or dedup.e_portale(sito):
@@ -149,6 +150,17 @@ async def analizza(azienda: dict, crawler, client, totali: dict) -> dict:
         return esito
 
     esito["dati"] = dati
+    # ripiego deterministico: se il modello non ha estratto l'email ma e'
+    # nel testo che aveva davanti, la prende il regex (caso Metalli e
+    # Servizi della diagnosi del 29/9)
+    if not (dati.get("email_aziendale") or "").strip():
+        trovate = fetch.estrai_email(contenuto, sito)
+        if trovate:
+            dati["email_aziendale"] = trovate[0]
+            esito["segnale_email"] = {
+                "tipo": "email_dal_sito",
+                "segnale": f"email {trovate[0]} estratta dalle pagine "
+                           "del sito (regex, senza modello)"}
     esito["costo"] = dati["costo_analisi_eur"]
     esito["classe"] = classify.classe_db(
         dati["classificazione"], dati["confidenza"],
@@ -437,6 +449,8 @@ async def esegui(args) -> int:
                                                      stat, args.provincia)
                 if esito["segnale_sede"]:
                     segnali = [esito["segnale_sede"], *segnali]
+                if esito.get("segnale_email"):
+                    segnali = [*segnali, esito["segnale_email"]]
                 if esito["territorio"]:
                     valutazioni.append(esito["territorio"])
                 stat["classi"][esito["classe"]] += 1
