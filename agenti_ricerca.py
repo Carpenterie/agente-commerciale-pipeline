@@ -106,6 +106,18 @@ Rispondi SOLO con JSON:
 RE_AGENTE = re.compile(r"agente|rappresentant|plurimandat|agenzia di", re.I)
 
 
+def _righe_json(percorso: pathlib.Path):
+    """Un record per riga, spezzando SOLO su newline: splitlines() taglia
+    anche su U+2028/U+2029, che i testi LinkedIn contengono (erano loro i
+    "23 illeggibili" del 29/9, non il doppio avvio). None per riga rotta."""
+    with percorso.open() as f:
+        for riga in f:
+            try:
+                yield json.loads(riga)
+            except ValueError:
+                yield None
+
+
 def _exa(query: str, chiave: str, n: int = 20) -> dict:
     req = urllib.request.Request(
         "https://api.exa.ai/search",
@@ -122,8 +134,9 @@ def raccogli(log=print) -> None:
     chiave = os.environ["EXA_API_KEY"]
     visti = set()
     if RACCOLTA.exists():
-        for riga in RACCOLTA.read_text().splitlines():
-            visti.add(json.loads(riga)["url"])
+        for c in _righe_json(RACCOLTA):
+            if c:
+                visti.add(c["url"])
     speso, nuovi = 0.0, 0
     query = [s.format(r=r) for r in REGIONI_ITALIA for s in SAGOME_REGIONE]
     query += list(SAGOME_NAZIONALI)
@@ -162,17 +175,11 @@ def classifica(quante: int, log=print) -> bool:
 
     fatte = set()
     if SCHEDE.exists():
-        for riga in SCHEDE.read_text().splitlines():
-            try:
-                fatte.add(json.loads(riga)["url"])
-            except ValueError:
-                continue
+        fatte = {c["url"] for c in _righe_json(SCHEDE) if c}
     coda, scartate = [], 0
-    for riga in RACCOLTA.read_text().splitlines():
-        try:
-            c = json.loads(riga)
-        except ValueError:
-            scartate += 1     # riga tronca da una scrittura interrotta
+    for c in _righe_json(RACCOLTA):
+        if c is None:
+            scartate += 1     # riga davvero rotta (scrittura interrotta)
             continue
         if c["url"] not in fatte and RE_AGENTE.search(c["testo"]) \
                 and len(c["testo"]) > 300:
@@ -271,9 +278,8 @@ def scrivi(log=print) -> None:
     import db
     sb = db.client()
     inserite = doppie = errori = 0
-    for riga in SCHEDE.read_text().splitlines():
-        s = json.loads(riga)
-        if s.get("pertinente") not in ("si", "da_valutare"):
+    for s in _righe_json(SCHEDE):
+        if not s or s.get("pertinente") not in ("si", "da_valutare"):
             continue
         c = s.get("conflitto") or {}
         record = {
@@ -311,8 +317,9 @@ def report(log=print) -> None:
     import collections
     per = collections.defaultdict(collections.Counter)
     concorrenti, tot, buone = [], 0, 0
-    for riga in SCHEDE.read_text().splitlines():
-        s = json.loads(riga)
+    for s in _righe_json(SCHEDE):
+        if not s:
+            continue
         tot += 1
         if s.get("pertinente") not in ("si", "da_valutare"):
             continue
@@ -341,6 +348,13 @@ if __name__ == "__main__":
         assert _regione_di({"province_coperte": ["MI", "TO"], "residenza": ""}) in ("Multiregionali", "Lombardia", "Piemonte")
         assert "conflitto stato=\"attuale\"" in PROMPT_V4 and "coil" in PROMPT_V4
         assert "VERNICI IN POLVERE" in PROMPT_V4
+        import tempfile
+        with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False) as t:
+            t.write('{"url": "a", "testo": "riga con \u2028 dentro"}\n{rotta\n')
+        _prova = list(_righe_json(pathlib.Path(t.name)))
+        assert _prova[0] and _prova[0]["testo"] == "riga con \u2028 dentro" \
+            and _prova[1] is None, _prova
+        os.unlink(t.name)
         print("ok")
         sys.exit(0)
 
