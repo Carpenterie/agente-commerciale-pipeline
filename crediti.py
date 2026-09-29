@@ -12,6 +12,10 @@ Cosa si riesce a leggere, onestamente:
 - APIFY: saldo numerico vero (users/me/limits, gratis);
 - ANTHROPIC: nessuna API di saldo — solo un canarino da ~5 token
   (0,0002 USD): dice se il credito c'e', non quanto;
+- EXA: nessun endpoint di saldo (verificato il 29/9: /balance, /account,
+  /usage rispondono 404) — canarino da una ricerca minima (~mezzo
+  centesimo): presente/esaurito. Il controllo vero e' il tetto di spesa
+  DENTRO i giri Exa, che leggono costDollars a ogni risposta;
 - OPENAPI: nessun endpoint di saldo raggiungibile col token (la console
   e' dietro Cloudflare). Il numero lo rivela SOLO l'errore 402
   ("Insufficient Credit in Wallet: 0.1 > 0.057"): il controllo fa una
@@ -87,6 +91,33 @@ def anthropic_ok(log=print) -> bool | None:
         return None
 
 
+def exa_ok(log=print) -> bool | None:
+    """True/False = il credito Exa c'e'/non c'e'. None = non conclusivo."""
+    import json
+    import urllib.error
+    import urllib.request
+
+    k = os.environ.get("EXA_API_KEY", "").strip()
+    if not k:
+        return None
+    req = urllib.request.Request(
+        "https://api.exa.ai/search",
+        data=json.dumps({"query": "test", "numResults": 1}).encode(),
+        headers={"content-type": "application/json", "x-api-key": k})
+    try:
+        with urllib.request.urlopen(req, timeout=30):
+            return True
+    except urllib.error.HTTPError as e:
+        corpo = e.read().decode()[:200].lower()
+        if e.code in (402, 403) or "credit" in corpo or "balance" in corpo:
+            return False
+        log(f"canarino Exa non conclusivo (HTTP {e.code})")
+        return None
+    except Exception as e:  # noqa: BLE001
+        log(f"canarino Exa non conclusivo: {type(e).__name__}")
+        return None
+
+
 def saldo_openapi(log=print) -> tuple[float | None, str]:
     """-> (saldo EUR se il 402 lo rivela, descrizione). Saldo None con
     'presente' = credito >= 0,10 ma cifra non leggibile (limite noto)."""
@@ -138,7 +169,8 @@ def scrivi_stato(sb, righe, log=print) -> None:
 
 
 def letture(serve_apify_usd: float = 0, serve_anthropic: bool = False,
-            serve_openapi_eur: float = 0, fonte: str = "controllo_pre_giro",
+            serve_openapi_eur: float = 0, serve_exa: bool = False,
+            fonte: str = "controllo_pre_giro",
             log=print) -> tuple[list[dict], list[str]]:
     """Legge SOLO i saldi richiesti. -> (righe per stato_sistema, problemi
     che fermano il giro). Ogni problema dice quale credito e di quanto."""
@@ -202,6 +234,20 @@ def letture(serve_apify_usd: float = 0, serve_anthropic: bool = False,
         else:
             righe.append(_riga("anthropic", "ok", None, None, None,
                                "Credito Anthropic presente", fonte))
+    if serve_exa:
+        ok = exa_ok(log)
+        if ok is False:
+            m = ("Credito Exa ESAURITO: ricaricare su dashboard.exa.ai "
+                 "prima del prossimo aggiornamento")
+            righe.append(_riga("exa", "esaurito", None, None, None, m, fonte))
+            problemi.append("credito Exa ESAURITO: ricaricare su dashboard.exa.ai")
+        elif ok is None:
+            righe.append(_riga("exa", "non_verificabile", None, None, None,
+                               "Credito Exa non verificabile (rete?)", fonte))
+        else:
+            righe.append(_riga("exa", "ok", None, None, None,
+                               "Credito Exa presente (il saldo non e' esposto: "
+                               "i giri hanno il tetto di spesa interno)", fonte))
     if serve_openapi_eur > 0:
         saldo, desc = saldo_openapi(log)
         if saldo is not None and saldo < serve_openapi_eur:
@@ -248,17 +294,20 @@ def allarmi(sb=None, log=print) -> list[dict]:
         serve_apify_usd=config.STIMA_APIFY_CICLO_USD if "apify" in rossi else 0,
         serve_anthropic="anthropic" in rossi,
         serve_openapi_eur=config.STIMA_OPENAPI_CICLO_EUR if "openapi" in rossi else 0,
+        serve_exa="exa" in rossi,
         fonte="ricontrollo_allarme", log=log)
     scrivi_stato(sb, righe, log)
     return righe
 
 
 def controllo(serve_apify_usd: float = 0, serve_anthropic: bool = False,
-              serve_openapi_eur: float = 0, log=print, sb=None) -> list[str]:
+              serve_openapi_eur: float = 0, serve_exa: bool = False,
+              log=print, sb=None) -> list[str]:
     """-> gli avvisi che devono FERMARE il giro (vuota = si parte).
     Se `sb` c'e', la lettura finisce anche in `stato_sistema`."""
     righe, problemi = letture(serve_apify_usd, serve_anthropic,
-                              serve_openapi_eur, "controllo_pre_giro", log)
+                              serve_openapi_eur, serve_exa,
+                              "controllo_pre_giro", log)
     scrivi_stato(sb, righe, log)
     return problemi
 
@@ -296,7 +345,7 @@ if __name__ == "__main__":
         righe, _ = letture(serve_apify_usd=config.STIMA_APIFY_CICLO_USD,
                            serve_anthropic=True,
                            serve_openapi_eur=config.STIMA_OPENAPI_CICLO_EUR,
-                           fonte="log_mensile")
+                           serve_exa=True, fonte="log_mensile")
         for r in righe:
             print(f"{r['servizio']:<9}: {r['messaggio']}")
         try:
