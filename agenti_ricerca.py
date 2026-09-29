@@ -34,6 +34,7 @@ import urllib.request
 CARTELLA = pathlib.Path(__file__).parent / "cache" / "agenti"
 RACCOLTA = CARTELLA / "raccolta.jsonl"
 SCHEDE = CARTELLA / "schede.jsonl"
+LUCCHETTO = CARTELLA / ".lucchetto"
 EXA_TETTO_USD = 7.0
 ANTHROPIC_TETTO_EUR = 18.0
 
@@ -162,13 +163,22 @@ def classifica(quante: int, log=print) -> bool:
     fatte = set()
     if SCHEDE.exists():
         for riga in SCHEDE.read_text().splitlines():
-            fatte.add(json.loads(riga)["url"])
-    coda = []
+            try:
+                fatte.add(json.loads(riga)["url"])
+            except ValueError:
+                continue
+    coda, scartate = [], 0
     for riga in RACCOLTA.read_text().splitlines():
-        c = json.loads(riga)
+        try:
+            c = json.loads(riga)
+        except ValueError:
+            scartate += 1     # riga tronca da una scrittura interrotta
+            continue
         if c["url"] not in fatte and RE_AGENTE.search(c["testo"]) \
                 and len(c["testo"]) > 300:
             coda.append(c)
+    if scartate:
+        log(f"righe illeggibili saltate: {scartate}")
     log(f"in coda: {len(coda)} — questa tranche: {min(quante, len(coda))}")
     if not coda:
         return False
@@ -337,6 +347,18 @@ if __name__ == "__main__":
     from dotenv import load_dotenv
     load_dotenv(pathlib.Path(__file__).parent / ".env")
     import crediti
+
+    # UN SOLO processo per volta: il 29/9 un doppio avvio (ssh -f) ha fatto
+    # leggere a un processo il file che l'altro stava ancora scrivendo.
+    # flock si rilascia da solo alla morte del processo: niente lock stantii.
+    import fcntl
+    CARTELLA.mkdir(parents=True, exist_ok=True)
+    _lucchetto = LUCCHETTO.open("w")
+    try:
+        fcntl.flock(_lucchetto, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        print("ESITO: un altro agenti_ricerca e' gia' in esecuzione — esco")
+        sys.exit(1)
 
     if "--raccogli" in sys.argv or "--giro-completo" in sys.argv:
         problemi = crediti.controllo(serve_anthropic="--giro-completo" in sys.argv,
