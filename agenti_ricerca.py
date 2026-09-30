@@ -30,6 +30,7 @@ import os
 import pathlib
 import re
 import sys
+import unicodedata
 import urllib.request
 
 CARTELLA = pathlib.Path(__file__).parent / "cache" / "agenti"
@@ -206,8 +207,15 @@ italiano separa NOME e COGNOME della persona. Regole:
 - riconosci l'ordine rovesciato (COGNOME Nome, o cognome prima del nome);
 - togli titoli, regione, ruolo, ragione sociale ("Rappresentanze", "Srl");
 - se c'e' una ditta con dentro una persona ("Edil X di Ferlini Ottavio") usa la persona;
-- se non c'e' nessuna persona riconoscibile: nome null e cognome = il nome
-  della ditta ripulito;
+- se non c'e' nessuna persona riconoscibile: nome null e cognome = SOLO il
+  nome distintivo della ditta, senza forma giuridica (Srl, Snc, Sas, S.r.l.)
+  e senza parole generiche o descrittive (Rappresentanze, Agenzia, Studio,
+  Edili, Infissi PVC, Legno, Alluminio...): "VELTRAS RAPPRESENTANZE SRL" ->
+  "Veltras", "Agenzia Orbimex" -> "Orbimex", "Studio Quadrifer" ->
+  "Quadrifer", "Lunaria Infissi PVC - LEGNO" -> "Lunaria"; le sigle restano
+  in maiuscolo ("KTR Rappresentanze" -> "KTR");
+- usa SOLO parole che compaiono nel nome_completo: niente da aggiungere,
+  correggere o completare;
 - se c'e' solo l'iniziale del cognome ("Ottavio T.") il cognome e' "T.".
 Scrivi in forma leggibile (Rossi, non ROSSI).
 Alcuni profili hanno gia' una "proposta": se e' giusta NON riportarli.
@@ -217,6 +225,19 @@ e SOLO con il JSON, senza ragionamento prima o dopo: {{"risultati": [{{"id": "..
 
 Profili:
 {elenco}"""
+
+
+def _parole(testo: str | None) -> set[str]:
+    """Le parole di un nome, senza maiuscole, accenti e apostrofi."""
+    t = unicodedata.normalize("NFKD", (testo or "").casefold())
+    t = "".join(c for c in t if not unicodedata.combining(c))
+    return set(re.findall(r"[a-z0-9]+", re.sub(r"['’]", "", t)))
+
+
+def parole_in_originale(nome_completo: str, nome: str | None, cognome: str | None) -> bool:
+    """Nome e cognome fatti solo di parole del nome_completo: il modello
+    divide e ripulisce, non inventa ne' corregge."""
+    return _parole(nome) | _parole(cognome) <= _parole(nome_completo)
 
 
 def completa_nomi(log=print) -> None:
@@ -278,11 +299,19 @@ def completa_nomi(log=print) -> None:
             log(f"  blocco {j // 100 + 1} illeggibile ({type(e).__name__}): resta da fare")
             falliti |= attesi
             continue
+        originali = {str(x["id"]): x["nome_completo"] for x in pezzo}
         for x in risultati:
-            if str(x.get("id")) in attesi and (x.get("cognome") or "").strip():
-                certi[str(x["id"])] = ((x.get("nome") or "").strip() or None,
-                                       x["cognome"].strip())
-                corrette += str(x["id"]) in proposte
+            id_ = str(x.get("id"))
+            if id_ in attesi and (x.get("cognome") or "").strip():
+                nome, cognome = (x.get("nome") or "").strip() or None, x["cognome"].strip()
+                if not parole_in_originale(originali[id_], nome, cognome):
+                    # scartata; e la proposta, se c'era, non vale piu' come confermata
+                    log(f"  SCARTATA, parole non nell'originale: {originali[id_]!r} -> "
+                        f"nome={nome!r} cognome={cognome!r}")
+                    falliti.add(id_)
+                    continue
+                certi[id_] = (nome, cognome)
+                corrette += id_ in proposte
     for id_, proposta in proposte.items():
         if id_ not in falliti:
             certi.setdefault(id_, proposta)     # non corretta dal modello = giusta
@@ -555,6 +584,11 @@ if __name__ == "__main__":
         assert separa_nome("TAMBURRO ARMANDO") == ("Tamburro", "Armando", False)
         assert separa_nome("ARMANDO D'ARPINO") == ("Armando", "D'Arpino", False)
         assert separa_nome("remo d'arpino") == ("Remo", "D'Arpino", False)
+        assert parole_in_originale("Ugo D'arpino", "Ugo", "D'Arpino")
+        assert parole_in_originale("TAMBURRO SRL", None, "Tamburro")
+        assert parole_in_originale("Àrmando CÀ.FÈ.", "Armando", "Ca.Fe.")
+        assert not parole_in_originale("Ugo D'arpino", "Ugo", "D'Arrigo")
+        assert not parole_in_originale("Remo Ferlini", "Remo", "Ferlini Rossi")
         for incerto in ["Di Vettore Ugo", "Gian Remo Scalzati",
                         "Ferlini Tamburro Ugo", "Edilfer Di Remo Scalzati",
                         "UFT Ferlini Rappresentanze", "TAMBURRO SRL",
