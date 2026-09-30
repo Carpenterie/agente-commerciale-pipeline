@@ -6,6 +6,7 @@ approvati dal cliente il 2026-09-29). Tre canali, tutta Italia.
     python agenti_ricerca.py --giro-completo       # raccolta + tutte le tranche
     python agenti_ricerca.py --scrivi              # nella tabella `agenti`
     python agenti_ricerca.py --report
+    python agenti_ricerca.py --nomi                # nome/cognome mancanti
 
 I dati vivono in cache/agenti/ (fuori da git come tutta la cache; niente
 /tmp: contengono nomi di persone). Le regole di merito stanno nel PROMPT
@@ -126,6 +127,172 @@ def normalizza_linkedin(url: str | None) -> str | None:
         return None
     return re.sub(r"^https?://(?:[a-z]{2}\.|www\.)?linkedin\.com",
                   "https://linkedin.com", u, flags=re.I)
+
+
+# Nome e cognome separati (richiesta di Claudia, 30/9: ordine per cognome,
+# «Cognome Nome»). La regola chiude solo i casi certi; completa_nomi() passa
+# gli altri al modello. nome_completo non si tocca mai.
+PARTICELLE = {"de", "di", "del", "della", "dello", "delle", "dei", "degli",
+              "delli", "da", "dal", "dalla", "dalle", "dai", "d'", "dell'",
+              "lo", "la", "le", "li", "san", "santo", "santa", "van", "von"}
+RE_DITTA = re.compile(r"rappresentanz|agenzia|agency|\bs\.?r\.?l|\bsnc\b|"
+                      r"\bsas\b|\bs\.?p\.?a\b|commercio|infissi|\bagente\b|"
+                      r"rappresentante", re.I)
+RE_TITOLO = re.compile(r"^(?:arch|ing|geom|dott|dr|avv|rag|per|p\.i)\.\s+", re.I)
+RE_INIZIALE = re.compile(r"^[A-Za-z]\.$")
+
+
+def _leggibile(parola: str) -> str:
+    """MAIUSCOLO o minuscolo -> Iniziale (anche dopo l'apostrofo); le
+    parole gia' in forma mista restano come le ha scritte l'agente."""
+    if not (parola.isupper() or parola.islower()) or RE_INIZIALE.match(parola):
+        return parola
+    return re.sub(r"(^|['-])(\w)", lambda m: m.group(1) + m.group(2).upper(),
+                  parola.lower())
+
+
+def separa_nome(nome_completo: str | None) -> tuple[str, str, bool] | None:
+    """(nome, cognome, certo). certo=False e' una PROPOSTA da far verificare
+    al modello: due parole semplici, dove l'ordine non si deduce ("Ferlini
+    Ottavio", "TAMBURRO ARMANDO": in tabella ce ne sono). None: decide il modello."""
+    t = re.split(r"\s+[-|–]\s+|\|", nome_completo or "")[0]
+    t = RE_TITOLO.sub("", re.sub(r"[^\w\s'.-]", " ", t)).strip()
+    parole = t.split()
+    if len(parole) < 2 or RE_DITTA.search(t) or "(" in (nome_completo or ""):
+        return None
+    iniziali = [bool(RE_INIZIALE.match(w)) for w in parole]
+    certo = True
+    if len(parole) == 2 and iniziali == [False, True]:          # "Ottavio T."
+        nome, cognome = parole[:1], parole[1:]
+    elif any(iniziali):
+        return None
+    else:
+        maiu = [w.isupper() for w in parole]
+        if any(maiu) and not all(maiu):
+            # "Ottavio FERLINI", "FERLINI Ottavio": il blocco MAIUSCOLO e' il
+            # cognome, ma solo se sta tutto a un capo
+            k = maiu.index(True)
+            blocco = maiu[k:].count(True)
+            if not all(maiu[k:k + blocco]) or any(maiu[k + blocco:]):
+                return None
+            if k == 0:
+                cognome, nome = parole[:blocco], parole[blocco:]
+            elif k + blocco == len(parole):
+                nome, cognome = parole[:k], parole[k:]
+            else:
+                return None
+        else:
+            basse = [w.lower() for w in parole]
+            pos = [i for i, w in enumerate(basse) if w in PARTICELLE]
+            if pos:
+                # "Ugo Di Vettore", "Ottavio Remo Di Scalzo": particella
+                # seguita da UNA parola sola; in testa o altrove -> modello
+                k = pos[0]
+                if k == 0 or k != len(parole) - 2 or len(pos) > 1:
+                    return None
+                nome, cognome = parole[:k], parole[k:]
+            elif len(parole) == 2:
+                nome, cognome, certo = parole[:1], parole[1:], False
+            else:
+                return None   # 3+ parole senza appigli: nome doppio? ditta?
+    return (" ".join(map(_leggibile, nome)), " ".join(map(_leggibile, cognome)),
+            certo)
+
+
+PROMPT_NOMI = """Per ciascun profilo LinkedIn di un agente di commercio
+italiano separa NOME e COGNOME della persona. Regole:
+- cognomi composti interi (De Vettore, Di Scalzo Ferlini, D'Arpino, Lo Tamburro);
+- nomi doppi interi (Maria Grazia, Gian Luca, Francesco Saverio);
+- riconosci l'ordine rovesciato (COGNOME Nome, o cognome prima del nome);
+- togli titoli, regione, ruolo, ragione sociale ("Rappresentanze", "Srl");
+- se c'e' una ditta con dentro una persona ("Edil X di Ferlini Ottavio") usa la persona;
+- se non c'e' nessuna persona riconoscibile: nome null e cognome = il nome
+  della ditta ripulito;
+- se c'e' solo l'iniziale del cognome ("Ottavio T.") il cognome e' "T.".
+Scrivi in forma leggibile (Rossi, non ROSSI).
+Alcuni profili hanno gia' una "proposta": se e' giusta NON riportarli.
+Rispondi SOLO per i profili senza proposta o con la proposta sbagliata,
+e SOLO con il JSON, senza ragionamento prima o dopo: {{"risultati": [{{"id": "...", "nome": "... o null",
+"cognome": "..."}}]}}
+
+Profili:
+{elenco}"""
+
+
+def completa_nomi(log=print) -> None:
+    """Riempie nome/cognome delle righe che ancora non li hanno: prima la
+    regola, poi il modello a blocchi di 100 per i casi incerti. Solo update
+    di queste due colonne."""
+    import classify
+    import config
+    import costi
+    import db
+    from anthropic import Anthropic
+
+    sb = db.client()
+    righe, i = [], 0
+    while True:
+        blocco = (sb.table("agenti").select("id,nome_completo")
+                  .is_("cognome", "null").range(i, i + 999).execute().data)
+        righe += blocco
+        if len(blocco) < 1000:
+            break
+        i += 1000
+    certi, incerti, proposte = {}, [], {}
+    for r in righe:
+        esito = separa_nome(r["nome_completo"])
+        if esito and esito[2]:
+            certi[str(r["id"])] = esito[:2]
+        else:
+            incerti.append(r)
+            if esito:
+                proposte[str(r["id"])] = esito[:2]
+    log(f"senza cognome: {len(righe)} — regola certa {len(certi)}; al modello "
+        f"{len(incerti)} ({len(proposte)} con proposta da verificare, "
+        f"{len(incerti) - len(proposte)} da risolvere)")
+
+    tot = costi.nuovo_ciclo()
+    client = Anthropic(max_retries=2)
+    corrette, falliti = 0, set()
+    for j in range(0, len(incerti), 100):
+        pezzo = incerti[j:j + 100]
+        elenco = "\n".join(json.dumps(
+            {"id": str(r["id"]), "nome_completo": r["nome_completo"],
+             "proposta": dict(zip(("nome", "cognome"), proposte[str(r["id"])]))
+             if str(r["id"]) in proposte else None},
+            ensure_ascii=False) for r in pezzo)
+        attesi = {str(x["id"]) for x in pezzo}
+        try:
+            r = client.messages.create(
+                model=config.MODELLO, max_tokens=4000, temperature=0,
+                timeout=config.TIMEOUT_ANTHROPIC_S,
+                messages=[{"role": "user", "content": PROMPT_NOMI.format(elenco=elenco)}])
+            costi.registra_analisi(tot, r.usage.input_tokens, r.usage.output_tokens)
+            testo = next(b.text for b in r.content if b.type == "text")
+            # il 30/9 il modello ha ragionato prima del JSON citando le
+            # proposte fra graffe: si parte dall'ultimo {"risultati"
+            risultati = classify.estrai_json(
+                testo[max(testo.rfind('{"risultati"'), 0):])["risultati"]
+        except Exception as e:  # noqa: BLE001
+            # blocco perso: le sue proposte NON valgono come confermate
+            log(f"  blocco {j // 100 + 1} illeggibile ({type(e).__name__}): resta da fare")
+            falliti |= attesi
+            continue
+        for x in risultati:
+            if str(x.get("id")) in attesi and (x.get("cognome") or "").strip():
+                certi[str(x["id"])] = ((x.get("nome") or "").strip() or None,
+                                       x["cognome"].strip())
+                corrette += str(x["id"]) in proposte
+    for id_, proposta in proposte.items():
+        if id_ not in falliti:
+            certi.setdefault(id_, proposta)     # non corretta dal modello = giusta
+    log(f"proposte corrette dal modello: {corrette}")
+    mancano = [r for r in righe if str(r["id"]) not in certi]
+    for id_, (nome, cognome) in certi.items():
+        sb.table("agenti").update({"nome": nome, "cognome": cognome}).eq("id", id_).execute()
+    log(f"scritte {len(certi)}; rimaste senza cognome {len(mancano)}"
+        + "".join(f"\n  {r['nome_completo']}" for r in mancano[:10]))
+    costi.stampa(tot, log=log)
 
 
 def _exa(query: str, chiave: str, n: int = 20) -> dict:
@@ -321,6 +488,7 @@ def scrivi(log=print) -> None:
                 if errori <= 3:
                     log(f"  errore su {s.get('nome', '?')[:30]}: {str(e)[:120]}")
     log(f"scrittura: inserite {inserite}, doppie {doppie}, errori {errori}")
+    completa_nomi(log)   # i casi incerti della regola li chiude il modello
 
 
 def report(log=print) -> None:
@@ -369,6 +537,30 @@ if __name__ == "__main__":
         assert _prova[0] and _prova[0]["testo"] == "riga con \u2028 dentro" \
             and _prova[1] is None, _prova
         os.unlink(t.name)
+        for dentro, fuori in [
+                ("Ugo Di Vettore", ("Ugo", "Di Vettore")),
+                ("Ottavio Remo Di Scalzo", ("Ottavio Remo", "Di Scalzo")),
+                ("ARMANDO DELLE FRASCHE", ("Armando", "Delle Frasche")),
+                ("remo del ventaglio", ("Remo", "Del Ventaglio")),
+                ("Ottavio FERLINI", ("Ottavio", "Ferlini")),
+                ("Ugo Remo TAMBURRO", ("Ugo Remo", "Tamburro")),
+                ("Armando SAINT VETTORE", ("Armando", "Saint Vettore")),
+                ("FERLINI Maria Grazia", ("Maria Grazia", "Ferlini")),
+                ("Ottavio T.", ("Ottavio", "T.")),
+                ("Remo SCALZATI ⭐", ("Remo", "Scalzati")),
+                ("Ugo FERVI - Agente di commercio", ("Ugo", "Fervi")),
+                ("Arch. Ottavio Di Frasca", ("Ottavio", "Di Frasca"))]:
+            assert separa_nome(dentro) == (*fuori, True), (dentro, separa_nome(dentro))
+        assert separa_nome("Ferlini Ottavio") == ("Ferlini", "Ottavio", False)
+        assert separa_nome("TAMBURRO ARMANDO") == ("Tamburro", "Armando", False)
+        assert separa_nome("ARMANDO D'ARPINO") == ("Armando", "D'Arpino", False)
+        assert separa_nome("remo d'arpino") == ("Remo", "D'Arpino", False)
+        for incerto in ["Di Vettore Ugo", "Gian Remo Scalzati",
+                        "Ferlini Tamburro Ugo", "Edilfer Di Remo Scalzati",
+                        "UFT Ferlini Rappresentanze", "TAMBURRO SRL",
+                        "Ferlini (Ottavio)", "Remo UF T.", "Ugo R. Scalzati",
+                        "Edilvetro di Frasca Remo", "Ottavio Di Scalzo Ferlini", ""]:
+            assert separa_nome(incerto) is None, (incerto, separa_nome(incerto))
         print("ok")
         sys.exit(0)
 
@@ -407,3 +599,5 @@ if __name__ == "__main__":
         scrivi()
     if "--report" in sys.argv:
         report()
+    if "--nomi" in sys.argv:
+        completa_nomi()
