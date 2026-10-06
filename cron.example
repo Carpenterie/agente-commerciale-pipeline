@@ -45,3 +45,10 @@
 # di 0,10 su Openapi si paga solo alla lettura che trova credito. I servizi
 # ok restano alla riga mensile. Alle 6:00, dopo eventuali giri notturni.
 0 6 * * * cd /opt/agente-commerciale-pipeline && .venv/bin/python crediti.py --allarmi >> /var/log/pipeline-crediti.log 2>&1
+#
+# Conservazione dei CANDIDATI (privacy, l'unica eccezione alla regola
+# "niente cancellazioni"): chi non arriva al colloquio si cancella 90 giorni
+# dopo l'ultimo aggiornamento, e cosi' le righe di cache/candidati. Una riga
+# di log al giorno con quante righe toglie. Parte in PROVA (conta e non
+# cancella): togliere --prova solo col via del committente.
+30 4 * * * cd /opt/agente-commerciale-pipeline && .venv/bin/python candidati_ricerca.py --conservazione --prova >> /var/log/candidati-conservazione.log 2>&1

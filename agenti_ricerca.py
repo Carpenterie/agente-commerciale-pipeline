@@ -324,12 +324,12 @@ def completa_nomi(log=print) -> None:
     costi.stampa(tot, log=log)
 
 
-def _exa(query: str, chiave: str, n: int = 20) -> dict:
+def _exa(query: str, chiave: str, n: int = 20, caratteri: int = 2500) -> dict:
     req = urllib.request.Request(
         "https://api.exa.ai/search",
         data=json.dumps({"query": query, "type": "auto", "category": "people",
                          "numResults": n,
-                         "contents": {"text": {"maxCharacters": 2500}}}).encode(),
+                         "contents": {"text": {"maxCharacters": caratteri}}}).encode(),
         headers={"content-type": "application/json", "x-api-key": chiave})
     with urllib.request.urlopen(req, timeout=120) as r:
         return json.load(r)
