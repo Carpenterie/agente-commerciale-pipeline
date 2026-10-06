@@ -146,6 +146,7 @@ RE_FORMAZIONE = re.compile(r"diplom|laure|istitut|universit|politecnic|\bCAT\b|\
                            r"scuola|degree|bachelor|master|accademia|facolt|corso di studi", re.I)
 # fuori da disponibilita', prove e sintesi
 RE_SENSIBILE = re.compile(r"naspi|cassa integrazione|\bcig\b|disoccupa|sussidi|indennit|"
+                          r"\bin mobilit|liste? di mobilit|"   # la mobilita' del lavoro
                           r"malatti|salute|invalidit|\b104\b|categorie protette|famigli|"
                           r"\bfigli|gravidanz|maternit|paternit|\blutto\b|"
                           r"motivi (?:personali|familiari|di salute)", re.I)
@@ -429,6 +430,7 @@ if __name__ == "__main__":
         assert s["criteri"][-1]["evidenza"] is None and verificati(s) == 1 and not base(s)
         assert s["disponibilita"] == "Attualmente sono in cerca di occupazione", s["disponibilita"]
         assert s["messaggio"] is None and messaggio(s) is None
+        assert RE_SENSIBILE.search("Attualmente in mobilità.") and not RE_SENSIBILE.search("Disponibile a trasferte")
         assert s["sintesi"] == "Geometra di cantiere da 10 anni."
         assert s["aziende_segnalate"] == ["Ghella"], s["aziende_segnalate"]
         assert (s["nome_proprio"], s["cognome"]) == ("Mario", "Rossi"), s["cognome"]
