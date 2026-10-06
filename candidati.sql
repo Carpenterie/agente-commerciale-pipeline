@@ -4,10 +4,11 @@
 -- app_metadata.selezione = true, e solo in stato, motivo_scarto e
 -- note_selezione.
 --
--- CONSERVAZIONE (privacy): chi non arriva al colloquio si cancella 90
--- giorni dopo l'ultimo aggiornamento (cron di candidati_ricerca.py
--- --conservazione). `arrivato_colloquio` lo mette il trigger e non torna
--- piu' indietro: uno scartato DOPO il colloquio non si cancella da solo.
+-- CONSERVAZIONE (privacy), cron di candidati_ricerca.py --conservazione:
+-- chi non arriva al colloquio si cancella 90 giorni dopo l'ultimo
+-- aggiornamento; chi ci arriva (poi scartato o assunto) 12 mesi dopo.
+-- Nessuno resta in tabella senza scadenza. `arrivato_colloquio` lo mette
+-- il trigger e non torna piu' indietro: decide quale delle due scadenze vale.
 
 create table public.candidati (
     id                  uuid primary key default gen_random_uuid(),

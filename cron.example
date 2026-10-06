@@ -48,7 +48,8 @@
 #
 # Conservazione dei CANDIDATI (privacy, l'unica eccezione alla regola
 # "niente cancellazioni"): chi non arriva al colloquio si cancella 90 giorni
-# dopo l'ultimo aggiornamento, e cosi' le righe di cache/candidati. Una riga
-# di log al giorno con quante righe toglie. Parte in PROVA (conta e non
-# cancella): togliere --prova solo col via del committente.
+# dopo l'ultimo aggiornamento, chi ci arriva (scartato dopo o assunto) 12
+# mesi dopo; le righe di cache/candidati a 90 giorni. Una riga di log al
+# giorno con quante righe toglie. Parte in PROVA (conta e non cancella):
+# --prova si toglie dopo il primo giro, se il log e' coerente.
 30 4 * * * cd /opt/agente-commerciale-pipeline && .venv/bin/python candidati_ricerca.py --conservazione --prova >> /var/log/candidati-conservazione.log 2>&1

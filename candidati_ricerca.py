@@ -24,7 +24,8 @@ CONSERVAZIONE (l'unica eccezione alla regola "niente cancellazioni", la
 impone la privacy): in tabella entrano solo persone nel ruolo e non fuori
 zona; il testo di chi non entra si cancella subito dopo la valutazione;
 chi non arriva al colloquio si cancella 90 giorni dopo l'ultimo
-aggiornamento, e la stessa soglia vale per la cache (--conservazione).
+aggiornamento, chi ci arriva (scartato dopo o assunto) 12 mesi dopo:
+nessuno resta senza scadenza. In cache valgono i 90 giorni (--conservazione).
 I dati vivono in CANDIDATI_CARTELLA (default cache/candidati, fuori da git).
 """
 
@@ -46,6 +47,9 @@ RACCOLTA = CARTELLA / "raccolta.jsonl"
 SCHEDE = CARTELLA / "schede.jsonl"
 LUCCHETTO = CARTELLA / ".lucchetto"
 GIORNI_CONSERVAZIONE = 90
+# chi e' arrivato al colloquio (poi scartato o assunto): 12 mesi. 366 giorni
+# e non 365: anche negli anni bisestili mai prima dei 12 mesi
+GIORNI_DOPO_COLLOQUIO = 366
 # tetto del committente per la fase 2: 8 EUR in tutto
 EXA_TETTO_USD = 0.6
 ANTHROPIC_TETTO_EUR = 7.4
@@ -383,16 +387,22 @@ def scrivi(log=print) -> None:
 
 
 def conservazione(prova: bool, log=print) -> None:
-    """Il cron giornaliero. In tabella: chi non e' mai arrivato al colloquio
-    e non e' aggiornato da 90 giorni. In cache: le righe trovate da 90."""
+    """Il cron giornaliero. In tabella: chi non e' arrivato al colloquio e
+    non e' aggiornato da 90 giorni, chi ci e' arrivato da 12 mesi. In cache:
+    le righe trovate da 90 giorni."""
     import db
-    soglia = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=GIORNI_CONSERVAZIONE)
+    adesso = dt.datetime.now(dt.timezone.utc)
+    soglia = adesso - dt.timedelta(days=GIORNI_CONSERVAZIONE)
     sb = db.client()
-    q = (lambda t: t.eq("arrivato_colloquio", False).lt("aggiornato_il", soglia.isoformat()))
-    if prova:
-        tabella = q(sb.table("candidati").select("id", count="exact")).execute().count or 0
-    else:
-        tabella = len(q(sb.table("candidati").delete()).execute().data or [])
+    tolti = {}
+    for colloquio, giorni in ((False, GIORNI_CONSERVAZIONE), (True, GIORNI_DOPO_COLLOQUIO)):
+        limite = (adesso - dt.timedelta(days=giorni)).isoformat()
+        q = (lambda t: t.eq("arrivato_colloquio", colloquio).lt("aggiornato_il", limite))
+        if prova:
+            tolti[colloquio] = q(sb.table("candidati").select("id", count="exact")).execute().count or 0
+        else:
+            tolti[colloquio] = len(q(sb.table("candidati").delete()).execute().data or [])
+    totale = sb.table("candidati").select("id", count="exact").execute().count or 0
     cache = 0
     for f in (RACCOLTA, SCHEDE):
         if f.exists():
@@ -401,10 +411,12 @@ def conservazione(prova: bool, log=print) -> None:
             cache += len(righe) - len(tenute)
             if not prova:
                 _riscrivi(f, tenute)
-    log(f"{dt.datetime.now():%Y-%m-%d %H:%M} conservazione {GIORNI_CONSERVAZIONE} giorni"
-        f"{' — PROVA, nessuna cancellazione' if prova else ''}: "
-        f"candidati {'da togliere' if prova else 'tolti'} {tabella}, "
-        f"righe di cache {'da togliere' if prova else 'tolte'} {cache}")
+    verbo = "da togliere" if prova else "tolti"
+    log(f"{dt.datetime.now():%Y-%m-%d %H:%M} conservazione"
+        f"{' — PROVA, nessuna cancellazione' if prova else ''}: candidati {verbo} "
+        f"{tolti[False]} senza colloquio (>{GIORNI_CONSERVAZIONE} gg) + {tolti[True]} dopo il "
+        f"colloquio (>{GIORNI_DOPO_COLLOQUIO} gg), in tabella {totale}; "
+        f"righe di cache {verbo} {cache}")
 
 
 if __name__ == "__main__":
