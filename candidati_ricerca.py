@@ -293,6 +293,7 @@ def classifica(quante: int, log=print) -> None:
     client = Anthropic(max_retries=1)
     tot = costi.nuovo_ciclo()
     serie, corretti, tenute, scartate = ("", 0), 0, 0, 0
+    valutate = set()
     with SCHEDE.open("a") as f:
         for c in coda[:quante]:
             if costi.costo_anthropic(tot["token_input"], tot["token_output"]) >= ANTHROPIC_TETTO_EUR:
@@ -318,20 +319,23 @@ def classifica(quante: int, log=print) -> None:
                     log("SALVAVITA: errori uguali di fila, tranche interrotta")
                     break
                 continue
+            valutate.add(c["url"])
             if entra(d):
                 f.write(json.dumps(d, ensure_ascii=False) + "\n")
                 tenute += 1
             else:
                 scartate += 1
     log(f"tenute {tenute}, non entrano {scartate}; esiti riportati a da_verificare: {corretti}")
-    sfoltisci(log)
+    sfoltisci(valutate, log)
     costi.stampa(tot, log=log)
 
 
-def sfoltisci(log=print) -> None:
+def sfoltisci(valutate: set, log=print) -> None:
     """Nella raccolta resta SOLO la coda ancora da valutare: i testi di chi
-    e' stato valutato (o non e' nemmeno candidabile) si cancellano subito."""
-    resta = in_coda()
+    e' stato valutato (o non e' nemmeno candidabile) si cancellano subito.
+    Gli scartati vanno tolti per url: non stando in SCHEDE, in_coda() da
+    sola li riterrebbe ancora da valutare (6/10: 85 rimasti in cache)."""
+    resta = [c for c in in_coda() if c["url"] not in valutate]
     prima = sum(1 for c in _righe_json(RACCOLTA) if c)
     _riscrivi(RACCOLTA, resta)
     log(f"raccolta: tolti {prima - len(resta)} testi, ne restano {len(resta)} da valutare")
@@ -434,6 +438,14 @@ if __name__ == "__main__":
         assert record({**s, "url": "u"})["criteri"][0]["criterio"] == "Zona geografica"
         b = {"messaggio": "Buongiorno Ugo, ho visto i suoi cantieri.", "criteri": []}
         assert controlla(b, "x") == 0 and messaggio(b).endswith("rispondendo a questo messaggio.")
+        import tempfile
+        with tempfile.TemporaryDirectory() as t:
+            RACCOLTA, SCHEDE = pathlib.Path(t, "r.jsonl"), pathlib.Path(t, "s.jsonl")
+            riga = {"testo": "geometra di cantiere a Roma " * 20, "nome": "", "query": ""}
+            _riscrivi(RACCOLTA, [{**riga, "url": u} for u in "abcd"])
+            _riscrivi(SCHEDE, [{"url": "a"}])
+            sfoltisci({"a", "b"}, log=lambda *_: None)
+            assert [c["url"] for c in _righe_json(RACCOLTA)] == ["c", "d"]
         print("ok")
         sys.exit(0)
 
