@@ -6,6 +6,7 @@ Openapi rifiutato: 134 A/B/C senza visura.
 
     python visure.py --ciclo ID --classi A,B --per-nome A            # misura
     python visure.py --ciclo ID --classi A,B --per-nome A --scrivi
+    python visure.py --sede-legale [--solo "Nome|Nome"] [--scrivi]
 
 --classi:   le classi da visurare (con P.IVA in scheda: una visura).
 --per-nome: le classi per cui, SENZA P.IVA, si cerca anche per nome
@@ -115,7 +116,7 @@ def giro(ciclo: str, classi: set, per_nome: set, scrivi: bool, log=print) -> Non
     log(f"residuo Openapi dichiarato: {crediti.residuo_openapi()} EUR")
 
 
-def sede_legale(scrivi: bool, log=print) -> None:
+def sede_legale(scrivi: bool, log=print, solo: set | None = None) -> None:
     """Una tantum (7/10): le schede escluse per la sede in VISURA fuori dalle
     regioni attive, ma che Maps colloca nel territorio, diventano unita'
     locali: segnale informativo al posto dell'esclusione, e comune e
@@ -151,11 +152,21 @@ def sede_legale(scrivi: bool, log=print) -> None:
         terr = next((x for x in segn if x.get("tipo") == "territorio"), None)
         if not sede or not main.maps_nel_territorio(terr):
             continue
+        if solo and r["ragione_sociale"] not in solo:
+            continue
+        sigla = ((sede[0].get("sede") or "").rsplit("(", 1)[-1].rstrip(")") or "").upper()
         m = maps.get(r.get("dominio") or "") or maps.get(dedup.norm_ragione(r["ragione_sociale"]))
-        agg = {"segnali": [x for x in segn if x not in sede] + [{
-            "tipo": "sede_legale_fuori_regione", "sede": sede[0].get("sede"),
-            "segnale": f"{sede[0]['segnale'].replace(', fuori dalle regioni attive', '')}; "
-                       f"unita' locale nel territorio secondo Google Maps (rimessa dentro il {oggi})"}]}
+        if sigla in config.SIGLE_ATTIVE:
+            # sede legale in una regione aperta dopo (Campania, 7/10): non e'
+            # piu' fuori, si toglie l'esclusione e basta
+            nuovo = {"tipo": "territorio", "esito": "dentro",
+                     "segnale": f"rimessa dentro il {oggi}: sede in visura {sede[0].get('sede')} "
+                                f"ora in una regione attiva"}
+        else:
+            nuovo = {"tipo": "sede_legale_fuori_regione", "sede": sede[0].get("sede"),
+                     "segnale": f"{sede[0]['segnale'].replace(', fuori dalle regioni attive', '')}; "
+                                f"unita' locale nel territorio secondo Google Maps (rimessa dentro il {oggi})"}
+        agg = {"segnali": [x for x in segn if x not in sede] + [nuovo]}
         if m:
             agg["comune"] = m.get("comune") or r.get("comune")
             agg["provincia"] = config.sigla_provincia(m.get("provincia") or "") or r.get("provincia")
@@ -171,7 +182,9 @@ if __name__ == "__main__":
     if "--sede-legale" in sys.argv:
         from dotenv import load_dotenv
         load_dotenv()
-        sede_legale("--scrivi" in sys.argv)
+        solo = {x.strip() for x in sys.argv[sys.argv.index("--solo") + 1].split("|")} \
+            if "--solo" in sys.argv else None
+        sede_legale("--scrivi" in sys.argv, solo=solo)
         sys.exit(0)
     if "--test" in sys.argv:
         righe = [{"classe": "A", "partita_iva": "1"}, {"classe": "A", "partita_iva": ""},
