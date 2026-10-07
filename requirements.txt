@@ -10,3 +10,6 @@ apify-client>=1.6
 cryptography<49
 # playwright >=1.62 non supporta piu macOS 12: 1.61 e l ultima che funziona su questo Mac
 playwright==1.61.0
+# MX dei domini dubbi per riconoscere le PEC (fetch.e_pec); gia' installato
+# come dipendenza di email-validator, qui esplicito con la stessa versione
+dnspython==2.8.0

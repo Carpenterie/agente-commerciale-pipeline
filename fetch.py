@@ -130,11 +130,43 @@ GESTORI_PEC = ("legalmail", "postacert", "postecert", "sicurezzapostale",
                "pecposta", "pecimprese", "pecmail", "cert")
 
 
-def e_pec(email: str | None) -> bool:
-    etichette = (email or "").rsplit("@", 1)[-1].lower().split(".")[:-1]
-    return "@" in (email or "") and any(
-        e == "pec" or e.startswith("pec-") or e.endswith("pec")
-        or e.startswith("postacert") or e in GESTORI_PEC for e in etichette)
+def _mx_gestore_pec(dominio: str) -> bool:
+    """Il server di posta del dominio e' un gestore PEC? (mx.pec.aruba.it,
+    mx.cert.legalmail.it). Dominio senza MX -> no. Errore di rete -> si':
+    una PEC finita in email_pec per prudenza non fa danni, una PEC finita
+    in email_aziendale riceverebbe un'email commerciale."""
+    import dns.exception
+    import dns.resolver
+    try:
+        risposta = dns.resolver.resolve(dominio, "MX", lifetime=8)
+    except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer, dns.resolver.NoNameservers):
+        return False
+    except dns.exception.DNSException:
+        return True
+    return any(e in GESTORI_PEC or e.startswith("pec")
+               for r in risposta for e in str(r.exchange).lower().split("."))
+
+
+_MX_VISTI: dict[str, bool] = {}
+
+
+def e_pec(email: str | None, mx=_mx_gestore_pec) -> bool:
+    """Dominio che lo dice da solo (etichetta "pec", gestore noto) -> PEC.
+    Dominio che finisce in "pec" o comincia con "pec-" (arubapec, pec-cap):
+    decide il server di posta (7/10), se non e' un gestore PEC e' normale."""
+    if "@" not in (email or ""):
+        return False
+    dominio = email.rsplit("@", 1)[-1].lower().strip().rstrip(".")
+    etichette = dominio.split(".")[:-1]
+    if any(e == "pec" or e.startswith("postacert") or e in GESTORI_PEC for e in etichette):
+        return True
+    if not any(e.startswith("pec-") or e.endswith("pec") for e in etichette):
+        return False
+    if mx is not _mx_gestore_pec:
+        return mx(dominio)
+    if dominio not in _MX_VISTI:
+        _MX_VISTI[dominio] = mx(dominio)
+    return _MX_VISTI[dominio]
 
 
 def estrai_email(testo: str, sito: str = "", pec: bool = False) -> list[str]:
@@ -189,12 +221,15 @@ async def fetch_azienda(crawler, url: str) -> tuple[str, str, int]:
 
 if __name__ == "__main__":
     for si in ("a@pec.it", "a@legalmail.it", "b@cert.legalmail.it", "c@pecposta.it",
-               "d@arubapec.it", "e@pec.aslroma4.it", "f@pec-cap.it", "g@postacert.it",
-               "h@pec.libero.it", "i@gigapec.it", "l@postacert.poste.it"):
-        assert e_pec(si), si
+               "e@pec.aslroma4.it", "g@postacert.it", "h@pec.libero.it",
+               "l@postacert.poste.it"):
+        assert e_pec(si, mx=lambda d: 1 / 0), si     # nessun MX: il dominio basta
+    gestore, normale = (lambda d: True), (lambda d: False)
+    for dubbio in ("d@arubapec.it", "f@pec-cap.it", "i@gigapec.it"):
+        assert e_pec(dubbio, mx=gestore) and not e_pec(dubbio, mx=normale), dubbio
     for no in ("info@polispecialisticoviterbo.it", "x@edilpecostruzioni.com",
                "pec@gmail.com", "info@pecorino.it", "", None, "senza-chiocciola"):
-        assert not e_pec(no), no
+        assert not e_pec(no, mx=lambda d: 1 / 0), no
     assert estrai_email("info@x.it x@pec.it") == ["info@x.it"]
     assert estrai_email("info@x.it x@pec.it", pec=True) == ["x@pec.it"]
     assert _cache_path("https://www.fabbrox.it/grate").parent.name == "fabbrox.it"

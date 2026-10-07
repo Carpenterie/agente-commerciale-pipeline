@@ -101,7 +101,7 @@ sourcing_maps.cerca = lambda comuni, log=print: (
 sourcing_exa.cerca = lambda provincia, log=print: [s for s in SCHEDE if s["fonte"] == "exa"]
 fetch.fetch_azienda = _fetch_finto
 classify.classifica = _classifica_finta
-def _arricchisci_finto(nome, piva="", provincia="", log=print):
+def _arricchisci_finto(nome, piva="", provincia="", comuni_noti=(), log=print):
     if "Boom" in nome:
         raise RuntimeError("crash simulato nell'arricchimento")
     return _ANAGRAFICA
@@ -236,7 +236,7 @@ with contextlib.redirect_stdout(buffer3):
 uscita3 = buffer3.getvalue()
 
 assert "fuori territorio dopo l'analisi" in uscita3, uscita3
-assert "RODANO, MI (Lombardia)" in uscita3, uscita3
+assert "RODANO, MI (provincia MI)" in uscita3, uscita3  # formato di 8f97d28
 assert "classe               C" in uscita3, uscita3       # NON declassata
 assert "regione              Lombardia" in uscita3, uscita3  # il campo che filtra
 assert "esito_analisi        INDETERMINATO" in uscita3, uscita3  # conservato
