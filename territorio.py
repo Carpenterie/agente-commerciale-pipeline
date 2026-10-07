@@ -92,7 +92,11 @@ def da_scheda(scheda: dict) -> dict | None:
     -> esito, oppure None se la scheda non porta il dato.
     """
     cap = str(scheda.get("cap") or "").strip()
-    provincia = str(scheda.get("provincia") or "").strip().upper()
+    # Maps scrive spesso la provincia per esteso ("Provincia di Pisa", "Città
+    # metropolitana di Roma Capitale"): confrontata cosi' com'era con le
+    # sigle, mandava fuori anche le province attive (13 schede al 7/10)
+    provincia = (config.sigla_provincia(str(scheda.get("provincia") or "").strip())
+                 or "").upper()
     if cap and cap[:2] in config.PREFISSI_CAP_ATTIVI:
         return {"esito": "dentro", "segnale": f"cap {cap} da Google Maps"}
     if cap:
@@ -305,6 +309,11 @@ if __name__ == "__main__":
     assert v["esito"] == "dentro" and "prefisso 0571" in v["segnale"], v
     assert da_scheda({"cap": "75100", "provincia": "MT"})["esito"] == "fuori"   # Matera
     assert da_scheda({"cap": "", "provincia": "FI"})["esito"] == "dentro"
+    # la provincia per esteso di Maps vale come la sigla
+    for estesa in ("PROVINCIA DI PISA", "Città metropolitana di Roma Capitale",
+                   "Provincia dell'Aquila", "Provincia di Frosinone"):
+        assert da_scheda({"cap": "", "provincia": estesa})["esito"] == "dentro", estesa
+    assert da_scheda({"cap": "", "provincia": "Provincia di Bologna"})["esito"] == "fuori"
 
     # --- CAP e provincia da Maps: segnale primario, batte l'euristica ---
     v = da_scheda({"cap": "00179", "provincia": "RM"})
