@@ -5,6 +5,7 @@ quando il controllo "gia' in archivio" vedeva solo 1000 righe su 4185.
 
     python doppioni.py            # misura: gruppi, chi resta, chi esce
     python doppioni.py --scrivi   # segna le schede che escono
+    python doppioni.py --stesso-recapito [--scrivi]   # segnale informativo
     python doppioni.py --test
 
 Gruppi FORTI (si segnano): stessa P.IVA, stesso dominio, stessa ragione
@@ -28,6 +29,9 @@ import sys
 import dedup
 
 TIPO = "doppione"
+# informativo (7/10): NON toglie dalle liste. Sui gruppi deboli con A/B/C e
+# sui forti fermati dai dati delle persone: decide il commerciale
+TIPO_INFO = "stesso_recapito"
 PAROLE_GENERICHE = {
     "srl", "srls", "snc", "sas", "spa", "soc", "coop", "ditta", "della", "delle",
     "infissi", "serramenti", "fabbro", "fabbri", "ferro", "porte", "finestre",
@@ -158,7 +162,29 @@ def segnale(tenuta: dict, criteri: set) -> dict:
                        f"({'+'.join(sorted(criteri))}) — {datetime.date.today().isoformat()}"}
 
 
-def giro(scrivi: bool, log=print) -> None:
+def in_comune(a: dict, b: dict) -> list[str]:
+    c = []
+    if _tel(a.get("telefono")) and _tel(a.get("telefono")) == _tel(b.get("telefono")):
+        c.append(f"telefono {a.get('telefono')}")
+    comuni = sorted(set(_email(a)) & set(_email(b)))
+    c += [f"email {e}" for e in comuni]
+    return c
+
+
+def segnale_info(a: dict, gruppo: list[dict]) -> dict:
+    altre = []
+    for b in gruppo:
+        if b["id"] != a["id"]:
+            c = in_comune(a, b)
+            altre.append({"id": b["id"], "nome": b["ragione_sociale"],
+                          "in_comune": c or ["collegata tramite un'altra scheda del gruppo"]})
+    testo = "; ".join(f"'{x['nome']}' ({', '.join(x['in_comune'])})" for x in altre)
+    return {"tipo": TIPO_INFO, "altre": altre,
+            "segnale": f"stesso recapito di altre schede, da verificare prima di "
+                       f"scrivere: {testo} — {datetime.date.today().isoformat()}"}
+
+
+def giro(scrivi: bool, log=print, info: bool = False) -> None:
     import db
     sb = db.client()
 
@@ -213,6 +239,28 @@ def giro(scrivi: bool, log=print) -> None:
             log(f"  {'+'.join(sorted(crit)):<14} " + " || ".join(
                 f"{a['ragione_sociale'][:30]} [{a.get('classe')}, {a['stato']}, {a.get('comune') or '-'}]"
                 for a in sorted(g, key=lambda a: a.get("creato_il") or "")))
+    if info:
+        # i gruppi deboli con A/B/C e i forti con una scheda fermata dai dati
+        # delle persone: segnale su TUTTE le schede del gruppo
+        fermi = {a["id"] for a, _, _, _ in da_guardare}
+        bersagli = [g for g, _ in deboli if abc(g)] + \
+                   [g for g, _ in forti if fermi & {a["id"] for a in g}]
+        n = 0
+        for g in bersagli:
+            for a in g:
+                s = segnale_info(a, g)
+                log(f"  {a['ragione_sociale'][:34]:<35} {s['segnale'][:110]}")
+                if not scrivi:
+                    continue
+                r = sb.table("aziende").select("segnali").eq("id", a["id"]).execute().data[0]
+                if any(x.get("tipo") == TIPO_INFO for x in r.get("segnali") or []):
+                    continue
+                sb.table("aziende").update({"segnali": (r.get("segnali") or []) + [s]}
+                                           ).eq("id", a["id"]).execute()
+                n += 1
+        log(f"\ngruppi {len(bersagli)}, schede {sum(len(g) for g in bersagli)}"
+            + (f" — SEGNATE stesso_recapito: {n}" if scrivi else " (misura)"))
+        return
     if scrivi:
         n = 0
         for a, t, crit in escono:
@@ -254,9 +302,17 @@ if __name__ == "__main__":
         assert dati_umani({**righe[1], "email_commerciale": "a@b.it"}, {}) == ["email_commerciale"]
         s = segnale(righe[0], {"email"})
         assert s["tipo"] == TIPO and s["di"] == "a1" and "CSM infissi Roma" in s["segnale"]
+        g = [x for x in righe if x["id"] in ("e1", "e2")]
+        si = segnale_info(g[0], g)
+        assert si["tipo"] == TIPO_INFO and si["altre"][0]["id"] == "e2"
+        assert si["altre"][0]["in_comune"] == ["telefono 0774 999888"], si
+        catena = [r("f1", "A", telefono="0611111111"), r("f2", "B", telefono="0611111111",
+                  email_aziendale="z@z.it"), r("f3", "C", email_aziendale="z@z.it")]
+        assert segnale_info(catena[0], catena)["altre"][1]["in_comune"] == \
+            ["collegata tramite un'altra scheda del gruppo"]
         print("ok")
         sys.exit(0)
 
     from dotenv import load_dotenv
     load_dotenv()
-    giro(scrivi="--scrivi" in sys.argv)
+    giro(scrivi="--scrivi" in sys.argv, info="--stesso-recapito" in sys.argv)

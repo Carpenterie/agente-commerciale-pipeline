@@ -67,7 +67,8 @@ def aggiornamento(riga_nuova: dict, esistente: dict) -> dict:
     # nei passaggi che "ricostruiscono tutto"
     # Stessa sorte per le marcature fatte a mano o da un ripasso, che la
     # rianalisi non sa rifare: fuori settore e chiusa (7/10).
-    a_mano = ("ex_cliente", "fuori_settore", "chiusa_definitivamente", "doppione")
+    a_mano = ("ex_cliente", "fuori_settore", "chiusa_definitivamente", "doppione",
+              "stesso_recapito")
     ex = [s for s in (esistente.get("segnali") or [])
           if s.get("tipo") in a_mano]
     if ex:
