@@ -9,6 +9,8 @@ README e il self-check in db.py).
 
     python riprendi_analisi.py <ciclo_id>             # conta, non scrive
     python riprendi_analisi.py <ciclo_id> --scrivi    # rianalizza e aggiorna
+    python riprendi_analisi.py --ids FILE [--scrivi]  # le righe con questi id
+                                                      # (rimetti_dentro.py, 7/10)
 
 I recapiti gia' in riga (email e telefono della lista del 2020, scritti
 come ripiego) restano dove il sito non da' di meglio, come all'import.
@@ -79,25 +81,32 @@ def aggiornamento(riga_nuova: dict, esistente: dict) -> dict:
 
 
 def main_() -> int:
-    argv = [a for a in sys.argv[1:] if not a.startswith("--")]
+    file_ids = sys.argv[sys.argv.index("--ids") + 1] if "--ids" in sys.argv else ""
+    argv = [a for a in sys.argv[1:] if not a.startswith("--") and a != file_ids]
     scrivi = "--scrivi" in sys.argv
-    if not argv:
-        print("uso: python riprendi_analisi.py <ciclo_id> [--scrivi]")
+    if not argv and not file_ids:
+        print("uso: python riprendi_analisi.py <ciclo_id> [--scrivi] | --ids FILE [--scrivi]")
         return 1
-    ciclo_id = argv[0]
+    ciclo_id = argv[0] if argv else ""
 
     from dotenv import load_dotenv
     load_dotenv()
     sb = db.client()
     righe, off = [], 0
-    while True:
+    if file_ids:
+        ids = [x.strip() for x in open(file_ids) if x.strip()]
+        for k in range(0, len(ids), 100):
+            righe += sb.table("aziende").select("*").in_("id", ids[k:k + 100]).execute().data
+        print(f"righe da rianalizzare (da {file_ids}): {len(righe)}")
+    while not file_ids:
         b = sb.table("aziende").select("*").eq("ciclo_id", ciclo_id) \
             .eq("esito_fetch", "ERRORE_ANALISI").range(off, off + 999).execute().data
         righe += b
         if len(b) < 1000:
             break
         off += 1000
-    print(f"righe ERRORE_ANALISI nel ciclo {ciclo_id[:8]}: {len(righe)}")
+    if not file_ids:
+        print(f"righe ERRORE_ANALISI nel ciclo {ciclo_id[:8]}: {len(righe)}")
     print(f"costo stimato: ~{len(righe) * 0.10:.0f} EUR (pagine in cache)")
     if not scrivi:
         print("\n(prova: nessuna analisi. Rilancia con --scrivi)")
