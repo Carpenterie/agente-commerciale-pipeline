@@ -319,9 +319,15 @@ def _nessun_delete_nel_repo() -> list[str]:
     # i pattern si compongono a runtime: scritti per esteso farebbero
     # scattare la guardia su questo stesso file
     vietati = (".dele" + "te(", ".upse" + "rt(")
+    # L'UNICA eccezione: la conservazione della tabella `candidati` (90
+    # giorni / 12 mesi dopo il colloquio), imposta dalla privacy e decisa
+    # dal committente il 6/10. Cancella SOLO da `candidati`, mai da aziende.
+    eccezioni = {"candidati_ricerca.py": 'table("candidati").' + "dele" + "te()"}
     colpevoli = []
     for f in _pl.Path(__file__).parent.glob("*.py"):
         testo = f.read_text(encoding="utf-8")
+        if f.name in eccezioni:
+            testo = testo.replace(eccezioni[f.name], "")
         if any(v in testo for v in vietati):
             colpevoli.append(f.name)
     return colpevoli
