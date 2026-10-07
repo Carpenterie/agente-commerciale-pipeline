@@ -58,7 +58,7 @@ COMUNI = {
         "Vernio", "Cantagallo",
     ),
     "PT": (
-        "Pistoia", "Quarrata", "Monsummano Terme", "Pescia", "Montecatini Terme",
+        "Pistoia", "Quarrata", "Monsummano Terme", "Pescia", "Montecatini-Terme",
         "Agliana", "Serravalle Pistoiese", "Pieve a Nievole", "Larciano",
         "Massa e Cozzile", "Lamporecchio", "Buggiano", "Montale",
         "Chiesina Uzzanese", "Ponte Buggianese",
@@ -152,7 +152,7 @@ COMUNI = {
     "FG": (
         "Foggia", "Cerignola", "Manfredonia", "San Severo", "San Giovanni Rotondo",
         "Lucera", "Vieste", "Torremaggiore", "Monte Sant'Angelo", "Orta Nova",
-        "San Marco in Lamis", "Apricena", "Mattinata", "Sannicandro Garganico",
+        "San Marco in Lamis", "Apricena", "Mattinata", "San Nicandro Garganico",
         "Troia",
     ),
     "BR": (
@@ -186,7 +186,7 @@ COMUNI = {
     ),
     "PE": (
         "Pescara", "Montesilvano", "Spoltore", "Città Sant'Angelo", "Penne",
-        "Cepagatti", "Pianella", "Manoppello", "Loreto Aprutino", "Scafa", "Popoli",
+        "Cepagatti", "Pianella", "Manoppello", "Loreto Aprutino", "Scafa", "Popoli Terme",
         "Moscufo", "Rosciano", "Collecorvino", "Alanno",
     ),
     "TE": (
