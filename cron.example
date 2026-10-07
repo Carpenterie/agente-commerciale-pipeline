@@ -20,17 +20,17 @@
 # — 15 comuni, la provincia con meno aziende. In ordine alfabetico sarebbe
 # saltata Viterbo, che ne ha di più, e per nessun motivo.
 # Il consumo residuo si legge in fondo al log di ogni giorno.
-0 3 1 1,4,7,10 * test $(date +\%Y\%m) -ne 202610 && cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia RM >> /var/log/pipeline-rm.log 2>&1
+0 3 1 1,4,7,10 * test $(date +\%Y\%m) -ne 202610 && cd /opt/agente-commerciale-pipeline && .venv/bin/python -u main.py --provincia RM >> /var/log/pipeline-rm.log 2>&1
 #
 # Le quattro province partono il 7-10 e non il 2-5: il periodo di
 # fatturazione Apify va dal 7 di un mese al 6 del successivo (abbonamento
 # del 2026-09-07) e il tetto e' rigido (~$19). Cosi' Roma resta sola in
 # coda a un periodo e le altre quattro aprono il successivo col credito
 # rinnovato — a trimestre pieno il tetto non si avvicina nemmeno.
-0 3 7 1,4,7,10 * test $(date +\%Y\%m) -ne 202610 && cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia LT >> /var/log/pipeline-lt.log 2>&1
-0 3 8 1,4,7,10 * test $(date +\%Y\%m) -ne 202610 && cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia FR >> /var/log/pipeline-fr.log 2>&1
-0 3 9 1,4,7,10 * test $(date +\%Y\%m) -ne 202610 && cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia VT >> /var/log/pipeline-vt.log 2>&1
-0 3 10 1,4,7,10 * test $(date +\%Y\%m) -ne 202610 && cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia RI >> /var/log/pipeline-ri.log 2>&1
+0 3 7 1,4,7,10 * test $(date +\%Y\%m) -ne 202610 && cd /opt/agente-commerciale-pipeline && .venv/bin/python -u main.py --provincia LT >> /var/log/pipeline-lt.log 2>&1
+0 3 8 1,4,7,10 * test $(date +\%Y\%m) -ne 202610 && cd /opt/agente-commerciale-pipeline && .venv/bin/python -u main.py --provincia FR >> /var/log/pipeline-fr.log 2>&1
+0 3 9 1,4,7,10 * test $(date +\%Y\%m) -ne 202610 && cd /opt/agente-commerciale-pipeline && .venv/bin/python -u main.py --provincia VT >> /var/log/pipeline-vt.log 2>&1
+0 3 10 1,4,7,10 * test $(date +\%Y\%m) -ne 202610 && cd /opt/agente-commerciale-pipeline && .venv/bin/python -u main.py --provincia RI >> /var/log/pipeline-ri.log 2>&1
 #
 # REGIONI NUOVE (2026-10-07, costi approvati dal committente). Cadenza
 # trimestrale come il Lazio, ma SFALSATA di mese: il periodo Apify va dal 7
@@ -42,39 +42,39 @@
 #
 # Toscana e Abruzzo: febbraio, maggio, agosto, novembre, dall'8. Guardia 202611:
 # la Toscana e' raccolta a mano a ottobre 2026, il primo ripasso e' febbraio 2027.
-0 3 8 2,5,8,11 * test $(date +\%Y\%m) -ne 202611 && cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia FI >> /var/log/pipeline-fi.log 2>&1
-0 3 9 2,5,8,11 * test $(date +\%Y\%m) -ne 202611 && cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia PO >> /var/log/pipeline-po.log 2>&1
-0 3 10 2,5,8,11 * test $(date +\%Y\%m) -ne 202611 && cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia PT >> /var/log/pipeline-pt.log 2>&1
-0 3 11 2,5,8,11 * test $(date +\%Y\%m) -ne 202611 && cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia LU >> /var/log/pipeline-lu.log 2>&1
-0 3 12 2,5,8,11 * test $(date +\%Y\%m) -ne 202611 && cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia MS >> /var/log/pipeline-ms.log 2>&1
-0 3 13 2,5,8,11 * test $(date +\%Y\%m) -ne 202611 && cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia PI >> /var/log/pipeline-pi.log 2>&1
-0 3 14 2,5,8,11 * test $(date +\%Y\%m) -ne 202611 && cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia LI >> /var/log/pipeline-li.log 2>&1
-0 3 15 2,5,8,11 * test $(date +\%Y\%m) -ne 202611 && cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia AR >> /var/log/pipeline-ar.log 2>&1
-0 3 16 2,5,8,11 * test $(date +\%Y\%m) -ne 202611 && cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia SI >> /var/log/pipeline-si.log 2>&1
-0 3 17 2,5,8,11 * test $(date +\%Y\%m) -ne 202611 && cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia GR >> /var/log/pipeline-gr.log 2>&1
-0 3 18 2,5,8,11 * test $(date +\%Y\%m) -ne 202611 && cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia AQ >> /var/log/pipeline-aq.log 2>&1
-0 3 19 2,5,8,11 * test $(date +\%Y\%m) -ne 202611 && cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia CH >> /var/log/pipeline-ch.log 2>&1
-0 3 20 2,5,8,11 * test $(date +\%Y\%m) -ne 202611 && cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia PE >> /var/log/pipeline-pe.log 2>&1
-0 3 21 2,5,8,11 * test $(date +\%Y\%m) -ne 202611 && cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia TE >> /var/log/pipeline-te.log 2>&1
+0 3 8 2,5,8,11 * test $(date +\%Y\%m) -ne 202611 && cd /opt/agente-commerciale-pipeline && .venv/bin/python -u main.py --provincia FI >> /var/log/pipeline-fi.log 2>&1
+0 3 9 2,5,8,11 * test $(date +\%Y\%m) -ne 202611 && cd /opt/agente-commerciale-pipeline && .venv/bin/python -u main.py --provincia PO >> /var/log/pipeline-po.log 2>&1
+0 3 10 2,5,8,11 * test $(date +\%Y\%m) -ne 202611 && cd /opt/agente-commerciale-pipeline && .venv/bin/python -u main.py --provincia PT >> /var/log/pipeline-pt.log 2>&1
+0 3 11 2,5,8,11 * test $(date +\%Y\%m) -ne 202611 && cd /opt/agente-commerciale-pipeline && .venv/bin/python -u main.py --provincia LU >> /var/log/pipeline-lu.log 2>&1
+0 3 12 2,5,8,11 * test $(date +\%Y\%m) -ne 202611 && cd /opt/agente-commerciale-pipeline && .venv/bin/python -u main.py --provincia MS >> /var/log/pipeline-ms.log 2>&1
+0 3 13 2,5,8,11 * test $(date +\%Y\%m) -ne 202611 && cd /opt/agente-commerciale-pipeline && .venv/bin/python -u main.py --provincia PI >> /var/log/pipeline-pi.log 2>&1
+0 3 14 2,5,8,11 * test $(date +\%Y\%m) -ne 202611 && cd /opt/agente-commerciale-pipeline && .venv/bin/python -u main.py --provincia LI >> /var/log/pipeline-li.log 2>&1
+0 3 15 2,5,8,11 * test $(date +\%Y\%m) -ne 202611 && cd /opt/agente-commerciale-pipeline && .venv/bin/python -u main.py --provincia AR >> /var/log/pipeline-ar.log 2>&1
+0 3 16 2,5,8,11 * test $(date +\%Y\%m) -ne 202611 && cd /opt/agente-commerciale-pipeline && .venv/bin/python -u main.py --provincia SI >> /var/log/pipeline-si.log 2>&1
+0 3 17 2,5,8,11 * test $(date +\%Y\%m) -ne 202611 && cd /opt/agente-commerciale-pipeline && .venv/bin/python -u main.py --provincia GR >> /var/log/pipeline-gr.log 2>&1
+0 3 18 2,5,8,11 * test $(date +\%Y\%m) -ne 202611 && cd /opt/agente-commerciale-pipeline && .venv/bin/python -u main.py --provincia AQ >> /var/log/pipeline-aq.log 2>&1
+0 3 19 2,5,8,11 * test $(date +\%Y\%m) -ne 202611 && cd /opt/agente-commerciale-pipeline && .venv/bin/python -u main.py --provincia CH >> /var/log/pipeline-ch.log 2>&1
+0 3 20 2,5,8,11 * test $(date +\%Y\%m) -ne 202611 && cd /opt/agente-commerciale-pipeline && .venv/bin/python -u main.py --provincia PE >> /var/log/pipeline-pe.log 2>&1
+0 3 21 2,5,8,11 * test $(date +\%Y\%m) -ne 202611 && cd /opt/agente-commerciale-pipeline && .venv/bin/python -u main.py --provincia TE >> /var/log/pipeline-te.log 2>&1
 #
 # Campania, Puglia e Marche: marzo, giugno, settembre, dicembre, dall'8.
 # Guardia 202612: raccolte a mano fra ottobre e novembre 2026, primo ripasso a marzo 2027.
-0 3 8 3,6,9,12 * test $(date +\%Y\%m) -ne 202612 && cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia NA >> /var/log/pipeline-na.log 2>&1
-0 3 9 3,6,9,12 * test $(date +\%Y\%m) -ne 202612 && cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia CE >> /var/log/pipeline-ce.log 2>&1
-0 3 10 3,6,9,12 * test $(date +\%Y\%m) -ne 202612 && cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia SA >> /var/log/pipeline-sa.log 2>&1
-0 3 11 3,6,9,12 * test $(date +\%Y\%m) -ne 202612 && cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia AV >> /var/log/pipeline-av.log 2>&1
-0 3 12 3,6,9,12 * test $(date +\%Y\%m) -ne 202612 && cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia BN >> /var/log/pipeline-bn.log 2>&1
-0 3 13 3,6,9,12 * test $(date +\%Y\%m) -ne 202612 && cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia BA >> /var/log/pipeline-ba.log 2>&1
-0 3 14 3,6,9,12 * test $(date +\%Y\%m) -ne 202612 && cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia BT >> /var/log/pipeline-bt.log 2>&1
-0 3 15 3,6,9,12 * test $(date +\%Y\%m) -ne 202612 && cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia FG >> /var/log/pipeline-fg.log 2>&1
-0 3 16 3,6,9,12 * test $(date +\%Y\%m) -ne 202612 && cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia BR >> /var/log/pipeline-br.log 2>&1
-0 3 17 3,6,9,12 * test $(date +\%Y\%m) -ne 202612 && cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia LE >> /var/log/pipeline-le.log 2>&1
-0 3 18 3,6,9,12 * test $(date +\%Y\%m) -ne 202612 && cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia TA >> /var/log/pipeline-ta.log 2>&1
-0 3 19 3,6,9,12 * test $(date +\%Y\%m) -ne 202612 && cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia AN >> /var/log/pipeline-an.log 2>&1
-0 3 20 3,6,9,12 * test $(date +\%Y\%m) -ne 202612 && cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia PU >> /var/log/pipeline-pu.log 2>&1
-0 3 21 3,6,9,12 * test $(date +\%Y\%m) -ne 202612 && cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia MC >> /var/log/pipeline-mc.log 2>&1
-0 3 22 3,6,9,12 * test $(date +\%Y\%m) -ne 202612 && cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia AP >> /var/log/pipeline-ap.log 2>&1
-0 3 23 3,6,9,12 * test $(date +\%Y\%m) -ne 202612 && cd /opt/agente-commerciale-pipeline && .venv/bin/python main.py --provincia FM >> /var/log/pipeline-fm.log 2>&1
+0 3 8 3,6,9,12 * test $(date +\%Y\%m) -ne 202612 && cd /opt/agente-commerciale-pipeline && .venv/bin/python -u main.py --provincia NA >> /var/log/pipeline-na.log 2>&1
+0 3 9 3,6,9,12 * test $(date +\%Y\%m) -ne 202612 && cd /opt/agente-commerciale-pipeline && .venv/bin/python -u main.py --provincia CE >> /var/log/pipeline-ce.log 2>&1
+0 3 10 3,6,9,12 * test $(date +\%Y\%m) -ne 202612 && cd /opt/agente-commerciale-pipeline && .venv/bin/python -u main.py --provincia SA >> /var/log/pipeline-sa.log 2>&1
+0 3 11 3,6,9,12 * test $(date +\%Y\%m) -ne 202612 && cd /opt/agente-commerciale-pipeline && .venv/bin/python -u main.py --provincia AV >> /var/log/pipeline-av.log 2>&1
+0 3 12 3,6,9,12 * test $(date +\%Y\%m) -ne 202612 && cd /opt/agente-commerciale-pipeline && .venv/bin/python -u main.py --provincia BN >> /var/log/pipeline-bn.log 2>&1
+0 3 13 3,6,9,12 * test $(date +\%Y\%m) -ne 202612 && cd /opt/agente-commerciale-pipeline && .venv/bin/python -u main.py --provincia BA >> /var/log/pipeline-ba.log 2>&1
+0 3 14 3,6,9,12 * test $(date +\%Y\%m) -ne 202612 && cd /opt/agente-commerciale-pipeline && .venv/bin/python -u main.py --provincia BT >> /var/log/pipeline-bt.log 2>&1
+0 3 15 3,6,9,12 * test $(date +\%Y\%m) -ne 202612 && cd /opt/agente-commerciale-pipeline && .venv/bin/python -u main.py --provincia FG >> /var/log/pipeline-fg.log 2>&1
+0 3 16 3,6,9,12 * test $(date +\%Y\%m) -ne 202612 && cd /opt/agente-commerciale-pipeline && .venv/bin/python -u main.py --provincia BR >> /var/log/pipeline-br.log 2>&1
+0 3 17 3,6,9,12 * test $(date +\%Y\%m) -ne 202612 && cd /opt/agente-commerciale-pipeline && .venv/bin/python -u main.py --provincia LE >> /var/log/pipeline-le.log 2>&1
+0 3 18 3,6,9,12 * test $(date +\%Y\%m) -ne 202612 && cd /opt/agente-commerciale-pipeline && .venv/bin/python -u main.py --provincia TA >> /var/log/pipeline-ta.log 2>&1
+0 3 19 3,6,9,12 * test $(date +\%Y\%m) -ne 202612 && cd /opt/agente-commerciale-pipeline && .venv/bin/python -u main.py --provincia AN >> /var/log/pipeline-an.log 2>&1
+0 3 20 3,6,9,12 * test $(date +\%Y\%m) -ne 202612 && cd /opt/agente-commerciale-pipeline && .venv/bin/python -u main.py --provincia PU >> /var/log/pipeline-pu.log 2>&1
+0 3 21 3,6,9,12 * test $(date +\%Y\%m) -ne 202612 && cd /opt/agente-commerciale-pipeline && .venv/bin/python -u main.py --provincia MC >> /var/log/pipeline-mc.log 2>&1
+0 3 22 3,6,9,12 * test $(date +\%Y\%m) -ne 202612 && cd /opt/agente-commerciale-pipeline && .venv/bin/python -u main.py --provincia AP >> /var/log/pipeline-ap.log 2>&1
+0 3 23 3,6,9,12 * test $(date +\%Y\%m) -ne 202612 && cd /opt/agente-commerciale-pipeline && .venv/bin/python -u main.py --provincia FM >> /var/log/pipeline-fm.log 2>&1
 #
 # I tre saldi (Anthropic, Apify, Openapi) il primo del mese: una riga di
 # log per accorgersi dei crediti PRIMA che li scopra un giro fallito.

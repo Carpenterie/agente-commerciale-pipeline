@@ -235,6 +235,18 @@ def arricchisci_ab(azienda: dict, esito: dict, totali: dict,
                   "sta per finire — le altre schede restano senza visura")
         stat["openapi_fermato"] = stat.get("openapi_fermato", 0) + 1
         return {}, segnali
+    anagrafica, dalla_visura = applica_visura(azienda, dati, esito, totali, stat, provincia)
+    return anagrafica, segnali + dalla_visura
+
+
+def applica_visura(azienda: dict, dati: dict, esito: dict, totali: dict,
+                   stat: dict, provincia: str = "") -> tuple[dict, list]:
+    """La visura e le sue tre regole, UGUALI nel ciclo e nel ripasso visure
+    (visure.py, 7/10): aggancio affidabile o niente, sede in visura fuori
+    dalle regioni attive -> segnale, fabbro con organico ampio -> una classe
+    in meno (esito["classe"] viene aggiornata qui). -> (anagrafica, segnali)."""
+    nome = azienda.get("nome", "")
+    segnali: list = []
     anagrafica = arricchimento_sicuro(
         azienda, nome, totali, provincia,
         piva=(dati.get("partita_iva") or "").strip(),
