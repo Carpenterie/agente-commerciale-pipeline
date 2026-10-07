@@ -65,11 +65,14 @@ def aggiornamento(riga_nuova: dict, esistente: dict) -> dict:
     # la rianalisi non puo' rifarla (non ha l'elenco davanti) e non deve
     # perderla — e' la lezione dei referenti del 15/9, i campi si perdono
     # nei passaggi che "ricostruiscono tutto"
+    # Stessa sorte per le marcature fatte a mano o da un ripasso, che la
+    # rianalisi non sa rifare: fuori settore e chiusa (7/10).
+    a_mano = ("ex_cliente", "fuori_settore", "chiusa_definitivamente")
     ex = [s for s in (esistente.get("segnali") or [])
-          if s.get("tipo") == "ex_cliente"]
+          if s.get("tipo") in a_mano]
     if ex:
         nuovi = [s for s in (agg.get("segnali") or [])
-                 if s.get("tipo") != "ex_cliente"]
+                 if s.get("tipo") not in a_mano]
         agg["segnali"] = ex + nuovi
     return agg
 
@@ -177,6 +180,11 @@ if __name__ == "__main__":
         assert agg["classe"] == "A"
         # i recapiti di ripiego restano dove il sito non da' di meglio...
         assert agg["email_aziendale"] == "vecchia@lista.it"
+        tenuti = aggiornamento({"segnali": [{"tipo": "territorio"}]},
+                               {"segnali": [{"tipo": "chiusa_definitivamente"},
+                                            {"tipo": "fuori_settore"}]})["segnali"]
+        assert [x["tipo"] for x in tenuti] == ["chiusa_definitivamente", "fuori_settore",
+                                               "territorio"], tenuti
         assert agg["telefono"] == "06 2020"
         # ...ma il sito vince quando parla
         agg2 = aggiornamento({"email_aziendale": "nuova@sito.it",

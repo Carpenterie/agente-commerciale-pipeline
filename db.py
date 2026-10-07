@@ -274,9 +274,16 @@ def riferimenti_aziende(sb) -> list[dict]:
     """Righe già in `aziende` per il dedup (§4): servono dominio, P.IVA e
     ragione+comune — le senza-sito non hanno né dominio né P.IVA e solo
     ragione+comune le protegge dai duplicati."""
-    r = sb.table("aziende").select(
-        "ragione_sociale,partita_iva,dominio,comune").execute()
-    return r.data or []
+    # a pagine: una select sola restituisce al massimo 1000 righe, e fino
+    # al 7/10 il dedup vedeva 1000 aziende su 4185
+    righe, da = [], 0
+    while True:
+        b = (sb.table("aziende").select("id,ragione_sociale,partita_iva,dominio,comune")
+             .range(da, da + 999).execute().data or [])
+        righe += b
+        if len(b) < 1000:
+            return righe
+        da += 1000
 
 
 def esclusioni(sb) -> list[dict]:

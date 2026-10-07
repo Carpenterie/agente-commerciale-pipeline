@@ -385,7 +385,21 @@ async def esegui(args) -> int:
     n_trovate = len(schede)
 
     # 2. dedup interno, poi esclusioni e già-visti (§4: dedup PRIMA, non dopo)
+    gia_in_archivio = dedup.riferimenti(db.riferimenti_aziende(sb)) if sb else None
     chiuse = [s for s in schede if s.get("chiusa_definitivamente")]
+    if chiuse and gia_in_archivio and not args.dry_run:
+        # un'azienda GIA' in archivio che il ripasso ritrova chiusa prende il
+        # segnale (7/10) invece di essere saltata — ma solo se la stessa
+        # azienda non ha anche una scheda attiva in questo sourcing
+        import aziende_chiuse
+        attive = {r["id"] for s in schede if not s.get("chiusa_definitivamente")
+                  for _, r in [dedup.cerca_riferimento(s, gia_in_archivio)] if r}
+        for s in chiuse:
+            criterio, r = dedup.cerca_riferimento(s, gia_in_archivio)
+            if r and r["id"] not in attive:
+                aziende_chiuse.segna(sb, r["id"], aziende_chiuse.segnale(
+                    "maps", f"ripasso: scheda Google '{s.get('nome')}' chiusa "
+                            f"definitivamente (abbinata per {criterio})"))
     if chiuse:
         schede = [s for s in schede if not s.get("chiusa_definitivamente")]
         print(f"escluse {len(chiuse)} chiuse definitivamente (Google): "
@@ -424,8 +438,7 @@ async def esegui(args) -> int:
             print(f"{len(ambigui)} clienti attivi hanno un nome troppo corto per "
                   f"il confronto permissivo: vanno verificati a mano col "
                   f"committente (vedi clienti_ambigui.py)")
-        schede = dedup.filtra(schede, dedup.riferimenti(db.riferimenti_aziende(sb)),
-                              "già in aziende")
+        schede = dedup.filtra(schede, gia_in_archivio, "già in aziende")
     else:
         print("dedup su DB saltato: nessuna connessione")
 

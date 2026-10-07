@@ -53,7 +53,8 @@ CAMPI_LETTI = ("id,ragione_sociale,classe,stato,categoria,livello_fornitura,"
 def da_scrivere(righe: list[dict], classi: list[str], solo_mancanti: bool,
                 solo_ripieghi: bool = False) -> list[dict]:
     vive = [r for r in righe
-            if r.get("classe") in classi and r.get("stato") != "scartato"]
+            if r.get("classe") in classi and r.get("stato") != "scartato"
+            and not any(x.get("tipo") == "chiusa_definitivamente" for x in r.get("segnali") or [])]
     if solo_ripieghi:
         return [r for r in vive if r.get("bozza_generata") is False]
     return [r for r in vive
