@@ -16,6 +16,7 @@ queste colonne per sapere cosa e' stato mandato.
     python salva_bozze.py --scrivi --rigenera   # riscrive anche quelle che ce l'hanno
     python salva_bozze.py --scrivi --ripieghi   # solo quelle finite sul testo fisso
     python salva_bozze.py --scrivi --ciclo ID   # solo le schede di un ciclo
+    (--ripieghi e --rigenera vogliono --ciclo ID oppure --tutte)
 
 Di suo tocca SOLO le schede senza bozza: chi lo rilancia per sbaglio non
 cancella niente. Serve `--rigenera` per riscriverle, e va usato dopo una
@@ -70,6 +71,12 @@ def main() -> int:
     classe = sys.argv[sys.argv.index("--classe") + 1] if "--classe" in sys.argv else "TUTTE"
     classi = ["A", "B", "C"] if classe == "TUTTE" else [classe]
     ciclo = sys.argv[sys.argv.index("--ciclo") + 1] if "--ciclo" in sys.argv else ""
+    # 7/10: un --ripieghi lanciato senza ciclo ha riscritto anche 11 bozze del
+    # Lazio. Riscrivere bozze gia' in archivio vuole il perimetro esplicito
+    if (solo_ripieghi or not solo_mancanti) and not ciclo and "--tutte" not in sys.argv:
+        print("--ripieghi e --rigenera riscrivono bozze esistenti: indicare --ciclo ID "
+              "oppure --tutte")
+        return 1
 
     sb = db.client()
     righe, off = [], 0
