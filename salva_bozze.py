@@ -15,6 +15,7 @@ queste colonne per sapere cosa e' stato mandato.
     python salva_bozze.py --scrivi --classe A
     python salva_bozze.py --scrivi --rigenera   # riscrive anche quelle che ce l'hanno
     python salva_bozze.py --scrivi --ripieghi   # solo quelle finite sul testo fisso
+    python salva_bozze.py --scrivi --ciclo ID   # solo le schede di un ciclo
 
 Di suo tocca SOLO le schede senza bozza: chi lo rilancia per sbaglio non
 cancella niente. Serve `--rigenera` per riscriverle, e va usato dopo una
@@ -68,11 +69,13 @@ def main() -> int:
     solo_mancanti = "--rigenera" not in sys.argv
     classe = sys.argv[sys.argv.index("--classe") + 1] if "--classe" in sys.argv else "TUTTE"
     classi = ["A", "B", "C"] if classe == "TUTTE" else [classe]
+    ciclo = sys.argv[sys.argv.index("--ciclo") + 1] if "--ciclo" in sys.argv else ""
 
     sb = db.client()
     righe, off = [], 0
     while True:
-        b = sb.table("aziende").select(CAMPI_LETTI).range(off, off + 999).execute().data
+        q = sb.table("aziende").select(CAMPI_LETTI)
+        b = (q.eq("ciclo_id", ciclo) if ciclo else q).range(off, off + 999).execute().data
         righe += b
         if len(b) < 1000:
             break
