@@ -200,7 +200,7 @@ def saldo_openapi(log=print) -> tuple[float | None, str]:
 
 
 def token_openapi_ok(log=print) -> bool | None:
-    """Il token e' accettato? Con una IT-search, che non scala il wallet.
+    """Il token e' accettato? Con una IT-search in dryRun (nel gratuito).
     Il 7/10 il pilota di Pisa ha girato con il token rifiutato ("Wrong
     Token", 401): niente visure su 90 A/B/C, e il controllo non lo vedeva
     perche' il registro del saldo aveva tolto il canarino."""
@@ -210,7 +210,10 @@ def token_openapi_ok(log=print) -> bool | None:
     if not token:
         return False
     req = urllib.request.Request(
-        "https://company.openapi.com/IT-search?companyName=carpenterie&province=RM",
+        # dryRun=1: restituisce solo il conteggio. Listino Openapi (Company
+        # Search, verificato il 7/10): 100 richieste al giorno gratuite, dryRun
+        # compreso, poi 0,01 EUR + IVA l'una — una per giro resta nel gratuito
+        "https://company.openapi.com/IT-search?companyName=carpenterie&province=RM&dryRun=1",
         headers={"Authorization": f"Bearer {token}"})
     try:
         with urllib.request.urlopen(req, timeout=30):
