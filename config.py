@@ -490,6 +490,22 @@ CATEGORIE_FUORI_ESATTE = (
     'Tabaccheria', 'Tipografia digitale',
     'Toelettatura di animali domestici', 'Villa',
     'fermata trasporto pubblico',
+    # enti pubblici, sanitari, scolastici e religiosi (7/10, "non clienti":
+    # il commerciale non deve scrivergli). Quelli gia' visti in archivio
+    # (Municipio, Ospedale, Clinica medica, Chiesa...) stanno sopra; qui le
+    # categorie Google degli stessi tipi non ancora incontrate. NON qui:
+    # 'Carcere' e 'Camera dell'artigianato', che in archivio etichettano un
+    # fabbro e due serramentisti veri.
+    'Ufficio comunale', 'Ufficio governativo', 'Ufficio pubblico',
+    'Azienda sanitaria locale', 'Casa di cura', 'Casa di riposo',
+    'Residenza per anziani', 'Poliambulatorio', 'Ambulatorio medico',
+    'Laboratorio di analisi mediche', 'Pronto soccorso',
+    'Scuola', 'Scuola primaria', 'Scuola secondaria', 'Scuola elementare',
+    'Scuola media', 'Scuola superiore', 'Scuola materna', 'Asilo nido',
+    'Liceo', 'Università', 'Biblioteca',
+    'Parrocchia', 'Monastero', 'Convento', 'Abbazia', 'Basilica', 'Cattedrale',
+    'Ufficio postale', 'Stazione di polizia', 'Stazione dei carabinieri',
+    'Caserma', 'Tribunale', 'Prefettura', 'Questura', 'Cimitero',
 )
 
 
@@ -566,6 +582,10 @@ if __name__ == "__main__":
     assert fuori_settore_maps("Villa") and fuori_settore_maps("Servizio taxi")
     assert not fuori_settore_maps("Automazione e robotica")   # cancelli
     assert not fuori_settore_maps("Appaltatore")
+    for ente in ("Municipio", "Ufficio comunale", "Ospedale", "Casa di cura", "Scuola",
+                 "Chiesa cattolica", "Parrocchia", "Istituto religioso", "Liceo"):
+        assert fuori_settore_maps(ente), ente
+    assert not fuori_settore_maps("Carcere") and not fuori_settore_maps("Camera dell'artigianato")
     assert not fuori_settore_maps("Ingegnere") and not fuori_settore_maps("Architetto")
     assert not fuori_settore_maps("Negozio di casseforti")
     assert not fuori_settore_maps("Installazione e manutenzione ascensori")
