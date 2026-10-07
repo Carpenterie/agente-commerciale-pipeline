@@ -278,7 +278,8 @@ def riferimenti_aziende(sb) -> list[dict]:
     # al 7/10 il dedup vedeva 1000 aziende su 4185
     righe, da = [], 0
     while True:
-        b = (sb.table("aziende").select("id,ragione_sociale,partita_iva,dominio,comune")
+        b = (sb.table("aziende").select("id,ragione_sociale,partita_iva,dominio,comune,"
+                                        "email_aziendale")
              .range(da, da + 999).execute().data or [])
         righe += b
         if len(b) < 1000:

@@ -383,9 +383,17 @@ async def esegui(args) -> int:
             print(f"ciclo {ciclo_id} chiuso come interrotto")
         return _verdetto(False, motivo)
     n_trovate = len(schede)
+    # telefoni di TUTTE le schede Maps del sourcing, anche di quelle che i
+    # filtri qui sotto tolgono: una pagina Exa della stessa azienda va
+    # riconosciuta anche se la sua scheda Maps era gia' in archivio
+    tel_maps = {dedup.tel9(s.get("telefono")): s.get("nome") for s in schede
+                if s.get("fonte") == "maps" and dedup.tel9(s.get("telefono"))}
 
     # 2. dedup interno, poi esclusioni e già-visti (§4: dedup PRIMA, non dopo)
-    gia_in_archivio = dedup.riferimenti(db.riferimenti_aziende(sb)) if sb else None
+    righe_archivio = db.riferimenti_aziende(sb) if sb else []
+    gia_in_archivio = dedup.riferimenti(righe_archivio) if sb else None
+    email_viste = {(r.get("email_aziendale") or "").strip().lower(): r.get("ragione_sociale")
+                   for r in righe_archivio if (r.get("email_aziendale") or "").strip()}
     chiuse = [s for s in schede if s.get("chiusa_definitivamente")]
     if chiuse and gia_in_archivio and not args.dry_run:
         # un'azienda GIA' in archivio che il ripasso ritrova chiusa prende il
@@ -456,7 +464,7 @@ async def esegui(args) -> int:
             "saliti_ad_A": 0, "scesi_per_organico": 0, "arricchite": 0,
             # la marcatura ex cliente e' una richiesta esplicita del
             # committente: va vista in archivio, non solo nei log
-            "ex_in_riga": 0, "ex_scritti": 0}
+            "ex_in_riga": 0, "ex_scritti": 0, "doppioni_exa": 0}
     ex_marcati = sum(1 for s in schede if s.get("ex_cliente"))
 
     async with AsyncWebCrawler(verbose=False) as crawler:
@@ -484,6 +492,15 @@ async def esegui(args) -> int:
                     anagrafica=anagrafica, segnali=segnali, classe=esito["classe"],
                     esito_fetch=esito["esito_fetch"], ciclo_id=ciclo_id,
                     pagine=esito["pagine"], costo=esito["costo"])
+                if azienda.get("fonte") == "exa":
+                    gia_vista = dedup.recapito_gia_visto(riga, tel_maps, email_viste)
+                    if gia_vista:
+                        print(f"  doppione Exa, non scritta: {gia_vista}")
+                        stat["doppioni_exa"] += 1
+                        continue
+                elif (riga.get("email_aziendale") or "").strip():
+                    email_viste.setdefault(riga["email_aziendale"].strip().lower(),
+                                           riga.get("ragione_sociale"))
                 esiti_righe.append(riga)
                 if any(s.get("tipo") == "ex_cliente"
                        for s in (riga["segnali"] or [])):
@@ -528,6 +545,9 @@ async def esegui(args) -> int:
     print("CLASSI ASSEGNATE")
     for classe in ("A", "B", "C", "indeterminato"):
         print(f"  {classe:<16} {stat['classi'][classe]}")
+    if stat["doppioni_exa"]:
+        print(f"\nDOPPIONI EXA non scritti (stessa email o telefono di una scheda Maps "
+              f"o in archivio): {stat['doppioni_exa']}")
     print(f"\nSEGNALI DI LAVORO: {stat['con_segnale']} aziende con almeno un annuncio")
     for ruolo, n in stat["ruoli"].most_common():
         print(f"  {ruolo:<16} {n}")

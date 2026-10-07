@@ -409,7 +409,7 @@ def _scheda_per_modello(azienda: dict) -> str:
                                         "reputazione_google",
                                         "visura_non_agganciata",
                                         "recapito_facebook", "fuori_settore",
-                                        "chiusa_definitivamente")
+                                        "chiusa_definitivamente", "doppione")
                and not (s.get("tipo") == "ex_cliente" and not certo)]
     campi = [
         ("azienda", azienda.get("ragione_sociale")),

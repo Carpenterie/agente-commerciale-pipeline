@@ -102,6 +102,27 @@ def dedup_interno(schede: list[dict], log=print) -> list[dict]:
     return tenute
 
 
+def tel9(telefono: str | None) -> str:
+    """Le ultime 9 cifre (prefisso +39 e spazi via); vuoto se troppo corto."""
+    t = re.sub(r"\D", "", telefono or "")[-9:]
+    return t if len(t) >= 8 else ""
+
+
+def recapito_gia_visto(riga: dict, tel_maps: dict, email_viste: dict) -> str | None:
+    """Per una scheda EXA gia' analizzata: stessa email di una scheda gia'
+    in archivio o gia' scritta nel ciclo, o stesso telefono di una scheda
+    Maps del sourcing -> e' la stessa azienda (7/10: i doppioni Maps/Exa
+    del 7/9, CSM infissi e simili). Il telefono di Exa si conosce solo dopo
+    l'analisi del sito: il confronto sta qui e non in dedup_interno."""
+    e = (riga.get("email_aziendale") or "").strip().lower()
+    if e and e in email_viste:
+        return f"email {e} come '{email_viste[e]}'"
+    t = tel9(riga.get("telefono"))
+    if t and t in tel_maps:
+        return f"telefono come la scheda Maps '{tel_maps[t]}'"
+    return None
+
+
 # Sotto questa lunghezza un nome normalizzato non identifica nessuno: "af",
 # "z", "mcm" sono sottostringhe di mezzo archivio. Misurato sul ciclo Roma:
 # con 8 il confronto permissivo toglie 7 aziende, esattamente come con 10 o
@@ -266,6 +287,12 @@ def marca(schede: list[dict], rif: dict, log=print,
 
 
 if __name__ == "__main__":
+    assert tel9("+39 06 123 4567") == tel9("061234567") == "061234567"[-9:] and tel9("12") == ""
+    _maps = {tel9("0774 555666"): "Ferri Rossi"}
+    assert recapito_gia_visto({"telefono": "+39 0774 555666"}, _maps, {}) == \
+        "telefono come la scheda Maps 'Ferri Rossi'"
+    assert recapito_gia_visto({"email_aziendale": "Info@X.it"}, {}, {"info@x.it": "X"}).startswith("email")
+    assert recapito_gia_visto({"email_aziendale": "a@b.it", "telefono": "06 1"}, _maps, {}) is None
     zitto = lambda *a: None  # noqa: E731
 
     assert norm_ragione("F.LLI ROSSI S.R.L.") == "f lli rossi"
