@@ -96,7 +96,7 @@ def _classifica_finta(client, contenuto):
             "token_input": 12000, "token_output": 600, "costo_analisi_eur": 0.045}
 
 
-sourcing_maps.cerca = lambda comuni, log=print: (
+sourcing_maps.cerca = lambda comuni, log=print, tetto_usd=None: (
     [s for s in SCHEDE if s["fonte"] == "maps"], 0.0045)
 sourcing_exa.cerca = lambda provincia, log=print: [s for s in SCHEDE if s["fonte"] == "exa"]
 fetch.fetch_azienda = _fetch_finto
@@ -175,7 +175,7 @@ chiamate = {"maps": 0, "exa": 0}
 _maps, _exa = sourcing_maps.cerca, sourcing_exa.cerca
 
 
-def _maps_contato(comuni, log=print):
+def _maps_contato(comuni, log=print, tetto_usd=None):
     chiamate["maps"] += 1
     return _maps(comuni, log)
 
@@ -313,7 +313,7 @@ def _prova(args_, atteso_ok: bool):
 
 # 1. database assente all'avvio: si esce senza toccare Apify
 chiamate_maps = []
-sourcing_maps.cerca = lambda comuni, log=print: (chiamate_maps.append(1), ([], 0.0))[1]
+sourcing_maps.cerca = lambda comuni, log=print, tetto_usd=None: (chiamate_maps.append(1), ([], 0.0))[1]
 db.client = lambda: (_ for _ in ()).throw(RuntimeError("connessione rifiutata"))
 _, uscita = _prova(types.SimpleNamespace(
     provincia="RM", limite=None, dry_run=False, comuni=None,
@@ -329,7 +329,7 @@ db.client, db.esclusioni, db.riferimenti_aziende = lambda: object(), _escl, _rif
 db.avvia_ciclo = lambda sb, regione, note="": "ciclo-x"
 db.chiudi_ciclo = lambda sb, cid, riep, nt, nit, note="": chiuso.update(
     {"id": cid, "note": note})
-sourcing_maps.cerca = lambda comuni, log=print: (_ for _ in ()).throw(
+sourcing_maps.cerca = lambda comuni, log=print, tetto_usd=None: (_ for _ in ()).throw(
     RuntimeError("monthly usage hard limit exceeded"))
 _, uscita = _prova(types.SimpleNamespace(
     provincia="RM", limite=None, dry_run=False, comuni=None,

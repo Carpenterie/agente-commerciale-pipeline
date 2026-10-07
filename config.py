@@ -42,10 +42,68 @@ MAX_RISULTATI_PER_QUERY = 20
 LINGUA_MAPS = "it"
 PAESE_MAPS = "it"   # senza, l'attore geolocalizza dagli USA (Rome, NY)
 
-PROVINCE = {"RM": "Roma", "LT": "Latina", "FR": "Frosinone",
-            "RI": "Rieti", "VT": "Viterbo"}
-REGIONE_CICLO = "Lazio"   # perimetro del primo ciclo (§1)
-SIGLE_LAZIO = ("RM", "LT", "FR", "VT", "RI")
+# --- Regioni attive (§1): il Lazio dal primo ciclo, le altre cinque dal
+# 2026-10-07 (costi approvati dal committente). Fuori dal Lazio Claudia
+# vende sia prodotto finito sia kit: la distanza non penalizza nessuno, e
+# il territorio e' "dentro" in TUTTE le regioni attive, qualunque sia la
+# provincia del ciclo. Per ogni regione: province (sigla -> nome per Exa),
+# prefissi CAP (le prime due cifre) e prefissi telefonici dei fissi.
+# Aprire una regione = aggiungerla qui + i suoi comuni in data/comuni.py.
+REGIONI = {
+    "Lazio": {
+        "province": {"RM": "Roma", "LT": "Latina", "FR": "Frosinone",
+                     "RI": "Rieti", "VT": "Viterbo"},
+        "cap": ("00", "01", "02", "03", "04"),
+        # 0765/0766 sono laziali ma condivisi o incerti: non in lista
+        "tel": ("06", "0746", "0761", "0771", "0772", "0773", "0774",
+                "0775", "0776"),
+    },
+    "Toscana": {
+        "province": {"FI": "Firenze", "PO": "Prato", "PT": "Pistoia",
+                     "LU": "Lucca", "MS": "Massa-Carrara", "PI": "Pisa",
+                     "LI": "Livorno", "AR": "Arezzo", "SI": "Siena",
+                     "GR": "Grosseto"},
+        "cap": ("50", "51", "52", "53", "54", "55", "56", "57", "58", "59"),
+        # 0187 (Lunigiana) e' condiviso con La Spezia: non in lista
+        "tel": ("055", "050", "0564", "0565", "0566", "0571", "0572", "0573",
+                "0574", "0575", "0577", "0578", "0583", "0584", "0585",
+                "0586", "0587", "0588"),
+    },
+    "Campania": {
+        "province": {"NA": "Napoli", "CE": "Caserta", "SA": "Salerno",
+                     "AV": "Avellino", "BN": "Benevento"},
+        "cap": ("80", "81", "82", "83", "84"),
+        "tel": ("081", "089", "0823", "0824", "0825", "0827", "0828",
+                "0974", "0975"),
+    },
+    "Puglia": {
+        "province": {"BA": "Bari", "BT": "Barletta-Andria-Trani",
+                     "FG": "Foggia", "BR": "Brindisi", "LE": "Lecce",
+                     "TA": "Taranto"},
+        # 75 e' Matera (Basilicata): non in lista
+        "cap": ("70", "71", "72", "73", "74", "76"),
+        "tel": ("080", "099", "0831", "0832", "0833", "0836", "0881",
+                "0882", "0883", "0884", "0885"),
+    },
+    "Abruzzo": {
+        "province": {"AQ": "L'Aquila", "CH": "Chieti", "PE": "Pescara",
+                     "TE": "Teramo"},
+        "cap": ("64", "65", "66", "67"),
+        "tel": ("085", "0861", "0862", "0863", "0864", "0871", "0872",
+                "0873"),
+    },
+    "Marche": {
+        "province": {"AN": "Ancona", "PU": "Pesaro e Urbino", "MC": "Macerata",
+                     "AP": "Ascoli Piceno", "FM": "Fermo"},
+        "cap": ("60", "61", "62", "63"),
+        "tel": ("071", "0721", "0722", "0731", "0732", "0733", "0734",
+                "0735", "0736", "0737"),
+    },
+}
+PROVINCE = {s: n for r in REGIONI.values() for s, n in r["province"].items()}
+REGIONE_DI = {s: nome for nome, r in REGIONI.items() for s in r["province"]}
+SIGLE_ATTIVE = tuple(PROVINCE)
+REGIONI_ATTIVE = tuple(REGIONI)
 
 # Il modello restituisce `sede_provincia` a volte come sigla ("RM") e a
 # volte per esteso ("Roma"); Google Maps mette in `state` il nome
@@ -205,16 +263,18 @@ PORTALI_INTERMEDIAZIONE = (
 PORTALI_ESCLUSI = PORTALI_ESCLUSI + PORTALI_INTERMEDIAZIONE
 
 # --- Filtro territorio (§5) ---
-PREFISSI_CAP_LAZIO = ("00", "01", "02", "03", "04")
-PREFISSI_TEL_LAZIO = ("06", "0746", "0761",
-                      "0771", "0772", "0773", "0774", "0775", "0776")
+PREFISSI_CAP_ATTIVI = tuple(c for r in REGIONI.values() for c in r["cap"])
+# i piu' lunghi prima: "0571" va riconosciuto prima di un eventuale "05"
+PREFISSI_TEL_ATTIVI = tuple(sorted({t for r in REGIONI.values() for t in r["tel"]},
+                                   key=lambda t: (-len(t), t)))
 # prefissi telefonici forti di altre regioni (grandi città): solo questi
 # possono produrre `fuori`. Un prefisso non in nessuna delle due liste
 # non è un segnale: si resta `incerto` (es. 0765/0766, Lazio non in lista).
-PREFISSI_TEL_FUORI = (
+# Si tolgono da soli quelli delle regioni attive (055, 071, 080, 081).
+PREFISSI_TEL_FUORI = tuple(p for p in (
     "02", "010", "011", "030", "031", "035", "039", "040", "041", "045",
     "049", "051", "055", "059", "070", "071", "080", "081", "090", "091", "095",
-)
+) if not p.startswith(PREFISSI_TEL_ATTIVI))
 
 # --- Fetch (§6) ---
 MAX_FETCH_SIMULTANEI = 3  # siti di artigiani, gentilezza obbligatoria (§2)
@@ -531,6 +591,30 @@ def fuori_settore_maps(categoria: str | None) -> bool:
 # ciclo (A/B/C nuove, ~60-100 teste) 6-10 EUR Openapi.
 STIMA_APIFY_CICLO_USD = 5.0
 STIMA_OPENAPI_CICLO_EUR = 8.0
+# Apify: il costo del sourcing segue il numero di comuni (3 ricerche l'uno).
+# Misurato nel Lazio: RM 21 comuni 3,51 USD, FR 18 2,93, RI 15 2,42 ->
+# ~0,165 USD a comune; la stima tiene 0,17 + 0,30 di avvio (per eccesso).
+APIFY_USD_PER_COMUNE = 0.17
+APIFY_USD_AVVIO = 0.30
+# Il tetto RIGIDO della run (max_total_charge_usd) e' la stima per questo
+# fattore: un ciclo che sfora di piu' si ferma da solo invece di mangiare
+# il periodo. Il controllo pre-giro vuole che dopo il ciclo resti un
+# margine (decisione del 7/10, limite del piano alzato a 100 USD/mese).
+APIFY_FATTORE_TETTO = 1.5
+APIFY_MARGINE_USD = 10.0
+# Openapi: visure ~0,10 EUR l'una, in proporzione alle A/B del ciclo.
+# Misurato: RM 14,50, le altre del Lazio 4,40-7,10. Le tre grandi come RM.
+STIMA_OPENAPI_GRANDI_EUR = 15.0
+PROVINCE_GRANDI = ("RM", "NA", "FI", "BA")
+
+
+def stima_apify_usd(n_comuni: int) -> float:
+    return round(APIFY_USD_AVVIO + APIFY_USD_PER_COMUNE * n_comuni, 2)
+
+
+def stima_openapi_eur(provincia: str) -> float:
+    return STIMA_OPENAPI_GRANDI_EUR if provincia in PROVINCE_GRANDI \
+        else STIMA_OPENAPI_CICLO_EUR
 
 VIETATE_EMAIL = ("saldator", "annuncio", "assunzione", "cercate", "offerta di lavoro",
                  "garantiam", "certificat", "risparmi", "sconto", "24 ore",

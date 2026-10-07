@@ -64,6 +64,10 @@ def _chiama(percorso: str, token: str, log) -> dict | list | None:
     try:
         with urllib.request.urlopen(req, timeout=60) as r:
             corpo = json.load(r)
+        if percorso.startswith(config.ENDPOINT_OPENAPI):
+            # la visura e' pagata: il registro del wallet la scala (7/10)
+            import crediti
+            crediti.registra_spesa_openapi(config.COSTO_OPENAPI_EUR)
     except urllib.error.HTTPError as e:
         log(f"openapi {e.code} su {percorso.split('?')[0]}: "
             f"{e.read().decode()[:140]}")

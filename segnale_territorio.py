@@ -1,10 +1,11 @@
-"""Aggiunge il segnale `territorio` alle righe fuori Lazio che ne sono prive.
+"""Aggiunge il segnale `territorio` alle righe fuori dalle regioni attive
+(config.REGIONI; fino al 7/10 il solo Lazio) che ne sono prive.
 
 Le aziende dei primi cicli sono state scritte quando il segnale territoriale
 non veniva registrato in questa forma: nell'app compaiono nell'elenco
 normale e le loro province finiscono nel menu di filtro.
 
-Tocca SOLO le righe con una provincia valorizzata e non laziale, e SOLO il
+Tocca SOLO le righe con una provincia valorizzata e non attiva, e SOLO il
 campo `segnali`. Chi il segnale ce l'ha gia' non viene toccato, quindi il
 comando e' ripetibile.
 
@@ -29,11 +30,11 @@ def ha_territorio(riga: dict) -> bool:
 
 
 def da_marcare(righe: list[dict]) -> list[dict]:
-    lazio = set(config.PROVINCE)
+    attive = set(config.SIGLE_ATTIVE)
     return [r for r in righe
             if r.get("stato") != "scartato"
             and (r.get("provincia") or "").strip()
-            and r["provincia"].strip().upper() not in lazio
+            and r["provincia"].strip().upper() not in attive
             and not ha_territorio(r)]
 
 

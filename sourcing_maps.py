@@ -67,11 +67,13 @@ def credito(log=print) -> tuple[float, float] | None:
         return None
 
 
-def cerca(comuni: list[str], log=print) -> tuple[list[dict], float]:
+def cerca(comuni: list[str], log=print,
+          tetto_usd: float | None = None) -> tuple[list[dict], float]:
     """-> (schede normalizzate, costo REALE della run in USD).
 
     Il costo lo dichiara Apify a fine run (`usage_total_usd`): va nel report
-    consumi al posto della stima a scheda."""
+    consumi al posto della stima a scheda. `tetto_usd` e' il limite RIGIDO
+    della run (Apify la ferma li', minimo 0,50 USD)."""
     from apify_client import ApifyClient
 
     client = ApifyClient(os.environ["APIFY_TOKEN"])
@@ -86,7 +88,7 @@ def cerca(comuni: list[str], log=print) -> tuple[list[dict], float]:
         # senza questo l'attore geolocalizza dagli USA e "fabbro Roma"
         # pesca Rome (NY): i posti lontani li scarta, ma sono ricerche buttate
         "countryCode": config.PAESE_MAPS,
-    })
+    }, max_total_charge_usd=max(tetto_usd, 0.5) if tetto_usd else None)
     schede = [_normalizza(v)
               for v in client.dataset(run.default_dataset_id).iterate_items()]
     costo_usd = float(run.usage_total_usd or 0)

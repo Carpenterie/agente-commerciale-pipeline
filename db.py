@@ -21,7 +21,7 @@ import os
 
 import config
 import fetch
-from data import comuni_lazio
+from data import comuni
 
 MOTIVAZIONE_NO_SITO = "nessuna fonte web disponibile — valutazione telefonica"
 MOTIVAZIONE_FUORI = "fuori territorio"
@@ -83,8 +83,8 @@ def _provincia(scheda: dict, dati: dict, anagrafica: dict) -> str | None:
        sull'87% delle schede — non e' una sigla ma il nome amministrativo
        ("Provincia di Latina"), e `config.sigla_provincia` lo converte;
     3. solo per le righe Exa, che una scheda Maps non ce l'hanno, il comune
-       sulla tabella dei comuni laziali. E' un ripiego stretto: la tabella
-       copre i 90 comuni del sourcing, non i 378 del Lazio, e allargarla
+       sulla tabella dei comuni del sourcing (data/comuni.py). E' un ripiego
+       stretto: copre i comuni interrogati, non tutti quelli delle regioni, e allargarla
        costerebbe query Maps a ogni ciclo (vedi README, Province).
     """
     dichiarata = config.sigla_provincia(
@@ -95,7 +95,7 @@ def _provincia(scheda: dict, dati: dict, anagrafica: dict) -> str | None:
     da_maps = config.sigla_provincia(_testo(scheda.get("provincia")), log=print)
     if da_maps:
         return da_maps
-    return comuni_lazio.provincia_di(
+    return comuni.provincia_di(
         _testo(anagrafica.get("sede_comune")) or _testo(dati.get("sede_comune"))
         or _testo(scheda.get("comune")), log=print)
 

@@ -22,7 +22,7 @@ import sys
 import config
 import db
 import dedup
-from data import comuni_lazio
+from data import comuni
 
 
 def indice_cache(cartella: str = "cache") -> dict:
@@ -68,7 +68,7 @@ def da_correggere(righe: list[dict], cache: dict | None = None) -> list[tuple[di
             # prima la scheda Maps (anagrafica, 87% delle schede), poi il
             # comune: quest'ultimo serve alle sole righe Exa
             nuovo = (dalla_cache(r, cache) if cache else None) \
-                or comuni_lazio.provincia_di(r.get("comune"))
+                or comuni.provincia_di(r.get("comune"))
             if nuovo:
                 fuori.append((r, nuovo))
             continue
@@ -102,7 +102,7 @@ def main() -> int:
         print(f"  {vecchio:<24} -> {nuovo}   {n:>4} righe")
     resta_vuota = [r for r in righe if not (r.get("provincia") or "").strip()
                    and not dalla_cache(r, cache)
-                   and not comuni_lazio.provincia_di(r.get("comune"))]
+                   and not comuni.provincia_di(r.get("comune"))]
     print(f"\n  restano senza provincia: {len(resta_vuota)}"
           f"  (di cui {sum(1 for r in resta_vuota if not (r.get('comune') or '').strip())}"
           f" senza nemmeno il comune)")

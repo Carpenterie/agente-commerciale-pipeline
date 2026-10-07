@@ -24,6 +24,18 @@ Cosa si riesce a leggere, onestamente:
   di 0,10 EUR e vale come semaforo verde.
 Il controllo iniziale non copre l'esaurimento A META' giro: per quello
 c'e' il salvavita delle dieci analisi fallite uguali (main.py).
+
+REGISTRO OPENAPI (2026-10-07): finche' il wallet ha credito il saldo non
+si legge, quindi il controllo non poteva fermare un giro PRIMA di finirlo.
+Ora alla ricarica si dichiara il saldo:
+
+    python crediti.py --openapi-saldo 50
+
+e ogni visura pagata (arricchimento._chiama, canarino compreso) lo scala
+in cache/openapi_saldo.json. Il controllo pre-giro confronta il residuo con
+la stima della provincia e non parte se non basta; dentro il giro, main
+smette di chiedere visure prima di arrivare a zero. Le 30 chiamate gratis
+del mese non si scalano: il residuo stimato e' per difetto, mai per eccesso.
 """
 
 from __future__ import annotations
@@ -36,10 +48,54 @@ import sys
 # il pedaggio da 0,10 almeno interroga un dato reale.
 PIVA_CANARINO = "05962321005"
 RE_SALDO_402 = re.compile(r"Insufficient Credit in Wallet: [\d.]+ > ([\d.]+)")
-# Rispecchiano cron.example: cadenza trimestrale, e il trimestre di ottobre
-# 2026 saltato dalla guardia. Se cambia la cadenza del cron, cambia qui.
-MESI_CICLO = (1, 4, 7, 10)
-GUARDIA_SALTA = (2026, 10)
+# Rispecchiano cron.example: cadenza trimestrale per regione, sfalsata di
+# mese in mese perche' nessun periodo Apify (dal 7 al 6) porti piu' di un
+# terzo dei ripassi. (mesi, primo giorno, mese saltato dalla guardia):
+# Lazio dal 1°; Toscana e Abruzzo dall'8 dei mesi dopo; Campania, Puglia e
+# Marche dall'8 di quelli dopo ancora. Le guardie saltano il primo giro
+# di chi e' stato appena raccolto a mano. Se cambia il cron, cambia qui.
+CALENDARIO_GIRI = (((1, 4, 7, 10), 1, (2026, 10)),
+                   ((2, 5, 8, 11), 8, (2026, 11)),
+                   ((3, 6, 9, 12), 8, (2026, 12)))
+REGISTRO_OPENAPI = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                "cache", "openapi_saldo.json")
+
+
+def dichiara_openapi(saldo_eur: float) -> dict:
+    """Alla ricarica: il saldo letto sulla console Openapi."""
+    import datetime
+    import json
+    r = {"saldo_eur": float(saldo_eur), "speso_eur": 0.0,
+         "dal": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")}
+    os.makedirs(os.path.dirname(REGISTRO_OPENAPI), exist_ok=True)
+    with open(REGISTRO_OPENAPI, "w") as f:
+        json.dump(r, f)
+    return r
+
+
+def _registro() -> dict | None:
+    import json
+    try:
+        with open(REGISTRO_OPENAPI) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def registra_spesa_openapi(eur: float) -> None:
+    import json
+    r = _registro()
+    if r is None:
+        return              # nessun saldo dichiarato: niente da scalare
+    r["speso_eur"] = round(r.get("speso_eur", 0) + eur, 2)
+    with open(REGISTRO_OPENAPI, "w") as f:
+        json.dump(r, f)
+
+
+def residuo_openapi(sb=None) -> float | None:
+    """EUR residui stimati dal registro, o None se nessun saldo e' dichiarato."""
+    r = _registro()
+    return None if r is None else round(r["saldo_eur"] - r.get("speso_eur", 0), 2)
 
 
 def prossimo_rinnovo_apify(oggi):
@@ -54,15 +110,14 @@ def prossimo_rinnovo_apify(oggi):
 
 def prossimo_giro_apify(oggi):
     """La prossima data in cui un ciclo da cron rifa' il sourcing (spende
-    Apify): giorno 1 di un mese trimestrale, saltando il trimestre in
-    guardia. E' RM il giorno 1 a spendere per primo, prima del rinnovo."""
+    Apify), su tutto il calendario delle regioni, saltando i mesi in guardia."""
     import datetime
-    for anno in range(oggi.year, oggi.year + 21):
-        for mese in MESI_CICLO:
-            d = datetime.date(anno, mese, 1)
-            if d > oggi and (d.year, d.month) != GUARDIA_SALTA:
-                return d
-    return None
+    date = [datetime.date(anno, mese, giorno)
+            for anno in range(oggi.year, oggi.year + 3)
+            for mesi, giorno, guardia in CALENDARIO_GIRI for mese in mesi
+            if (anno, mese) != guardia]
+    future = [d for d in date if d > oggi]
+    return min(future) if future else None
 
 
 def saldo_apify(log=print) -> float | None:
@@ -132,6 +187,7 @@ def saldo_openapi(log=print) -> tuple[float | None, str]:
         headers={"Authorization": f"Bearer {token}"})
     try:
         with urllib.request.urlopen(req, timeout=60):
+            registra_spesa_openapi(0.10)
             return None, "presente (>0,10 EUR; pedaggio di 0,10 pagato)"
     except urllib.error.HTTPError as e:
         corpo = e.read().decode()
@@ -248,7 +304,23 @@ def letture(serve_apify_usd: float = 0, serve_anthropic: bool = False,
             righe.append(_riga("exa", "ok", None, None, None,
                                "Credito Exa presente (il saldo non e' esposto: "
                                "i giri hanno il tetto di spesa interno)", fonte))
-    if serve_openapi_eur > 0:
+    residuo = residuo_openapi() if serve_openapi_eur > 0 else None
+    if residuo is not None:
+        # saldo dichiarato alla ricarica: niente canarino (e niente pedaggio)
+        if residuo < serve_openapi_eur:
+            m = (f"Credito Openapi quasi finito: residuo stimato {residuo:.2f} EUR, "
+                 f"un ciclo ne stima {serve_openapi_eur:.2f} — ricaricare e poi "
+                 f"'python crediti.py --openapi-saldo <saldo>'")
+            righe.append(_riga("openapi", "sotto_soglia", residuo, "EUR",
+                               serve_openapi_eur, m, fonte))
+            problemi.append(f"wallet Openapi: residuo stimato {residuo:.2f} EUR, il "
+                            f"ciclo ne stima {serve_openapi_eur:.2f} — ricaricare "
+                            f"prima di questa provincia")
+        else:
+            righe.append(_riga("openapi", "ok", residuo, "EUR", serve_openapi_eur,
+                               f"Credito Openapi: residuo stimato {residuo:.2f} EUR "
+                               f"(saldo dichiarato meno le visure pagate)", fonte))
+    elif serve_openapi_eur > 0:
         saldo, desc = saldo_openapi(log)
         if saldo is not None and saldo < serve_openapi_eur:
             manca = serve_openapi_eur - saldo
@@ -313,6 +385,11 @@ def controllo(serve_apify_usd: float = 0, serve_anthropic: bool = False,
 
 
 if __name__ == "__main__":
+    if "--openapi-saldo" in sys.argv:
+        r = dichiara_openapi(float(sys.argv[sys.argv.index("--openapi-saldo") + 1]
+                                   .replace(",", ".")))
+        print(f"saldo Openapi dichiarato: {r['saldo_eur']:.2f} EUR dal {r['dal']}")
+        sys.exit(0)
     if "--test" in sys.argv:
         m = RE_SALDO_402.search('{"message":"Billing error message: Insufficient '
                                 'Credit in Wallet: 0.1 > 0.057 code 810"}')
@@ -327,8 +404,22 @@ if __name__ == "__main__":
         assert prossimo_rinnovo_apify(datetime.date(2026, 12, 20)) == datetime.date(2027, 1, 7)
         # il trimestre di ottobre 2026 e' saltato dalla guardia
         assert prossimo_giro_apify(datetime.date(2026, 9, 28)) == datetime.date(2027, 1, 1)
-        assert prossimo_giro_apify(datetime.date(2027, 1, 1)) == datetime.date(2027, 4, 1)
-        assert prossimo_giro_apify(datetime.date(2027, 2, 10)) == datetime.date(2027, 4, 1)
+        # dopo il Lazio di gennaio: Toscana e Abruzzo l'8 febbraio, poi marzo
+        assert prossimo_giro_apify(datetime.date(2027, 1, 1)) == datetime.date(2027, 2, 8)
+        assert prossimo_giro_apify(datetime.date(2027, 2, 10)) == datetime.date(2027, 3, 8)
+        # novembre e dicembre 2026 in guardia (regioni appena raccolte a mano)
+        assert prossimo_giro_apify(datetime.date(2026, 10, 7)) == datetime.date(2027, 1, 1)
+        # registro Openapi: si scala, e senza saldo dichiarato non si sa
+        import tempfile
+        globals()["REGISTRO_OPENAPI"] = os.path.join(tempfile.mkdtemp(), "o.json")
+        assert residuo_openapi() is None
+        registra_spesa_openapi(0.10)            # senza registro: niente
+        dichiara_openapi(50)
+        registra_spesa_openapi(0.10); registra_spesa_openapi(0.10)
+        assert residuo_openapi() == 49.8, residuo_openapi()
+        _, problemi = letture(serve_openapi_eur=60, log=lambda *a: None)
+        assert problemi and "49.80" in problemi[0], problemi
+        assert letture(serve_openapi_eur=8, log=lambda *a: None)[1] == []
         print("ok")
     elif "--allarmi" in sys.argv:
         from dotenv import load_dotenv

@@ -32,7 +32,7 @@ import sourcing_maps
 import territorio
 from collections import Counter
 
-from data.comuni_lazio import COMUNI
+from data.comuni import COMUNI
 
 
 def _argomenti():
@@ -59,6 +59,8 @@ def _argomenti():
 
 
 SOURCING_VALIDO_ORE = 24
+# saldo Openapi residuo dichiarato (crediti.residuo_openapi), None = ignoto
+LIMITE_OPENAPI_EUR: float | None = None
 # modulo-level perché i test la puntino altrove: il sourcing salvato è dato
 # di produzione e un test non deve sovrascriverlo
 CARTELLA_CACHE = Path(__file__).parent / "cache"
@@ -86,7 +88,9 @@ def raccogli(provincia: str, totali: dict, max_comuni: int | None = None,
             return dati["schede"]
 
     comuni = list(COMUNI[provincia])[:max_comuni] if max_comuni else list(COMUNI[provincia])
-    schede, costo_maps = sourcing_maps.cerca(comuni)
+    # tetto RIGIDO della run: la stima per il fattore di sicurezza
+    schede, costo_maps = sourcing_maps.cerca(
+        comuni, tetto_usd=config.stima_apify_usd(len(comuni)) * config.APIFY_FATTORE_TETTO)
     costi.registra_apify(totali, len(schede), costo_usd=costo_maps)
 
     trovate_exa = sourcing_exa.cerca(config.PROVINCE[provincia])
@@ -224,6 +228,13 @@ def arricchisci_ab(azienda: dict, esito: dict, totali: dict,
         return {}, segnali
 
     stat["arricchibili"] = stat.get("arricchibili", 0) + 1
+    if LIMITE_OPENAPI_EUR is not None and costi.riepilogo(totali)["costo_openapi_eur"] \
+            + config.COSTO_OPENAPI_EUR * arricchimento.MAX_OMONIMI > LIMITE_OPENAPI_EUR:
+        if not stat.get("openapi_fermato"):
+            print(f"  STOP visure: il saldo Openapi dichiarato ({LIMITE_OPENAPI_EUR:.2f} EUR) "
+                  "sta per finire — le altre schede restano senza visura")
+        stat["openapi_fermato"] = stat.get("openapi_fermato", 0) + 1
+        return {}, segnali
     anagrafica = arricchimento_sicuro(
         azienda, nome, totali, provincia,
         piva=(dati.get("partita_iva") or "").strip(),
@@ -260,13 +271,13 @@ def arricchisci_ab(azienda: dict, esito: dict, totali: dict,
         sigla_v = (config.sigla_provincia(
             anagrafica.get("sede_provincia") or "") or "").upper()
         if len(sigla_v) == 2 and sigla_v in config.SIGLE_PROVINCE.values() \
-                and sigla_v not in config.SIGLE_LAZIO:
+                and sigla_v not in config.SIGLE_ATTIVE:
             sede_v = anagrafica.get("sede_comune") or "?"
             segnali.append({
                 "tipo": "fuori_territorio_sede_dichiarata",
                 "sede": f"{sede_v} ({sigla_v})",
                 "segnale": f"sede in visura: {sede_v} ({sigla_v}), "
-                           f"fuori da {config.REGIONE_CICLO}"})
+                           f"{territorio.FUORI_DA}"})
             print(f"  sede in visura fuori territorio: {sede_v} ({sigla_v})")
     if anagrafica and anagrafica.get("dipendenti"):
         prima = esito["classe"]
@@ -356,17 +367,27 @@ async def esegui(args) -> int:
                                 f"nessuna spesa.")
     # I tre saldi PRIMA di spendere (regola del 2026-09-30: in due
     # settimane sono finiti tutti e tre, sempre a giro in corso)
+    global LIMITE_OPENAPI_EUR
     if not args.dry_run:
+        # Apify: la stima di QUESTA provincia (dai suoi comuni) piu' il
+        # margine che deve restare nel periodo (7/10: almeno 10 USD)
+        stima_apify = config.stima_apify_usd(len(COMUNI[args.provincia]))
         problemi = crediti.controllo(
-            serve_apify_usd=0 if args.riusa_sourcing else config.STIMA_APIFY_CICLO_USD,
+            serve_apify_usd=0 if args.riusa_sourcing
+            else stima_apify + config.APIFY_MARGINE_USD,
             serve_anthropic=True,
-            serve_openapi_eur=config.STIMA_OPENAPI_CICLO_EUR, sb=sb)
+            serve_openapi_eur=config.stima_openapi_eur(args.provincia), sb=sb)
         if problemi:
             return _verdetto(False, "crediti insufficienti, giro NON partito — "
                              + "; ".join(problemi))
     ciclo_id = None
     if sb and not args.dry_run:
-        ciclo_id = db.avvia_ciclo(sb, "Lazio", note=f"provincia {args.provincia}")
+        # il saldo Openapi dichiarato (crediti.py --openapi-saldo) e' anche
+        # il tetto delle visure DENTRO il giro: finito quello, le schede
+        # restano senza visura invece di fallire a meta' provincia
+        LIMITE_OPENAPI_EUR = crediti.residuo_openapi(sb)
+        ciclo_id = db.avvia_ciclo(sb, config.REGIONE_DI[args.provincia],
+                                  note=f"provincia {args.provincia}")
         print(f"ciclo {ciclo_id} avviato")
 
     # 1. sourcing

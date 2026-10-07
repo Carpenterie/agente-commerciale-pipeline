@@ -22,7 +22,7 @@ import costi
 import dedup
 import sourcing_exa
 import sourcing_maps
-from data.comuni_lazio import COMUNI
+from data.comuni import COMUNI
 from main import CARTELLA_CACHE
 
 
@@ -30,7 +30,7 @@ def riepiloga(provincia: str, schede: list[dict], maps: int,
               costo_usd: float) -> dict:
     """Numeri per il preventivo: uniche dopo dedup, con sito, fuori regione."""
     uniche = dedup.dedup_interno(schede, log=lambda *a: None)
-    lazio = set(config.PROVINCE)
+    attive = set(config.SIGLE_ATTIVE)
     return {
         "provincia": provincia,
         "comuni": len(COMUNI[provincia]),
@@ -43,7 +43,7 @@ def riepiloga(provincia: str, schede: list[dict], maps: int,
         "fuori_regione": sum(
             1 for s in uniche
             if (s.get("provincia") or "").strip()
-            and config.sigla_provincia(s["provincia"]) not in lazio),
+            and config.sigla_provincia(s["provincia"]) not in attive),
         "chiuse": sum(1 for s in uniche if s.get("chiusa_definitivamente")),
         "costo_usd": costo_usd,
     }
