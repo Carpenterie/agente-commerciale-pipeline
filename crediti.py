@@ -199,6 +199,31 @@ def saldo_openapi(log=print) -> tuple[float | None, str]:
         return None, f"non leggibile ({type(e).__name__})"
 
 
+def token_openapi_ok(log=print) -> bool | None:
+    """Il token e' accettato? Con una IT-search, che non scala il wallet.
+    Il 7/10 il pilota di Pisa ha girato con il token rifiutato ("Wrong
+    Token", 401): niente visure su 90 A/B/C, e il controllo non lo vedeva
+    perche' il registro del saldo aveva tolto il canarino."""
+    import urllib.error
+    import urllib.request
+    token = os.environ.get("OPENAPI_TOKEN", "").strip()
+    if not token:
+        return False
+    req = urllib.request.Request(
+        "https://company.openapi.com/IT-search?companyName=carpenterie&province=RM",
+        headers={"Authorization": f"Bearer {token}"})
+    try:
+        with urllib.request.urlopen(req, timeout=30):
+            return True
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403):
+            return False
+        return True if e.code in (402, 404, 204) else None
+    except Exception as e:  # noqa: BLE001
+        log(f"verifica token Openapi non conclusiva: {type(e).__name__}")
+        return None
+
+
 def _riga(servizio, stato, saldo, unita, soglia, messaggio, fonte):
     import datetime
     return {"servizio": servizio, "stato": stato, "saldo": saldo,
@@ -305,7 +330,13 @@ def letture(serve_apify_usd: float = 0, serve_anthropic: bool = False,
                                "Credito Exa presente (il saldo non e' esposto: "
                                "i giri hanno il tetto di spesa interno)", fonte))
     residuo = residuo_openapi() if serve_openapi_eur > 0 else None
-    if residuo is not None:
+    if serve_openapi_eur > 0 and token_openapi_ok(log) is False:
+        m = ("Token Openapi RIFIUTATO (401 Wrong Token): generarne uno nuovo "
+             "sulla console Openapi e aggiornare OPENAPI_TOKEN nel .env")
+        righe.append(_riga("openapi", "esaurito", residuo, "EUR", serve_openapi_eur, m, fonte))
+        problemi.append("token Openapi rifiutato: le visure fallirebbero tutte — "
+                        "aggiornare OPENAPI_TOKEN prima del giro")
+    elif residuo is not None:
         # saldo dichiarato alla ricarica: niente canarino (e niente pedaggio)
         if residuo < serve_openapi_eur:
             m = (f"Credito Openapi quasi finito: residuo stimato {residuo:.2f} EUR, "
@@ -417,9 +448,12 @@ if __name__ == "__main__":
         dichiara_openapi(50)
         registra_spesa_openapi(0.10); registra_spesa_openapi(0.10)
         assert residuo_openapi() == 49.8, residuo_openapi()
+        globals()["token_openapi_ok"] = lambda log=print: True     # niente rete nel test
         _, problemi = letture(serve_openapi_eur=60, log=lambda *a: None)
         assert problemi and "49.80" in problemi[0], problemi
         assert letture(serve_openapi_eur=8, log=lambda *a: None)[1] == []
+        globals()["token_openapi_ok"] = lambda log=print: False
+        assert "token Openapi rifiutato" in letture(serve_openapi_eur=8, log=lambda *a: None)[1][0]
         print("ok")
     elif "--allarmi" in sys.argv:
         from dotenv import load_dotenv

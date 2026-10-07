@@ -25,10 +25,15 @@ from __future__ import annotations
 import re
 
 import config
-from data.comuni import COMUNI
+from data.comuni import ALTRI_NOMI, COMUNI
 
-_TUTTI_COMUNI = tuple(c.lower() for prov in COMUNI.values() for c in prov)
-_RE_COMUNI = re.compile(r"\b(" + "|".join(re.escape(c) for c in _TUTTI_COMUNI) + r")\b")
+_TUTTI_COMUNI = tuple(c.lower() for prov in COMUNI.values() for c in prov) \
+    + tuple(c.lower() for c in ALTRI_NOMI)
+# trattino o spazio fra le parole, apostrofo dritto o curvo: "Montecatini
+# Terme" e "Montecatini-Terme" sono lo stesso comune (7/10)
+_RE_COMUNI = re.compile(r"\b(" + "|".join(
+    re.escape(c).replace(r"\-", r"[\s-]+").replace(r"\ ", r"[\s-]+").replace("'", "['’]")
+    for c in _TUTTI_COMUNI) + r")\b")
 # "Via Roma 1, Milano": il nome della via non è il comune
 _RE_VIA = re.compile(r"(?:via|viale|piazza|p\.zza|corso|largo|vicolo|strada)\s+$")
 # gli URL sono la prima fonte di falsi CAP (query string, hash di immagini):
@@ -283,6 +288,11 @@ if __name__ == "__main__":
                "cantiere a 20121 Milano\n\n# PAGINA: https://x.it/contatti\n\n00187 Roma")
     assert v["esito"] == "dentro" and "00187" in v["segnale"], v
 
+    # le due grafie del comune valgono uguale (ISTAT e uso comune, 7/10)
+    for forma in ("Montecatini Terme", "Montecatini-Terme", "Sannicandro Garganico",
+                  "San Nicandro Garganico", "Popoli", "Popoli Terme", "Sant’Angelo dei Lombardi"):
+        v = valuta(f"# PAGINA: https://x.it/\n\nLaboratorio a {forma}, zona artigianale")
+        assert v["esito"] == "dentro", (forma, v)
     # la partita IVA non e' un telefono (09902550962 non e' Taranto)
     assert valuta("# PAGINA: https://x.it/\n\nP.IVA 09902550962")["esito"] == "incerto"
     assert valuta("# PAGINA: https://x.it/\n\nC.F. 08012345678")["esito"] == "incerto"

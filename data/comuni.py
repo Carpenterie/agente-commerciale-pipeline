@@ -235,13 +235,31 @@ COMUNI = {
 # aggiungere un comune qui costa 3 query Maps a ogni ciclo. Se un giorno
 # servisse piu' copertura, la strada e' una tabella separata di sola
 # consultazione, non allargare questa.
-PROVINCIA_DI_COMUNE = {c.strip().lower(): sigla
+# Grafie che Maps e i siti usano ancora, diverse da quella ISTAT usata per
+# le ricerche: nomi vecchi e forme comuni (7/10). Valgono come il nome
+# ufficiale per la provincia e per il segnale territoriale, mai per
+# interrogare Maps (si interroga una volta sola, col nome ISTAT).
+ALTRI_NOMI = {
+    "Montecatini Terme": "Montecatini-Terme",
+    "Sannicandro Garganico": "San Nicandro Garganico",
+    "Popoli": "Popoli Terme",
+}
+
+
+def chiave(comune: str | None) -> str:
+    """Trattino o spazio, apostrofo dritto o curvo, maiuscole: la stessa cosa."""
+    return " ".join((comune or "").replace("’", "'").replace("-", " ").lower().split())
+
+
+PROVINCIA_DI_COMUNE = {chiave(c): sigla
                        for sigla, lista in COMUNI.items() for c in lista}
+PROVINCIA_DI_COMUNE.update({chiave(vecchio): PROVINCIA_DI_COMUNE[chiave(ufficiale)]
+                            for vecchio, ufficiale in ALTRI_NOMI.items()})
 
 
 def provincia_di(comune: str | None, log=None) -> str | None:
     """-> sigla della provincia del comune, o None se non e' in tabella."""
-    sigla = PROVINCIA_DI_COMUNE.get((comune or "").strip().lower())
+    sigla = PROVINCIA_DI_COMUNE.get(chiave(comune))
     if not sigla and (comune or "").strip() and log:
         log(f"comune '{comune.strip()}' non in tabella: provincia lasciata vuota")
     return sigla
@@ -255,7 +273,15 @@ if __name__ == "__main__":
     assert provincia_di("Ariccia") is None
     assert provincia_di("Milano") is None
     assert provincia_di("") is None and provincia_di(None) is None
-    assert len(PROVINCIA_DI_COMUNE) == sum(len(v) for v in COMUNI.values())
+    # ogni comune ha la sua chiave; gli altri nomi ne aggiungono solo se non
+    # coincidono gia' a meno del trattino (Montecatini Terme no, Popoli si')
+    assert len({chiave(c) for v in COMUNI.values() for c in v}) == sum(len(v) for v in COMUNI.values())
+    assert len(PROVINCIA_DI_COMUNE) == sum(len(v) for v in COMUNI.values()) + 2
+    for forma in ("Montecatini Terme", "montecatini-terme", "MONTECATINI  TERME"):
+        assert provincia_di(forma) == "PT", forma
+    assert provincia_di("Sannicandro Garganico") == provincia_di("San Nicandro Garganico") == "FG"
+    assert provincia_di("Popoli") == provincia_di("Popoli Terme") == "PE"
+    assert provincia_di("Sant’Angelo dei Lombardi") == "AV"     # apostrofo curvo
     assert provincia_di("Firenze") == "FI" and provincia_di("Città Sant'Angelo") == "PE"
     assert provincia_di("Cava de' Tirreni") == "SA" and provincia_di("Fermo") == "FM"
     assert len(COMUNI) == 35, len(COMUNI)
