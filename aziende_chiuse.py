@@ -31,10 +31,11 @@ import fetch
 
 TIPO = "chiusa_definitivamente"
 TETTO_USD = 5.0
+MINIMO_RUN_USD = 0.5    # Apify rifiuta un tetto per run sotto questa soglia
 # le tre abbinate per telefono a una scheda Google chiusa (7/10): un
 # telefono condiviso con una vecchia scheda non basta, si riverificano
 VERIFICARE = ("ART METAL di Polimadei Paolo",
-              "BPE SERRAMENTI S.N.C. DI PASQUALE CICCHI",
+              "BPE SERRAMENTI S.N.C. DI PASQUALE CICCHINELLI E EMANUELE BONIFAZI",
               "Infissi F.Lli Muggia Soc.Coop.")
 
 
@@ -137,7 +138,7 @@ def verifica(scrivi: bool, log=print) -> None:
     # chi risulta chiuso o dubbio si riguarda a 5 risultati: la scheda
     # attiva della stessa azienda puo' stare sotto quella chiusa
     rivedere = [r for r in righe if esiti[r["id"]][0] in ("chiusa", "dubbio")]
-    if rivedere and speso < TETTO_USD - 0.3:
+    if rivedere and TETTO_USD - speso >= MINIMO_RUN_USD:
         altre, costo = _cerca(sorted({q[r["id"]] for r in rivedere}), 5, TETTO_USD - speso, log)
         speso += costo
         for r in rivedere:
