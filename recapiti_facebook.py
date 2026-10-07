@@ -28,6 +28,7 @@ import re
 import sys
 
 import dedup
+import fetch
 
 QUI = pathlib.Path(__file__).parent
 REGISTRO = QUI / "cache" / "fb_scrappate.json"
@@ -121,7 +122,7 @@ def main_() -> int:
     righe, off = [], 0
     while True:
         b = sb.table("aziende").select(
-            "id,ragione_sociale,classe,stato,email_aziendale,telefono,"
+            "id,ragione_sociale,classe,stato,email_aziendale,email_pec,telefono,"
             "sito,dominio,segnali").range(off, off + 999).execute().data
         righe += b
         if len(b) < 1000:
@@ -179,7 +180,12 @@ def main_() -> int:
         email = campo(i, "email", "emails")
         telefono = campo(i, "phone", "phones", "phoneNumber")
         aggiorna, presi = {}, []
-        if email and not (r.get("email_aziendale") or "").strip():
+        if email and fetch.e_pec(email):
+            # una PEC non e' mai email_aziendale
+            if not (r.get("email_pec") or "").strip():
+                aggiorna["email_pec"] = email
+                presi.append(f"PEC {email}")
+        elif email and not (r.get("email_aziendale") or "").strip():
             aggiorna["email_aziendale"] = email
             em += 1
             presi.append(f"email {email}")

@@ -26,6 +26,7 @@ from collections import Counter
 import config  # noqa: F401
 import costi
 import db
+import fetch
 import main as ciclo
 
 # Cosa produce la rianalisi e cosa NON si tocca mai. `creato_il`, `id`,
@@ -53,8 +54,11 @@ def aggiornamento(riga_nuova: dict, esistente: dict) -> dict:
     toccare identita' e cronologia della riga, e senza regredire i
     recapiti di ripiego dove il sito non da' di meglio."""
     agg = {k: v for k, v in riga_nuova.items() if k not in NON_SI_TOCCANO}
-    if not agg.get("email_aziendale") and esistente.get("email_aziendale"):
+    if not agg.get("email_aziendale") and esistente.get("email_aziendale") \
+            and not fetch.e_pec(esistente["email_aziendale"]):
         agg["email_aziendale"] = esistente["email_aziendale"]
+    if not agg.get("email_pec") and esistente.get("email_pec"):
+        agg["email_pec"] = esistente["email_pec"]
     if not agg.get("telefono") and esistente.get("telefono"):
         agg["telefono"] = esistente["telefono"]
     # la marcatura ex cliente fu fatta all'import, PRIMA della scrittura:

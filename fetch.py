@@ -121,10 +121,27 @@ DOMINI_FINTI = ("example", "esempio", "sentry", "wixpress", "mysite",
                 "tuodominio", "nomesito", "yourdomain", "domain.com")
 
 
-def estrai_email(testo: str, sito: str = "") -> list[str]:
+# PEC riconosciute dal DOMINIO (7/10: un'email commerciale non deve mai
+# partire verso una PEC). Etichette del dominio: "pec" da sola o in testa
+# col trattino (pec.it, pec.aslroma4.it, pec-cap.it), finale in "pec"
+# (arubapec, gigapec, registerpec), i gestori noti. Le etichette che
+# CONTENGONO pec in mezzo non contano: polispecialistico, edilpecostruzioni.
+GESTORI_PEC = ("legalmail", "postacert", "postecert", "sicurezzapostale",
+               "pecposta", "pecimprese", "pecmail", "cert")
+
+
+def e_pec(email: str | None) -> bool:
+    etichette = (email or "").rsplit("@", 1)[-1].lower().split(".")[:-1]
+    return "@" in (email or "") and any(
+        e == "pec" or e.startswith("pec-") or e.endswith("pec")
+        or e.startswith("postacert") or e in GESTORI_PEC for e in etichette)
+
+
+def estrai_email(testo: str, sito: str = "", pec: bool = False) -> list[str]:
     """Email dal testo delle pagine (mailto compresi: nel markdown restano
     in chiaro), SENZA modello. Ordinate: prima quelle sul dominio del sito,
-    poi info@, poi le piu' frequenti."""
+    poi info@, poi le piu' frequenti. Le PEC MAI fra le normali: con
+    pec=True si chiedono solo quelle (vanno in email_pec)."""
     dominio = ""
     if sito:
         d = urlparse(sito if "//" in sito else "https://" + sito).netloc
@@ -133,7 +150,8 @@ def estrai_email(testo: str, sito: str = "") -> list[str]:
     for m in RE_EMAIL.findall(testo or ""):
         e = m.lower().rstrip(".")
         dom_e = e.split("@")[1]
-        if e.endswith(ESTENSIONI_FILE) or any(f in dom_e for f in DOMINI_FINTI):
+        if e.endswith(ESTENSIONI_FILE) or any(f in dom_e for f in DOMINI_FINTI) \
+                or e_pec(e) != pec:
             continue
         conta[e] = conta.get(e, 0) + 1
     return sorted(conta, key=lambda e: (
@@ -170,6 +188,15 @@ async def fetch_azienda(crawler, url: str) -> tuple[str, str, int]:
 
 
 if __name__ == "__main__":
+    for si in ("a@pec.it", "a@legalmail.it", "b@cert.legalmail.it", "c@pecposta.it",
+               "d@arubapec.it", "e@pec.aslroma4.it", "f@pec-cap.it", "g@postacert.it",
+               "h@pec.libero.it", "i@gigapec.it", "l@postacert.poste.it"):
+        assert e_pec(si), si
+    for no in ("info@polispecialisticoviterbo.it", "x@edilpecostruzioni.com",
+               "pec@gmail.com", "info@pecorino.it", "", None, "senza-chiocciola"):
+        assert not e_pec(no), no
+    assert estrai_email("info@x.it x@pec.it") == ["info@x.it"]
+    assert estrai_email("info@x.it x@pec.it", pec=True) == ["x@pec.it"]
     assert _cache_path("https://www.fabbrox.it/grate").parent.name == "fabbrox.it"
     assert _cache_path("http://fabbrox.it/grate") != _cache_path("http://fabbrox.it/persiane")
 

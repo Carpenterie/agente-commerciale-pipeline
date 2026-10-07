@@ -6,10 +6,14 @@ garantito).
     python ripasso_email.py             # misura: solo cache, zero rete
     python ripasso_email.py --scrivi    # scrive, e scarica la pagina
                                         # contatti dove la cache non basta
+    python ripasso_email.py --pec           # misura: PEC in email_aziendale
+    python ripasso_email.py --pec --scrivi  # le sposta in email_pec
     python ripasso_email.py --test
 
 Regole:
 - si riempie SOLO email_aziendale vuota, mai sovrascritture;
+- una PEC non diventa MAI email_aziendale: va in email_pec se vuota
+  (fetch.e_pec, 7/10: un'email commerciale non parte mai verso una PEC);
 - ogni scrittura porta il segnale email_dal_sito con la provenienza;
 - il download e' UNA pagina per azienda: il link contatti letto dalla
   homepage in cache, o <sito>/contatti alla cieca. La pagina finisce in
@@ -58,7 +62,7 @@ def _record_home(sito: str) -> tuple[dict, str] | tuple[None, None]:
     return None, None
 
 
-def _email_da_cache(sito: str) -> list[str]:
+def _email_da_cache(sito: str, pec: bool = False) -> list[str]:
     cartella = fetch.CACHE / _dominio(sito)
     if not cartella.is_dir():
         return []
@@ -68,7 +72,7 @@ def _email_da_cache(sito: str) -> list[str]:
             testi.append(json.loads(f.read_text(encoding="utf-8"))["markdown"])
         except (ValueError, KeyError):
             continue
-    return fetch.estrai_email("\n".join(testi), sito)
+    return fetch.estrai_email("\n".join(testi), sito, pec=pec)
 
 
 def _url_contatti(sito: str) -> str:
@@ -88,7 +92,7 @@ def candidate(sb) -> list[dict]:
     righe, da = [], 0
     while True:
         b = (sb.table("aziende")
-             .select("id,ragione_sociale,sito,email_aziendale,classe,stato,segnali")
+             .select("id,ragione_sociale,sito,email_aziendale,email_pec,classe,stato,segnali")
              .in_("classe", list(config.CLASSI_DA_ARRICCHIRE))
              .range(da, da + 999).execute().data)
         righe += b
@@ -127,8 +131,21 @@ def giro(scrivi: bool, log=print) -> None:
             log(f"  ERRORE scrittura {r['ragione_sociale'][:30]}: {type(e).__name__}")
             return False
 
+    def salva_pec(r, testo_o_lista, provenienza) -> None:
+        """La PEC trovata dal ripasso va in email_pec, se vuota."""
+        pec = (testo_o_lista if isinstance(testo_o_lista, list)
+               else fetch.estrai_email(testo_o_lista, r["sito"], pec=True))
+        if scrivi and pec and not (r.get("email_pec") or "").strip():
+            r["segnali"] = (r.get("segnali") or []) + [{
+                "tipo": "email_pec",
+                "segnale": f"PEC {pec[0]} {provenienza}, in email_pec — ripasso del {oggi}"}]
+            sb.table("aziende").update({"email_pec": pec[0], "segnali": r["segnali"]}
+                                       ).eq("id", r["id"]).execute()
+            r["email_pec"] = pec[0]
+
     resto = []
     for r in righe:
+        salva_pec(r, _email_da_cache(r["sito"], pec=True), "dalle pagine del sito in cache")
         trovate = _email_da_cache(r["sito"])
         if trovate:
             log(f"  [cache]    {r['ragione_sociale'][:44]:<46} {trovate[0]}")
@@ -156,6 +173,7 @@ def giro(scrivi: bool, log=print) -> None:
                 except Exception as e:  # noqa: BLE001
                     log(f"  fetch KO {r['ragione_sociale'][:30]}: {type(e).__name__}")
                     dati = None
+                salva_pec(r, (dati or {}).get("markdown", ""), f"dalla pagina {url}")
                 trovate = fetch.estrai_email((dati or {}).get("markdown", ""),
                                              r["sito"])
                 if trovate:
@@ -174,6 +192,46 @@ def giro(scrivi: bool, log=print) -> None:
     log(f"\nRIPASSO: {da_cache} email dalla cache (gratis), "
         f"{da_scarico} dalla pagina contatti scaricata, "
         f"{len(senza)} restano senza")
+
+
+def sposta_pec(scrivi: bool, log=print) -> None:
+    """Una tantum (7/10): le PEC finite in email_aziendale passano in
+    email_pec. Niente si cancella: la PEC resta in email_pec, il passaggio
+    in un segnale; al suo posto un'altra email NON PEC del sito in cache,
+    altrimenti email_aziendale vuota (la scheda torna fra le senza email)."""
+    import db
+    sb = db.client()
+    righe, da = [], 0
+    while True:
+        b = (sb.table("aziende").select("id,ragione_sociale,sito,email_aziendale,email_pec,segnali")
+             .not_.is_("email_aziendale", "null").range(da, da + 999).execute().data)
+        righe += b
+        if len(b) < 1000:
+            break
+        da += 1000
+    pec = [r for r in righe if fetch.e_pec(r["email_aziendale"])]
+    oggi = datetime.date.today().isoformat()
+    sostituite = 0
+    for r in pec:
+        vecchia = r["email_aziendale"].strip()
+        altra = (_email_da_cache(r["sito"]) or [None])[0] if (r.get("sito") or "").strip() else None
+        sostituite += bool(altra)
+        log(f"  {r['ragione_sociale'][:44]:<46} {vecchia} -> "
+            f"{altra or 'email_aziendale vuota'}")
+        if not scrivi:
+            continue
+        segnale = (f"PEC {vecchia} spostata da email_aziendale a email_pec"
+                   + (f"; email_aziendale ora {altra}, dalle pagine del sito in cache"
+                      if altra else "; nessun'altra email nella cache del sito: "
+                                    "email_aziendale vuota")
+                   + f" — ripasso del {oggi}")
+        sb.table("aziende").update({
+            "email_pec": (r.get("email_pec") or "").strip() or vecchia,
+            "email_aziendale": altra,
+            "segnali": (r.get("segnali") or []) + [{"tipo": "email_pec", "segnale": segnale}],
+        }).eq("id", r["id"]).execute()
+    log(f"{'SPOSTATE' if scrivi else 'MISURA'}: {len(pec)} PEC in email_aziendale, "
+        f"{sostituite} con un'altra email del sito, {len(pec) - sostituite} restano senza")
 
 
 if __name__ == "__main__":
@@ -195,4 +253,7 @@ if __name__ == "__main__":
 
     from dotenv import load_dotenv
     load_dotenv()
-    giro(scrivi="--scrivi" in sys.argv)
+    if "--pec" in sys.argv:
+        sposta_pec(scrivi="--scrivi" in sys.argv)
+    else:
+        giro(scrivi="--scrivi" in sys.argv)

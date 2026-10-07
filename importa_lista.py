@@ -36,6 +36,7 @@ import config  # noqa: F401  (carica gli enum usati da db)
 import costi
 import db
 import dedup
+import fetch
 import main as ciclo  # analizza() e arricchisci_ab() sono il ciclo vero
 
 
@@ -195,7 +196,9 @@ def main_() -> int:
                         ciclo_id=ciclo_id, pagine=esito["pagine"],
                         costo=esito["costo"])
                     # i recapiti del 2020 solo dove il sito non da' di meglio
-                    if not riga.get("email_aziendale") and azienda.get("email_lista"):
+                    if fetch.e_pec(azienda.get("email_lista")):
+                        riga["email_pec"] = riga.get("email_pec") or azienda["email_lista"]
+                    elif not riga.get("email_aziendale") and azienda.get("email_lista"):
                         riga["email_aziendale"] = azienda["email_lista"]
                         email_lista_usate += 1
                     if riga.get("telefono") == azienda.get("telefono") \

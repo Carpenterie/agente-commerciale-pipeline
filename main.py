@@ -150,6 +150,14 @@ async def analizza(azienda: dict, crawler, client, totali: dict) -> dict:
         return esito
 
     esito["dati"] = dati
+    # una PEC non e' mai l'email commerciale: va in email_pec, e il posto
+    # resta libero per il ripiego qui sotto
+    if fetch.e_pec(dati.get("email_aziendale")):
+        dati["email_pec"], dati["email_aziendale"] = dati["email_aziendale"].strip(), None
+    if not dati.get("email_pec"):
+        pec = fetch.estrai_email(contenuto, sito, pec=True)
+        if pec:
+            dati["email_pec"] = pec[0]
     # ripiego deterministico: se il modello non ha estratto l'email ma e'
     # nel testo che aveva davanti, la prende il regex (caso Metalli e
     # Servizi della diagnosi del 29/9)

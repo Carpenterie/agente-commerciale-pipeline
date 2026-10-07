@@ -20,6 +20,7 @@ from __future__ import annotations
 import os
 
 import config
+import fetch
 from data import comuni_lazio
 
 MOTIVAZIONE_NO_SITO = "nessuna fonte web disponibile — valutazione telefonica"
@@ -212,7 +213,13 @@ def riga_azienda(scheda: dict, dati: dict | None = None,
         # puo' riferirsi a una sede diversa da quella della scheda.
         "provincia": _provincia(scheda, dati, anagrafica),
         "regione": _testo(dati.get("sede_regione")),
-        "email_aziendale": _testo(dati.get("email_aziendale")),
+        # una PEC non e' mai email_aziendale (anche se arriva per un'altra
+        # strada): sta in email_pec, che le email commerciali non usano
+        "email_aziendale": (None if fetch.e_pec(dati.get("email_aziendale"))
+                            else _testo(dati.get("email_aziendale"))),
+        "email_pec": (_testo(dati.get("email_pec"))
+                      or (_testo(dati.get("email_aziendale"))
+                          if fetch.e_pec(dati.get("email_aziendale")) else None)),
         "telefono": _testo(dati.get("telefono")) or _testo(scheda.get("telefono")),
         "categoria": categoria,
         "lavora_acciaio": _enum(dati.get("lavora_acciaio"), config.ENUM_TERNARIO,
@@ -334,6 +341,10 @@ def _nessun_delete_nel_repo() -> list[str]:
 
 
 if __name__ == "__main__":
+    r = riga_azienda({"nome": "X"}, dati={"email_aziendale": "x@pec.it"})
+    assert r["email_aziendale"] is None and r["email_pec"] == "x@pec.it", r
+    r = riga_azienda({"nome": "X"}, dati={"email_aziendale": "a@x.it", "email_pec": "x@legalmail.it"})
+    assert (r["email_aziendale"], r["email_pec"]) == ("a@x.it", "x@legalmail.it")
     assert _enum("SI", config.ENUM_TERNARIO, "non_determinabile") == "si"
     assert _enum("ALTA", config.ENUM_CONFIDENZA, "bassa") == "alta"
     assert _enum("", config.ENUM_CONFIDENZA, "bassa") == "bassa"
@@ -386,7 +397,7 @@ if __name__ == "__main__":
     assert r["livello_fornitura"] == "kit"  # categoria fabbro -> kit
     assert set(r) <= {  # nessuna colonna inventata rispetto allo schema reale
         "ciclo_id", "ragione_sociale", "partita_iva", "dominio", "sito", "comune",
-        "provincia", "regione", "email_aziendale", "telefono", "categoria",
+        "provincia", "regione", "email_aziendale", "email_pec", "telefono", "categoria",
         "lavora_acciaio", "officina_propria", "struttura", "n_dipendenti",
         "materiali", "gamma", "classe", "confidenza", "motivazione", "segnali",
         "livello_fornitura", "prodotto_apertura", "leva_commerciale",
