@@ -63,7 +63,10 @@ def _chiama(percorso: str, token: str, log) -> dict | list | None:
                                  headers={"Authorization": f"Bearer {token}"})
     try:
         with urllib.request.urlopen(req, timeout=60) as r:
-            corpo = json.load(r)
+            grezzo = r.read()
+        if not grezzo.strip():
+            return None     # 204 / corpo vuoto: nessun risultato, non un errore
+        corpo = json.loads(grezzo)
         if percorso.startswith(config.ENDPOINT_OPENAPI):
             # la visura e' pagata: il registro del wallet la scala (7/10)
             import crediti
