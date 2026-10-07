@@ -42,11 +42,12 @@ MOTIVAZIONE_FUORI = "fuori territorio"
 
 
 def per_esteso(r: dict) -> bool:
-    """Il difetto del 7/10: provincia di Maps per esteso ma attiva."""
+    """Fuori per la provincia di Maps, che oggi e' attiva: il difetto del
+    7/10 (scritta per esteso) e le sigle delle regioni aperte il 7/10 —
+    le 13 schede approvate dal committente."""
     for s in r.get("segnali") or []:
         m = RE_ESTESA.match(s.get("segnale") or "")
         if s.get("tipo") == "territorio" and s.get("esito") == "fuori" and m \
-                and len(m.group(1)) > 2 \
                 and (config.sigla_provincia(m.group(1)) or "").upper() in config.SIGLE_ATTIVE:
             return True
     return False
@@ -55,6 +56,18 @@ def per_esteso(r: dict) -> bool:
 def provincia(r: dict) -> str:
     return ((r.get("provincia") or "").strip().upper()
             or (comuni.provincia_di(r.get("comune")) or ""))
+
+
+def regione(r: dict) -> str:
+    """Dalla provincia o dal comune; se mancano entrambi, dal CAP scritto
+    nel segnale di fuori territorio (4 schede toscane al 7/10)."""
+    p = provincia(r)
+    if p:
+        return config.REGIONE_DI.get(p, "")
+    testo = " ".join(s.get("segnale") or "" for s in r.get("segnali") or [])
+    regioni = {reg for cap in re.findall(r"cap (\d{5})", testo)
+               for reg, d in config.REGIONI.items() if cap[:2] in d["cap"]}
+    return regioni.pop() if len(regioni) == 1 else ""
 
 
 def gruppo(r: dict) -> str:
@@ -68,8 +81,7 @@ def gruppo(r: dict) -> str:
 
 
 def scelte(righe: list[dict], regione: str, anche_per_esteso: bool) -> list[dict]:
-    province = set(config.REGIONI[regione]["province"])
-    return [r for r in righe if fuori(r) and (provincia(r) in province
+    return [r for r in righe if fuori(r) and (globals()["regione"](r) == regione
                                               or (anche_per_esteso and per_esteso(r)))]
 
 
@@ -107,7 +119,7 @@ def main() -> int:
     sel = scelte(righe, regione, anche)
     per_gruppo = collections.Counter(gruppo(r) for r in sel)
     print(f"{regione}{' + provincia per esteso' if anche else ''}: {len(sel)} schede fuori da rimettere dentro")
-    print("  con la provincia vuota (trovate dal comune):",
+    print("  con la provincia vuota (trovate da comune o CAP):",
           sum(not (r.get("provincia") or "").strip() for r in sel),
           "| per il difetto della provincia per esteso:", sum(per_esteso(r) for r in sel))
     for g, n in per_gruppo.most_common():
@@ -149,6 +161,11 @@ if __name__ == "__main__":
                                                                "segnale": "cap 20121"}]}],
                       "Toscana", False) == [r]
         assert gruppo({**r, "segnali": [{"tipo": "doppione"}]}).startswith("resta fuori")
+        assert regione({"segnali": [{"tipo": "territorio", "esito": "fuori",
+                                     "segnale": "cap 56121"}]}) == "Toscana"
+        assert regione({"segnali": [{"segnale": "cap 20251; cap 81020"}]}) == "Campania"
+        assert per_esteso({"segnali": [{"tipo": "territorio", "esito": "fuori",
+                                        "segnale": "provincia PE da Google Maps"}]})
         print("ok")
         sys.exit(0)
     from dotenv import load_dotenv
