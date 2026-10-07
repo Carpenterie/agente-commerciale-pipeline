@@ -81,9 +81,13 @@ def giro(ciclo: str, classi: set, per_nome: set, scrivi: bool, log=print) -> Non
                    "piva": r.get("partita_iva") or ""}
         dati = {"partita_iva": r.get("partita_iva") or "", "sede_comune": r.get("comune") or "",
                 "categoria": r.get("categoria") or ""}
-        esito = {"classe": r["classe"]}
+        # la posizione di Maps decide se una sede legale altrove e' un'unita'
+        # locale (segnale territorio scritto dal ciclo, "... da Google Maps")
+        terr = next((s for s in r.get("segnali") or [] if s.get("tipo") == "territorio"), None)
+        esito = {"classe": r["classe"], "territorio": terr}
         anagrafica, segnali = main.applica_visura(azienda, dati, esito, totali, stat,
-                                                  r.get("provincia") or "")
+                                                  r.get("provincia") or "",
+                                                  per_nome=tuple(per_nome))
         agg = campi_da_visura(r, anagrafica or {})
         if esito["classe"] != r["classe"]:
             agg["classe"] = esito["classe"]
@@ -103,6 +107,7 @@ def giro(ciclo: str, classi: set, per_nome: set, scrivi: bool, log=print) -> Non
         stat["visurate"] += 1
     log(f"\nvisurate {stat['visurate']}, agganciate {stat['arricchite']}, non agganciate "
         f"{stat.get('visure_non_agganciate', 0)}, errori {stat.get('errori', 0)}")
+    log(f"P.IVA cessate in visura (segnale informativo): {stat.get('piva_cessate', 0)}")
     log(f"classe cambiata per la regola dei fabbri: {len(cambi)}")
     for nome, prima, dopo in cambi:
         log(f"  {nome[:45]}: {prima} -> {dopo}")
@@ -110,7 +115,64 @@ def giro(ciclo: str, classi: set, per_nome: set, scrivi: bool, log=print) -> Non
     log(f"residuo Openapi dichiarato: {crediti.residuo_openapi()} EUR")
 
 
+def sede_legale(scrivi: bool, log=print) -> None:
+    """Una tantum (7/10): le schede escluse per la sede in VISURA fuori dalle
+    regioni attive, ma che Maps colloca nel territorio, diventano unita'
+    locali: segnale informativo al posto dell'esclusione, e comune e
+    provincia tornano quelli di Maps (dai file di sourcing)."""
+    import datetime
+    import glob
+    import json
+    import db
+    import dedup
+    import main
+    sb = db.client()
+    righe, i = [], 0
+    while True:
+        b = (sb.table("aziende").select("id,ragione_sociale,comune,provincia,dominio,classe,stato,segnali")
+             .order("id").range(i, i + 999).execute().data)
+        righe += b
+        if len(b) < 1000:
+            break
+        i += 1000
+    maps = {}
+    for f in glob.glob("cache/sourcing_*.json"):
+        for x in json.load(open(f))["schede"]:
+            if x.get("fonte") == "maps":
+                for k in (dedup.dominio_azienda(x.get("sito") or ""), dedup.norm_ragione(x.get("nome") or "")):
+                    if k:
+                        maps.setdefault(k, x)
+    oggi = datetime.date.today().isoformat()
+    n = 0
+    for r in righe:
+        segn = r.get("segnali") or []
+        sede = [x for x in segn if x.get("tipo") == "fuori_territorio_sede_dichiarata"
+                and (x.get("segnale") or "").startswith("sede in visura")]
+        terr = next((x for x in segn if x.get("tipo") == "territorio"), None)
+        if not sede or not main.maps_nel_territorio(terr):
+            continue
+        m = maps.get(r.get("dominio") or "") or maps.get(dedup.norm_ragione(r["ragione_sociale"]))
+        agg = {"segnali": [x for x in segn if x not in sede] + [{
+            "tipo": "sede_legale_fuori_regione", "sede": sede[0].get("sede"),
+            "segnale": f"{sede[0]['segnale'].replace(', fuori dalle regioni attive', '')}; "
+                       f"unita' locale nel territorio secondo Google Maps (rimessa dentro il {oggi})"}]}
+        if m:
+            agg["comune"] = m.get("comune") or r.get("comune")
+            agg["provincia"] = config.sigla_provincia(m.get("provincia") or "") or r.get("provincia")
+        n += 1
+        log(f"  [{r['classe']}, {r['stato']}] {r['ragione_sociale'][:40]:<41} {r.get('comune')} "
+            f"({r.get('provincia')}) -> {agg.get('comune', '?')} ({agg.get('provincia', '?')}) | {sede[0].get('sede')}")
+        if scrivi:
+            sb.table("aziende").update(agg).eq("id", r["id"]).execute()
+    log(f"{'RIMESSE DENTRO' if scrivi else 'DA RIMETTERE DENTRO'}: {n}")
+
+
 if __name__ == "__main__":
+    if "--sede-legale" in sys.argv:
+        from dotenv import load_dotenv
+        load_dotenv()
+        sede_legale("--scrivi" in sys.argv)
+        sys.exit(0)
     if "--test" in sys.argv:
         righe = [{"classe": "A", "partita_iva": "1"}, {"classe": "A", "partita_iva": ""},
                  {"classe": "B", "partita_iva": "2"}, {"classe": "B", "partita_iva": None},
@@ -124,6 +186,30 @@ if __name__ == "__main__":
                      "struttura": "piccola"}, a
         assert campi_da_visura({"partita_iva": ""}, {"piva": "999"}) == {"partita_iva": "999"}
         assert campi_da_visura({}, {}) == {}
+        # le regole di main.applica_visura con una visura finta (niente rete)
+        import main
+        finta = {}
+        main.arricchimento_sicuro = lambda *a, **k: dict(finta)
+        mappa = {"esito": "dentro", "segnale": "cap 50053 da Google Maps"}
+        st = collections.Counter(arricchite=0, scesi_per_organico=0)
+        finta.update(piva="1", stato="ATTIVA", sede_comune="PALERMO", sede_provincia="PA",
+                     dipendenti=5, aggancio="piva")
+        e = {"classe": "B", "territorio": mappa}
+        an, sg = main.applica_visura({"nome": "IDS"}, {"partita_iva": "1"}, e, {}, st)
+        tipi = [x["tipo"] for x in sg]
+        assert tipi == ["visura", "sede_legale_fuori_regione"], tipi      # unita' locale
+        assert "sede_comune" not in an and an["dipendenti"] == 5         # resta Maps
+        e = {"classe": "A", "territorio": {"esito": "incerto", "segnale": "x"}}
+        _, sg = main.applica_visura({"nome": "Turra"}, {"partita_iva": "1"}, e, {}, st)
+        assert sg[-1]["tipo"] == "fuori_territorio_sede_dichiarata"     # solo sito/Exa
+        finta.update(stato="CESSATA", sede_provincia="PI", sede_comune="PISA")
+        an, sg = main.applica_visura({"nome": "X"}, {"partita_iva": "1"}, {"classe": "A"}, {}, st)
+        assert an == {} and [x["tipo"] for x in sg] == ["visura", "piva_cessata"], sg
+        # variante 2: senza P.IVA una C (o una B) non si cerca per nome
+        finta.update(stato="ATTIVA")
+        assert main.applica_visura({"nome": "Y"}, {}, {"classe": "C"}, {}, st) == ({}, [])
+        assert main.applica_visura({"nome": "Y"}, {}, {"classe": "C"}, {}, st,
+                                   per_nome=("C",))[1][0]["tipo"] == "visura"
         print("ok")
         sys.exit(0)
 

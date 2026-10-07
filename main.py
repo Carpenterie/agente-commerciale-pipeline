@@ -224,7 +224,7 @@ def arricchisci_ab(azienda: dict, esito: dict, totali: dict,
         if esito["classe"] == "A" and preliminare != "A":
             stat["saliti_ad_A"] += 1
 
-    if esito["classe"] not in config.CLASSI_DA_ARRICCHIRE:
+    if esito["classe"] not in config.CLASSI_VISURA:
         return {}, segnali
 
     stat["arricchibili"] = stat.get("arricchibili", 0) + 1
@@ -239,14 +239,32 @@ def arricchisci_ab(azienda: dict, esito: dict, totali: dict,
     return anagrafica, segnali + dalla_visura
 
 
+def maps_nel_territorio(territorio_esito: dict | None) -> bool:
+    """La posizione viene da Google Maps (CAP o provincia della scheda) ed
+    e' in una regione attiva: li' l'azienda ha davvero una sede operativa."""
+    t = territorio_esito or {}
+    return t.get("esito") in ("dentro", "lazio") and "da Google Maps" in (t.get("segnale") or "")
+
+
 def applica_visura(azienda: dict, dati: dict, esito: dict, totali: dict,
-                   stat: dict, provincia: str = "") -> tuple[dict, list]:
-    """La visura e le sue tre regole, UGUALI nel ciclo e nel ripasso visure
-    (visure.py, 7/10): aggancio affidabile o niente, sede in visura fuori
-    dalle regioni attive -> segnale, fabbro con organico ampio -> una classe
-    in meno (esito["classe"] viene aggiornata qui). -> (anagrafica, segnali)."""
+                   stat: dict, provincia: str = "",
+                   per_nome: tuple | None = None) -> tuple[dict, list]:
+    """La visura e le sue regole, UGUALI nel ciclo e nel ripasso visure
+    (visure.py, 7/10): aggancio affidabile o niente; stato della visura
+    salvato in scheda; P.IVA cessata -> segnale informativo, l'azienda resta;
+    sede legale fuori dalle regioni attive -> esclusione, ma SOLO se Maps non
+    la colloca nel territorio (altrimenti e' un'unita' locale: segnale
+    informativo e la posizione resta quella di Maps); fabbro con organico
+    ampio -> una classe in meno (esito["classe"] aggiornata qui).
+    `per_nome`: classi per cui, senza P.IVA, si cerca per nome (default
+    config.CLASSI_VISURA_PER_NOME). -> (anagrafica, segnali)."""
+    import datetime
     nome = azienda.get("nome", "")
     segnali: list = []
+    per_nome = config.CLASSI_VISURA_PER_NOME if per_nome is None else per_nome
+    if not (dati.get("partita_iva") or azienda.get("piva") or "").strip() \
+            and esito.get("classe") not in per_nome:
+        return {}, segnali      # variante delle visure: niente ricerca per nome
     anagrafica = arricchimento_sicuro(
         azienda, nome, totali, provincia,
         piva=(dati.get("partita_iva") or "").strip(),
@@ -260,6 +278,21 @@ def applica_visura(azienda: dict, dati: dict, esito: dict, totali: dict,
         segnali.append({"tipo": "visura_non_agganciata", "nota": motivo_visura})
         anagrafica = {}
         stat["visure_non_agganciate"] = stat.get("visure_non_agganciate", 0) + 1
+    if anagrafica:
+        stato_v = (anagrafica.get("stato") or "").upper() or None
+        segnali.append({"tipo": "visura", "stato": stato_v,
+                        "aggancio": anagrafica.get("aggancio"),
+                        "il": datetime.date.today().isoformat()})
+        if stato_v in arricchimento.STATI_MORTI:
+            # P.IVA del sito di un'entita' cessata: quasi sempre un footer
+            # vecchio o una trasformazione societaria (le 9 del 22/9). Non
+            # si esclude e non si usano i dati di un'altra entita'
+            print(f"  P.IVA cessata in visura ({stato_v}): da verificare")
+            segnali.append({"tipo": "piva_cessata",
+                            "segnale": f"P.IVA del sito cessata in visura ({stato_v}): "
+                                       f"da verificare"})
+            stat["piva_cessate"] = stat.get("piva_cessate", 0) + 1
+            anagrafica = {}
     if anagrafica:
         stat["arricchite"] += 1
         comune_sito = (dati.get("sede_comune") or "").strip()
@@ -283,6 +316,19 @@ def applica_visura(azienda: dict, dati: dict, esito: dict, totali: dict,
         sigla_v = (config.sigla_provincia(
             anagrafica.get("sede_provincia") or "") or "").upper()
         if len(sigla_v) == 2 and sigla_v in config.SIGLE_PROVINCE.values() \
+                and sigla_v not in config.SIGLE_ATTIVE \
+                and maps_nel_territorio(esito.get("territorio")):
+            # unita' locale: Maps la mette nel territorio, la sede legale e'
+            # altrove (IDS Serramenti: showroom a Empoli, sede a Palermo).
+            # Informativo, e la posizione in scheda resta quella di Maps
+            sede_v = anagrafica.pop("sede_comune", "") or "?"
+            anagrafica.pop("sede_provincia", None)
+            segnali.append({
+                "tipo": "sede_legale_fuori_regione", "sede": f"{sede_v} ({sigla_v})",
+                "segnale": f"sede legale in visura: {sede_v} ({sigla_v}); unita' "
+                           f"locale nel territorio secondo Google Maps"})
+            print(f"  sede legale fuori regione ({sede_v}, {sigla_v}), unita' locale da Maps")
+        elif len(sigla_v) == 2 and sigla_v in config.SIGLE_PROVINCE.values() \
                 and sigla_v not in config.SIGLE_ATTIVE:
             sede_v = anagrafica.get("sede_comune") or "?"
             segnali.append({

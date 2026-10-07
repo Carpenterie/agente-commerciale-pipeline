@@ -309,6 +309,12 @@ CHIAMATE_OPENAPI_GRATUITE_MESE = 30
 # arricchimento.da_arricchire, e con l'aggancio per nome valgono le regole
 # prudenti di arricchimento.decidi().
 CLASSI_DA_ARRICCHIRE = ("A", "B", "C")
+# VISURE (Openapi), decise a parte dal 7/10: variante 2 finche' il cliente
+# non sceglie — visure su A e B, ricerca per nome (senza P.IVA nel sito)
+# solo per le A, nessuna visura sulle C. La variante 1 e' ("A","B","C") per
+# entrambe. CLASSI_DA_ARRICCHIRE resta per il ripasso email.
+CLASSI_VISURA = ("A", "B")
+CLASSI_VISURA_PER_NOME = ("A",)
 
 # --- Reputazione Google (dalla scheda Maps) ---
 # ATTENZIONE: dal 2026-09-07 queste soglie NON assegnano piu' la classe A.
