@@ -182,9 +182,11 @@ def _chiama(client, prompt: str, tot: dict, max_tokens: int = 900) -> dict:
 
 
 def raccogli(marchi: list[str], regioni: list[str], visti: set, log=print,
-             sagome: int = 2, nazionali: bool = True) -> tuple[list[dict], float]:
+             sagome: int = 2, nazionali: bool = True,
+             gia_fatte: tuple = ()) -> tuple[list[dict], float]:
     chiave = os.environ["EXA_API_KEY"]
-    query = [s.format(m=m, r=r) for m in marchi for r in regioni for s in SAGOME[:sagome]]
+    query = [s.format(m=m, r=r) for m in marchi if m not in gia_fatte
+             for r in regioni for s in SAGOME[:sagome]]
     if nazionali:
         query += [f"agente o rappresentante {m} serramenti Italia" for m in marchi]
     nuovi, speso = [], 0.0
@@ -270,7 +272,7 @@ def scheda_agenzia(d: dict, url: str, marchi_trovati: list) -> dict:
 
 def giro(marchi: list[str], regioni: list[str], cache: str, scrivi: bool, log=print,
          senza_ricerca: bool = False, sagome: int = 2, nazionali: bool = True,
-         agenzie: bool = True) -> None:
+         agenzie: bool = True, gia_fatte: tuple = ()) -> None:
     import config
     import costi
     import db
@@ -303,7 +305,7 @@ def giro(marchi: list[str], regioni: list[str], cache: str, scrivi: bool, log=pr
         pagine, speso_p = [x for x in _righe_json(f_pag) if x] if f_pag.exists() else [], 0.0
         log(f"raccolta ripresa da {f_racc.name}: {len(nuovi)} profili, {len(pagine)} pagine")
     else:
-        nuovi, speso_exa = (raccogli(marchi, regioni, visti, log, sagome, nazionali)
+        nuovi, speso_exa = (raccogli(marchi, regioni, visti, log, sagome, nazionali, gia_fatte)
                             if cerca and (regioni or nazionali) else ([], 0.0))
         pagine, speso_p = pagine_agenzie(marchi, log) if cerca and agenzie else ([], 0.0)
         if cerca:
@@ -467,4 +469,5 @@ if __name__ == "__main__":
          [r.strip() for r in arg("--regioni").split(",") if r.strip()],
          arg("--cache"), "--scrivi" in sys.argv, senza_ricerca="--senza-ricerca" in sys.argv,
          sagome=int(arg("--sagome") or 2), nazionali="--senza-nazionali" not in sys.argv,
-         agenzie="--senza-agenzie" not in sys.argv)
+         agenzie="--senza-agenzie" not in sys.argv,
+         gia_fatte=tuple(x.strip() for x in arg("--gia-fatte").split(",") if x.strip()))

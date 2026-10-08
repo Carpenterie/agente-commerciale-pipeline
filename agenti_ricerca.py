@@ -253,8 +253,11 @@ def completa_nomi(log=print) -> None:
     sb = db.client()
     righe, i = [], 0
     while True:
+        # le agenzie di rappresentanza (fonte sito_agenzia, 8/10) restano senza
+        # nome e cognome: l'app ordina per cognome e un'agenzia non ne ha uno
         blocco = (sb.table("agenti").select("id,nome_completo")
-                  .is_("cognome", "null").range(i, i + 999).execute().data)
+                  .is_("cognome", "null").or_("fonte.is.null,fonte.neq.sito_agenzia")
+                  .range(i, i + 999).execute().data)
         righe += blocco
         if len(blocco) < 1000:
             break
