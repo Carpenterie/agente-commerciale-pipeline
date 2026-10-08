@@ -63,8 +63,14 @@ def _gira(argv: list[str], log: pathlib.Path) -> int:
                               stdout=f, stderr=subprocess.STDOUT).returncode
 
 
+def _testo(log: pathlib.Path) -> str:
+    """Il log, o vuoto se non c'e' ancora (8/10: il log delle bozze letto
+    prima delle bozze ha fermato la sequenza dopo Prato)."""
+    return log.read_text(errors="replace") if log.exists() else ""
+
+
 def _ultima(log: pathlib.Path, pattern: str) -> str:
-    righe = [r for r in log.read_text(errors="replace").splitlines() if re.search(pattern, r)]
+    righe = [r for r in _testo(log).splitlines() if re.search(pattern, r)]
     return re.sub(r"\x1b\[[0-9;]*m", "", righe[-1]).strip() if righe else ""
 
 
@@ -85,7 +91,7 @@ def riepilogo(sb, provincia: str, avvio: str, log: pathlib.Path, log_bozze: path
             break
         i += 1000
     classi = {k: sum(r["classe"] == k for r in righe) for k in ("A", "B", "C")}
-    testo_log = log.read_text(errors="replace")
+    testo_log = _testo(log)
     anomalie = {
         "siti non scaricabili": sum(r["esito_fetch"] == "FETCH_FALLITO" for r in righe),
         "visure fermate per credito": testo_log.count("STOP visure"),
@@ -108,6 +114,56 @@ def riepilogo(sb, provincia: str, avvio: str, log: pathlib.Path, log_bozze: path
     return testo, costo, c["id"]
 
 
+def ciclo_di(sb, provincia: str, avvio: str) -> str | None:
+    c = (sb.table("cicli_ricerca").select("id").eq("note", f"provincia {provincia}")
+         .gte("avviato_il", avvio).order("avviato_il", desc=True).limit(1).execute().data)
+    return c[0]["id"] if c else None
+
+
+def sequenza(regione: str, province: list[str], sb, gira, cartella_log: pathlib.Path,
+             file_riep: pathlib.Path, log=print) -> int:
+    """Le province una dopo l'altra. `gira(argv, file_log) -> codice` lancia
+    ciclo e bozze (nel test e' finto). Gli stop sono SOLO i tre previsti
+    (motivo_stop): un errore nel riepilogo si scrive e si va avanti."""
+    for p in province:
+        avvio = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        flog = cartella_log / f"pipeline-{p.lower()}.log"
+        flog_b = cartella_log / f"pipeline-bozze-{p.lower()}.log"
+        log(f"{datetime.datetime.now():%H:%M} {p}: ciclo (proiezione {proiezione(p):.2f} EUR)")
+        rc = gira(["main.py", "--provincia", p], flog)
+        rc_b, costo_b, costo, stop = None, 0.0, None, ""
+        try:
+            ciclo_id = ciclo_di(sb, p, avvio)
+        except Exception as e:  # noqa: BLE001
+            ciclo_id = None
+            log(f"  {p}: ciclo non leggibile ({type(e).__name__})")
+        if rc == 0 and ciclo_id:
+            log(f"{datetime.datetime.now():%H:%M} {p}: bozze del ciclo {ciclo_id[:8]}")
+            rc_b = gira(["salva_bozze.py", "--scrivi", "--ciclo", ciclo_id], flog_b)
+            t = re.findall(r"TOTALE\s+([\d.]+) EUR", _testo(flog_b))
+            costo_b = float(t[-1]) if t else 0.0
+        try:
+            testo, costo, _ = riepilogo(sb, p, avvio, flog, flog_b, costo_b)
+        except Exception as e:  # noqa: BLE001 - il riepilogo non ferma mai la sequenza
+            testo = (f"## {p}\n- ERRORE nel riepilogo ({type(e).__name__}: {str(e)[:160]}): "
+                     f"vedi {flog} e {flog_b}\n")
+        stop = motivo_stop(rc, rc_b, costo if costo is not None else 0.0, proiezione(p))
+        if costo is None and not stop:
+            testo += "- costo non verificabile: controllo del 150% saltato per questa provincia\n"
+        try:
+            with file_riep.open("a") as f:
+                f.write(testo + (f"- **SEQUENZA FERMATA: {stop}**\n" if stop else "") + "\n")
+        except OSError as e:
+            log(f"  riepilogo non scrivibile ({e})")
+        log(f"{datetime.datetime.now():%H:%M} {p}: fatto"
+            + (f", {costo:.2f} EUR" if costo is not None else "") + (f" — STOP: {stop}" if stop else ""))
+        if stop:
+            log(f"ESITO: sequenza {regione} FERMATA a {p}: {stop}")
+            return 1
+    log(f"ESITO: sequenza {regione} COMPLETATA ({len(province)} province)")
+    return 0
+
+
 def main() -> int:
     from dotenv import load_dotenv
     load_dotenv(QUI / ".env")
@@ -120,34 +176,11 @@ def main() -> int:
     except OSError:
         print("ESITO: un altro giro_regione e' gia' in esecuzione — esco")
         return 1
-    file_riep = QUI / "cache" / f"riepilogo_{regione}.md"
-    sequenza = ordine(regione, salta)
-    print(f"{datetime.datetime.now():%Y-%m-%d %H:%M} {regione}: {', '.join(sequenza)}", flush=True)
-    sb = db.client()
-    for p in sequenza:
-        avvio = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        log = pathlib.Path(f"/var/log/pipeline-{p.lower()}.log")
-        log_bozze = pathlib.Path(f"/var/log/pipeline-bozze-{p.lower()}.log")
-        print(f"{datetime.datetime.now():%H:%M} {p}: ciclo (proiezione {proiezione(p):.2f} EUR)", flush=True)
-        rc = _gira(["main.py", "--provincia", p], log)
-        _, _, ciclo_id = riepilogo(sb, p, avvio, log, log_bozze, 0.0)
-        rc_b, costo_b = None, 0.0
-        if rc == 0 and ciclo_id:
-            print(f"{datetime.datetime.now():%H:%M} {p}: bozze del ciclo {ciclo_id[:8]}", flush=True)
-            rc_b = _gira(["salva_bozze.py", "--scrivi", "--ciclo", ciclo_id], log_bozze)
-            t = re.findall(r"TOTALE\s+([\d.]+) EUR", log_bozze.read_text(errors="replace"))
-            costo_b = float(t[-1]) if t else 0.0
-        testo, costo, _ = riepilogo(sb, p, avvio, log, log_bozze, costo_b)
-        stop = motivo_stop(rc, rc_b, costo, proiezione(p))
-        with file_riep.open("a") as f:
-            f.write(testo + (f"- **SEQUENZA FERMATA: {stop}**\n" if stop else "") + "\n")
-        print(f"{datetime.datetime.now():%H:%M} {p}: fatto, {costo:.2f} EUR" +
-              (f" — STOP: {stop}" if stop else ""), flush=True)
-        if stop:
-            print(f"ESITO: sequenza {regione} FERMATA a {p}: {stop}")
-            return 1
-    print(f"ESITO: sequenza {regione} COMPLETATA ({len(sequenza)} province)")
-    return 0
+    province = ordine(regione, salta)
+    print(f"{datetime.datetime.now():%Y-%m-%d %H:%M} {regione}: {', '.join(province)}", flush=True)
+    return sequenza(regione, province, db.client(), _gira, pathlib.Path("/var/log"),
+                    QUI / "cache" / f"riepilogo_{regione}.md",
+                    log=lambda m: print(m, flush=True))
 
 
 if __name__ == "__main__":
@@ -159,6 +192,49 @@ if __name__ == "__main__":
         assert motivo_stop(0, 0, 10, 10) == "" and motivo_stop(0, 0, 15, 10) == ""
         assert "150%" in motivo_stop(0, 0, 15.1, 10)
         assert "ciclo" in motivo_stop(1, None, 0, 10) and "bozze" in motivo_stop(0, 1, 0, 10)
+        # PROVA A VUOTO: due province di fila con ciclo e bozze finti
+        import tempfile
+
+        class _Q:
+            def __init__(self, dati): self.dati = dati
+            def __getattr__(self, _): return lambda *a, **k: self
+            def execute(self): return type("R", (), {"data": self.dati})()
+
+        class _SB:
+            def __init__(self, rompi=False): self.rompi = rompi
+            def table(self, t):
+                if t == "aziende" and self.rompi:
+                    raise RuntimeError("riepilogo rotto apposta")
+                return _Q([{"id": "c-1", "avviato_il": "2026-10-08T10:00", "concluso_il": None,
+                            "n_trovate": 10, "n_analizzate": 5, "costo_eur": 3.0,
+                            "costo_apify_eur": 1, "costo_exa_eur": 0.5, "costo_anthropic_eur": 1.5,
+                            "costo_openapi_eur": 0}] if t == "cicli_ricerca"
+                          else [{"classe": "A", "esito_fetch": "OK"}])
+
+        lanciati = []
+
+        def finto(argv, flog):
+            lanciati.append(argv[0])
+            flog.write_text("territorio: 1 valutate\nESITO: ciclo COMPLETATO — prova\n"
+                            if argv[0] == "main.py" else "salvate: 1\nTOTALE 0.10 EUR\n")
+            return 0
+
+        for rompi in (False, True):
+            d = pathlib.Path(tempfile.mkdtemp())
+            lanciati.clear()
+            rc = sequenza("Toscana", ["PO", "MS"], _SB(rompi), finto, d, d / "riep.md", log=lambda m: None)
+            riep = (d / "riep.md").read_text()
+            assert rc == 0 and lanciati == ["main.py", "salva_bozze.py"] * 2, (rompi, lanciati)
+            assert riep.count("## PO") == 1 and riep.count("## MS") == 1, riep
+            assert ("ERRORE nel riepilogo" in riep) == rompi, riep
+        # il caso dell'8/10: log delle bozze ancora assente -> vuoto, nessun errore
+        assert _ultima(pathlib.Path("/non/esiste.log"), "x") == ""
+        # gli stop veri restano: ciclo in errore -> la seconda provincia non parte
+        d = pathlib.Path(tempfile.mkdtemp())
+        lanciati.clear()
+        rc = sequenza("Toscana", ["PO", "MS"], _SB(), lambda a, f: (lanciati.append(a[0]), 1)[1],
+                      d, d / "riep.md", log=lambda m: None)
+        assert rc == 1 and lanciati == ["main.py"] and "SEQUENZA FERMATA" in (d / "riep.md").read_text()
         print("ok", o)
         sys.exit(0)
     sys.exit(main())
