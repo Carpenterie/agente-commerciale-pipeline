@@ -6,6 +6,8 @@ la frase copiata alla lettera e controllata qui; mai dedotti.
     python agenti_marchi.py --marchi Finstral,Internorm,Isolcasa --regioni Lazio,Toscana --misura
     python agenti_marchi.py --marchi ... --regioni ... --cache FILE --scrivi
     python agenti_marchi.py --marchi ... --cache FILE --senza-ricerca --scrivi   # solo la cache
+    opzioni: --sagome 1|2, --senza-nazionali, --senza-agenzie (per dividere il giro
+    in tranche dentro i tetti; AGENTI_MARCHI_CARTELLA diversa per ogni tranche)
 
 --cache: profili gia' raccolti (jsonl url/nome/testo) da rivalutare.
 Per ogni profilo: gia' in tabella -> solo i marchi (update della colonna,
@@ -179,10 +181,12 @@ def _chiama(client, prompt: str, tot: dict, max_tokens: int = 900) -> dict:
     return classify.estrai_json(next(b.text for b in r.content if b.type == "text"))
 
 
-def raccogli(marchi: list[str], regioni: list[str], visti: set, log=print) -> tuple[list[dict], float]:
+def raccogli(marchi: list[str], regioni: list[str], visti: set, log=print,
+             sagome: int = 2, nazionali: bool = True) -> tuple[list[dict], float]:
     chiave = os.environ["EXA_API_KEY"]
-    query = [s.format(m=m, r=r) for m in marchi for r in regioni for s in SAGOME]
-    query += [f"agente o rappresentante {m} serramenti Italia" for m in marchi]
+    query = [s.format(m=m, r=r) for m in marchi for r in regioni for s in SAGOME[:sagome]]
+    if nazionali:
+        query += [f"agente o rappresentante {m} serramenti Italia" for m in marchi]
     nuovi, speso = [], 0.0
     for q in query:
         if speso >= EXA_TETTO_USD:
@@ -265,7 +269,8 @@ def scheda_agenzia(d: dict, url: str, marchi_trovati: list) -> dict:
 
 
 def giro(marchi: list[str], regioni: list[str], cache: str, scrivi: bool, log=print,
-         senza_ricerca: bool = False) -> None:
+         senza_ricerca: bool = False, sagome: int = 2, nazionali: bool = True,
+         agenzie: bool = True) -> None:
     import config
     import costi
     import db
@@ -298,8 +303,9 @@ def giro(marchi: list[str], regioni: list[str], cache: str, scrivi: bool, log=pr
         pagine, speso_p = [x for x in _righe_json(f_pag) if x] if f_pag.exists() else [], 0.0
         log(f"raccolta ripresa da {f_racc.name}: {len(nuovi)} profili, {len(pagine)} pagine")
     else:
-        nuovi, speso_exa = raccogli(marchi, regioni, visti, log) if cerca else ([], 0.0)
-        pagine, speso_p = pagine_agenzie(marchi, log) if cerca else ([], 0.0)
+        nuovi, speso_exa = (raccogli(marchi, regioni, visti, log, sagome, nazionali)
+                            if cerca and (regioni or nazionali) else ([], 0.0))
+        pagine, speso_p = pagine_agenzie(marchi, log) if cerca and agenzie else ([], 0.0)
         if cerca:
             f_racc.write_text("".join(json.dumps(x, ensure_ascii=False) + "\n" for x in nuovi))
             f_pag.write_text("".join(json.dumps(x, ensure_ascii=False) + "\n" for x in pagine))
@@ -459,4 +465,6 @@ if __name__ == "__main__":
     arg = lambda k: sys.argv[sys.argv.index(k) + 1] if k in sys.argv else ""
     giro([m.strip() for m in arg("--marchi").split(",") if m.strip()],
          [r.strip() for r in arg("--regioni").split(",") if r.strip()],
-         arg("--cache"), "--scrivi" in sys.argv, senza_ricerca="--senza-ricerca" in sys.argv)
+         arg("--cache"), "--scrivi" in sys.argv, senza_ricerca="--senza-ricerca" in sys.argv,
+         sagome=int(arg("--sagome") or 2), nazionali="--senza-nazionali" not in sys.argv,
+         agenzie="--senza-agenzie" not in sys.argv)
