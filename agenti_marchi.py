@@ -252,8 +252,21 @@ def giro(marchi: list[str], regioni: list[str], cache: str, scrivi: bool, log=pr
                                                 for m in marchi)]
     visti = set(per_url) | {normalizza_linkedin(p["url"]) for p in profili}
     cerca = scrivi and not senza_ricerca
-    nuovi, speso_exa = raccogli(marchi, regioni, visti, log) if cerca else ([], 0.0)
-    pagine, speso_p = pagine_rete(marchi, log) if cerca else ([], 0.0)
+    # raccolta e pagine su file: una ripartenza non ripaga Exa (8/10, la
+    # prova si e' bloccata a meta' e la raccolta stava solo in memoria)
+    f_racc, f_pag, f_fatti = (CARTELLA / "raccolta.jsonl", CARTELLA / "pagine.jsonl",
+                              CARTELLA / "fatti.jsonl")
+    if cerca and f_racc.exists():
+        nuovi, speso_exa = [x for x in _righe_json(f_racc) if x], 0.0
+        pagine, speso_p = [x for x in _righe_json(f_pag) if x] if f_pag.exists() else [], 0.0
+        log(f"raccolta ripresa da {f_racc.name}: {len(nuovi)} profili, {len(pagine)} pagine")
+    else:
+        nuovi, speso_exa = raccogli(marchi, regioni, visti, log) if cerca else ([], 0.0)
+        pagine, speso_p = pagine_rete(marchi, log) if cerca else ([], 0.0)
+        if cerca:
+            f_racc.write_text("".join(json.dumps(x, ensure_ascii=False) + "\n" for x in nuovi))
+            f_pag.write_text("".join(json.dumps(x, ensure_ascii=False) + "\n" for x in pagine))
+    fatti = {x["url"] for x in _righe_json(f_fatti) if x} if f_fatti.exists() else set()
     tutti = profili + nuovi
     in_tab = sum(normalizza_linkedin(p["url"]) in per_url for p in tutti)
     log(f"profili da valutare: {len(tutti)} (in tabella {in_tab}, da classificare {len(tutti) - in_tab})")
@@ -267,11 +280,17 @@ def giro(marchi: list[str], regioni: list[str], cache: str, scrivi: bool, log=pr
     descr = _descrizione(marchi)
     esiti = collections.Counter()
     per_marchio, per_stato = collections.Counter(), collections.Counter()
-    for p in tutti:
+    for k, p in enumerate(tutti, 1):
         if costi.costo_anthropic(tot["token_input"], tot["token_output"]) >= ANTHROPIC_TETTO_EUR:
             log("TETTO Anthropic: fermo")
             break
         u = normalizza_linkedin(p["url"])
+        if u in fatti:
+            continue
+        if k % 10 == 0:
+            log(f"  [{k}/{len(tutti)}] {dict(esiti)}")
+        with f_fatti.open("a") as f:
+            f.write(json.dumps({"url": u}) + "\n")
         try:
             if u in per_url:
                 d = _chiama(client, PROMPT_SOLO_MARCHI.format(marchi=descr, testo=p["testo"]), tot, 500)
