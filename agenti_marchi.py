@@ -11,10 +11,11 @@ la frase copiata alla lettera e controllata qui; mai dedotti.
 Per ogni profilo: gia' in tabella -> solo i marchi (update della colonna,
 unione con quelli che c'erano); non in tabella -> classificazione completa
 (prompt v4 di agenti_ricerca) + marchi, e se pertinente entra.
-Agenti presi dalla pagina di un marchio: abbinati con certezza (stesso nome
-e stessa regione) -> il marchio va sulla scheda esistente; abbinamento solo
-probabile -> scheda separata con nota "possibile doppione di <id>"; nessuno
--> scheda separata. Nessuna cancellazione; nomi di persone solo nei dati.
+Agenzie di rappresentanza dal loro sito (le pagine "rete vendita" dei
+marchi non elencano agenti: tolte l'8/10): abbinate con certezza (nome,
+regione e provincia/citta' o recapito) -> marchi sulla scheda esistente;
+abbinamento solo probabile -> scheda separata con "possibile doppione di
+<id>"; nessuno -> scheda separata (fonte sito_agenzia). Nessuna cancellazione; nomi di persone solo nei dati.
 I file di lavoro stanno in CARTELLA (fuori da git) e si svuotano a fine giro.
 """
 
@@ -30,7 +31,7 @@ import unicodedata
 
 from agenti_ricerca import (PROMPT_V4, _exa, _righe_json, normalizza_linkedin,
                             record_scheda)
-from data.marchi_agenti import MARCHI
+from data.marchi_agenti import CONTESTO, CONTESTO_CARATTERI, MARCHI
 
 CARTELLA = pathlib.Path(os.environ.get("AGENTI_MARCHI_CARTELLA")
                         or pathlib.Path(__file__).parent / "cache" / "agenti_marchi")
@@ -62,31 +63,36 @@ PROFILO (testo pubblico):
 
 Rispondi SOLO con JSON: {{"marchi": [{{"marchio": "...", "stato": "attuale|passato|non_chiaro", "evidenza": "..."}}]}}"""
 
-PROMPT_PAGINA = """Pagina pubblica del sito del produttore di serramenti {marchio}. Elenca SOLO gli AGENTI o le AGENZIE di vendita (rete commerciale del produttore) che la pagina nomina, con la zona. NON rivenditori, showroom, installatori, dealer o partner commerciali che vendono al cliente finale, NON dipendenti interni.
-Per ognuno: "nome" come scritto, "zona" (regioni o province), "citta" se c'e', "telefono", "email", "sito" se la pagina li riporta, "evidenza" = frase copiata alla lettera dalla pagina.
-
-PAGINA:
-{testo}
-
-Rispondi SOLO con JSON: {{"agenti": [{{"nome": "...", "zona": "...", "citta": "...", "telefono": "...", "email": "...", "sito": "...", "evidenza": "..."}}]}}"""
-
-
 def _norm(t: str | None) -> str:
     t = unicodedata.normalize("NFKD", (t or "").replace("’", "'"))
     t = "".join(c for c in t if not unicodedata.combining(c))
     return re.sub(r"\s+", " ", t).strip().casefold()
 
 
+def nel_settore(marchio: str, testo: str) -> bool:
+    """Per i marchi dal nome generico: il nome compare vicino a una parola
+    dei serramenti, o il testo cita il dominio del marchio."""
+    d = MARCHI[marchio]
+    if not d["generico"]:
+        return True
+    t = _norm(testo)
+    if d["dominio"] and d["dominio"] in t:
+        return True
+    return any(re.search(CONTESTO, t[max(0, m.start() - CONTESTO_CARATTERI):m.end() + CONTESTO_CARATTERI])
+               for m in re.finditer(d["regex"], t))
+
+
 def controlla(marchi: list, testo: str, ammessi: list[str], fonte: str, url: str) -> list[dict]:
     """Solo marchi dell'elenco, stato valido, evidenza LETTERALE nel testo
-    che nomina davvero il marchio. Il resto si scarta."""
+    che nomina davvero il marchio, e per i generici il contesto serramenti.
+    Il resto si scarta."""
     corpo, buoni = _norm(testo), []
     per_nome = {_norm(m): m for m in ammessi}
     for x in marchi or []:
         m = per_nome.get(_norm(x.get("marchio")))
         ev = (x.get("evidenza") or "").strip()
         if not m or len(_norm(ev)) < 6 or _norm(ev) not in corpo \
-                or not re.search(MARCHI[m]["regex"], _norm(ev)):
+                or not re.search(MARCHI[m]["regex"], _norm(ev)) or not nel_settore(m, testo):
             continue
         stato = x.get("stato") if x.get("stato") in STATI else "non_chiaro"
         buoni.append({"marchio": m, "stato": stato, "fonte": fonte, "url": url, "evidenza": ev[:300]})
@@ -198,33 +204,64 @@ def raccogli(marchi: list[str], regioni: list[str], visti: set, log=print) -> tu
     return nuovi, speso
 
 
-def pagine_rete(marchi: list[str], log=print) -> tuple[list[dict], float]:
-    """Le pagine pubbliche "rete vendita / agenti" dei siti dei marchi."""
+PROMPT_AGENZIA = """Pagina web pubblica. Rispondi se e' il sito di un'AGENZIA DI RAPPRESENTANZA o di un agente di commercio (chi rappresenta produttori e vende per loro ai rivenditori o alle imprese) — NON un produttore, NON un rivenditore o showroom che vende al cliente finale, NON un ente o un'associazione (es. un'agenzia di certificazione).
+Se lo e': il nome dell'agenzia, la zona coperta, le province (sigle) se scritte, telefono ed email se ci sono, le aziende rappresentate come scritte nella pagina.
+""" + REGOLE_MARCHI + """
+
+PAGINA ({url}):
+{testo}
+
+Rispondi SOLO con JSON: {{"agenzia": true|false, "nome": "...", "zona": "...", "province": [], "telefono": "...", "email": "...", "rappresentate": [], "marchi": [{{"marchio": "...", "stato": "attuale|passato|non_chiaro", "evidenza": "..."}}]}}"""
+
+SAGOME_AGENZIE = ("agenzia di rappresentanza serramenti aziende rappresentate {m}",
+                  "rappresentanze infissi e porte marchi rappresentati {m}")
+
+
+def pagine_agenzie(marchi: list[str], log=print) -> tuple[list[dict], float]:
+    """Siti di agenzie di rappresentanza che nominano un nostro marchio
+    (ricerca web Exa, non people). Fuori LinkedIn e i siti dei marchi."""
     import urllib.request
-    chiave, pagine, speso = os.environ["EXA_API_KEY"], [], 0.0
-    for m in marchi:
-        dom = MARCHI[m]["dominio"]
-        if not dom:
-            continue
+    chiave, viste, pagine, speso = os.environ["EXA_API_KEY"], set(), [], 0.0
+    domini_marchi = [d["dominio"] for d in MARCHI.values() if d["dominio"]]
+    for q in [s.format(m=m) for m in marchi for s in SAGOME_AGENZIE]:
         req = urllib.request.Request(
             "https://api.exa.ai/search",
-            data=json.dumps({"query": f"{m} serramenti rete vendita agenti di zona Italia",
-                             "type": "auto", "numResults": 5,
-                             "contents": {"text": {"maxCharacters": 8000}}}).encode(),
+            data=json.dumps({"query": q, "type": "auto", "numResults": 10,
+                             "contents": {"text": {"maxCharacters": 6000}}}).encode(),
             headers={"content-type": "application/json", "x-api-key": chiave})
         try:
             with urllib.request.urlopen(req, timeout=120) as r:
                 d = json.load(r)
         except Exception as e:  # noqa: BLE001
-            log(f"  pagine {m} KO ({type(e).__name__})")
+            log(f"  agenzie KO ({type(e).__name__})")
             continue
         speso += (d.get("costDollars") or {}).get("total", 0) or 0
         for res in d.get("results", []):
-            if dom in (res.get("url") or "").lower() and re.search(
-                    r"agent|rete vendita|rete commerciale|area manager", (res.get("text") or ""), re.I):
-                pagine.append({"marchio": m, "url": res["url"], "testo": res.get("text") or ""})
-    log(f"pagine rete vendita dei marchi: {len(pagine)} — Exa {speso:.3f} USD")
+            u, t = res.get("url") or "", res.get("text") or ""
+            dom = re.sub(r"^https?://(www\.)?", "", u).split("/")[0].lower()
+            if not dom or dom in viste or "linkedin.com" in dom or any(x in dom for x in domini_marchi):
+                continue
+            if re.search(r"rappresentanz|agenzia|mandant|aziende rappresentate|plurimandat", t, re.I) \
+                    and any(re.search(MARCHI[m]["regex"], _norm(t)) and nel_settore(m, t) for m in marchi):
+                viste.add(dom)
+                pagine.append({"url": u, "dominio": dom, "testo": t})
+    log(f"siti di agenzie candidati: {len(pagine)} — Exa {speso:.3f} USD")
     return pagine, speso
+
+
+def scheda_agenzia(d: dict, url: str, marchi_trovati: list) -> dict:
+    """Riga di `agenti` per un'agenzia trovata dal suo sito."""
+    import config
+    prov = [p for p in ((config.sigla_provincia(x) or "").upper() for x in d.get("province") or [])
+            if len(p) == 2]
+    return {"nome_completo": d.get("nome"), "ragione_sociale": d.get("nome"),
+            "classificazione": "da_valutare", "conflitto_stato": "da_verificare",
+            "agente_di_concorrente": False, "zona_da_confermare": not prov,
+            "province_coperte": prov or None, "residenza": d.get("zona"),
+            "telefono": (d.get("telefono") or None), "email": (d.get("email") or None),
+            "mandati_attuali": d.get("rappresentate") or None, "fonte": "sito_agenzia",
+            "note": f"agenzia di rappresentanza dal suo sito: {url}",
+            "mandati_marchi": marchi_trovati or None}
 
 
 def giro(marchi: list[str], regioni: list[str], cache: str, scrivi: bool, log=print,
@@ -262,7 +299,7 @@ def giro(marchi: list[str], regioni: list[str], cache: str, scrivi: bool, log=pr
         log(f"raccolta ripresa da {f_racc.name}: {len(nuovi)} profili, {len(pagine)} pagine")
     else:
         nuovi, speso_exa = raccogli(marchi, regioni, visti, log) if cerca else ([], 0.0)
-        pagine, speso_p = pagine_rete(marchi, log) if cerca else ([], 0.0)
+        pagine, speso_p = pagine_agenzie(marchi, log) if cerca else ([], 0.0)
         if cerca:
             f_racc.write_text("".join(json.dumps(x, ensure_ascii=False) + "\n" for x in nuovi))
             f_pag.write_text("".join(json.dumps(x, ensure_ascii=False) + "\n" for x in pagine))
@@ -326,39 +363,44 @@ def giro(marchi: list[str], regioni: list[str], cache: str, scrivi: bool, log=pr
                 log(f"  errore: {type(e).__name__}: {str(e)[:120]}")
 
     for pg in pagine:
-        try:
-            d = _chiama(client, PROMPT_PAGINA.format(marchio=pg["marchio"], testo=pg["testo"][:8000]), tot, 1500)
-        except Exception as e:  # noqa: BLE001
-            log(f"  pagina {pg['url']}: {type(e).__name__}")
+        if pg["url"] in fatti:
             continue
-        for ag in d.get("agenti") or []:
-            ev = (ag.get("evidenza") or "").strip()
-            if not ag.get("nome") or _norm(ev) not in _norm(pg["testo"]):
-                continue
-            regione = _regione_di({"province_coperte": [], "residenza": ag.get("zona") or ""})
-            regione = regione if regione in config.REGIONI else ""
-            marchio = [{"marchio": pg["marchio"], "stato": "attuale", "fonte": "sito_marchio",
-                        "url": pg["url"], "evidenza": ev[:300]}]
-            tipo, r = abbinamento(ag["nome"], regione, righe, ag)
-            if tipo == "certo":
-                sb.table("agenti").update({"mandati_marchi": unisci(r.get("mandati_marchi"), marchio)}
-                                          ).eq("id", r["id"]).execute()
-                esiti["dal sito del marchio, abbinati"] += 1
-            else:
-                nota = (f"agente dal sito {pg['marchio']} ({ag.get('zona') or 'zona n.d.'})"
-                        + (f"; possibile doppione di {r['id']} ({r['nome_completo']})" if r else ""))
-                sb.table("agenti").insert({
-                    "nome_completo": ag["nome"], "classificazione": "da_valutare",
-                    "conflitto_stato": "da_verificare", "agente_di_concorrente": False,
-                    "zona_da_confermare": not regione, "regione_prevalente": regione or None,
-                    "residenza": ag.get("zona"), "note": nota, "fonte": "sito_marchio",
-                    "mandati_marchi": marchio}).execute()
-                esiti["dal sito del marchio, schede nuove"] += 1
-                esiti["possibili doppioni"] += bool(r)
-            per_marchio[pg["marchio"]] += 1
-            per_stato["attuale"] += 1
+        with f_fatti.open("a") as f:
+            f.write(json.dumps({"url": pg["url"]}) + "\n")
+        try:
+            d = _chiama(client, PROMPT_AGENZIA.format(marchi=descr, url=pg["url"],
+                                                      testo=pg["testo"][:6000]), tot, 1200)
+        except Exception as e:  # noqa: BLE001
+            log(f"  agenzia {pg['dominio']}: {type(e).__name__}")
+            continue
+        if not d.get("agenzia") or not (d.get("nome") or "").strip():
+            esiti["siti non di agenzie"] += 1
+            continue
+        trovati = controlla(d.get("marchi"), pg["testo"], marchi, "sito_agenzia", pg["url"])
+        if not trovati:
+            esiti["agenzie senza marchi dichiarati"] += 1
+            continue
+        regione = _regione_di({"province_coperte": d.get("province") or [], "residenza": d.get("zona") or ""})
+        regione = regione if regione in config.REGIONI else ""
+        tipo, r = abbinamento(d["nome"], regione, righe, {"zona": d.get("zona"), "telefono": d.get("telefono"),
+                                                          "email": d.get("email")})
+        if tipo == "certo":
+            sb.table("agenti").update({"mandati_marchi": unisci(r.get("mandati_marchi"), trovati)}
+                                      ).eq("id", r["id"]).execute()
+            esiti["agenzie gia' in tabella, marchi aggiunti"] += 1
+        else:
+            rec = scheda_agenzia(d, pg["url"], trovati)
+            rec["regione_prevalente"] = regione or None
+            if r:
+                rec["note"] += f"; possibile doppione di {r['id']} ({r['nome_completo']})"
+            sb.table("agenti").insert(rec).execute()
+            esiti["agenzie nuove"] += 1
+            esiti["possibili doppioni"] += bool(r)
+        for x in trovati:
+            per_marchio[x["marchio"]] += 1
+            per_stato[x["stato"]] += 1
 
-    if esiti["agenti nuovi"] or esiti["dal sito del marchio, schede nuove"]:
+    if esiti["agenti nuovi"] or esiti["agenzie nuove"]:
         completa_nomi(log)
     log(f"\nESITI: {dict(esiti)}")
     log(f"per marchio: {dict(per_marchio)}")
@@ -398,7 +440,17 @@ if __name__ == "__main__":
         assert abbinamento("Ottavio Ferlini", "Toscana", tab) == ("possibile", tab[0])
         assert abbinamento("R. Scalzati", "Lazio", tab)[0] == "possibile"
         assert abbinamento("Ugo Tamburro", "Lazio", tab) == ("nessuno", None)
-        assert "nome generico" in _descrizione(["SPI"]) and "finstral" in _descrizione(["Finstral"])
+        assert "nome generico" in _descrizione(["SPI"]) and "finstral.com" in _descrizione(["Finstral"])
+        assert nel_settore("SPI", "Agente plurimandatario: finestre in PVC SPI e porte")
+        assert not nel_settore("SPI", "Responsabile SPI (Servizio Prevenzione Infortuni) presso ASL")
+        assert nel_settore("Uniform", "mandati: vedi uniform.it")
+        assert not nel_settore("Uniform", "Agente divise e uniform per ristoranti")
+        assert nel_settore("Internorm", "qualsiasi testo")
+        r = scheda_agenzia({"nome": "Rappresentanze Ferlini", "province": ["Roma", "LT"],
+                            "rappresentate": ["Internorm"], "telefono": ""}, "https://x.it",
+                           [{"marchio": "Internorm"}])
+        assert r["province_coperte"] == ["RM", "LT"] and r["fonte"] == "sito_agenzia" \
+            and r["telefono"] is None and r["agente_di_concorrente"] is False
         print("ok")
         sys.exit(0)
 
