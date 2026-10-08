@@ -478,6 +478,30 @@ _REGIONI_SIGLE = {
 }
 
 
+def record_scheda(s: dict) -> dict:
+    """La scheda classificata -> riga della tabella `agenti` (anche per
+    agenti_marchi.py)."""
+    c = s.get("conflitto") or {}
+    return {
+        "nome_completo": s.get("nome"),
+        "linkedin_url": normalizza_linkedin(s.get("url")),
+        "canale_prevalente": s.get("canale_prevalente"),
+        "canali_secondari": s.get("canali_secondari") or None,
+        "classificazione": "pertinente" if s["pertinente"] == "si" else "da_valutare",
+        "mandati_attuali": s.get("mandati_attuali") or None,
+        "conflitto_stato": c.get("stato") or "da_verificare",
+        "conflitto_dettaglio": c.get("dettaglio"),
+        "agente_di_concorrente": bool(s.get("agente_di_concorrente")),
+        "categorie_clienti": s.get("categorie_clienti") or None,
+        "province_coperte": [str(x) for x in (s.get("province_coperte") or [])] or None,
+        "regione_prevalente": _regione_di(s),
+        "zona_da_confermare": not (s.get("province_coperte") or []),
+        "residenza": s.get("residenza"),
+        "note": s.get("nota"),
+        "fonte": "exa",
+    }
+
+
 def scrivi(log=print) -> None:
     """Nella tabella `agenti` (creata a mano dal committente). Insert puro:
     linkedin_url unico fa da dedup, il conflitto e' il dedup che lavora."""
@@ -487,25 +511,7 @@ def scrivi(log=print) -> None:
     for s in _righe_json(SCHEDE):
         if not s or s.get("pertinente") not in ("si", "da_valutare"):
             continue
-        c = s.get("conflitto") or {}
-        record = {
-            "nome_completo": s.get("nome"),
-            "linkedin_url": normalizza_linkedin(s.get("url")),
-            "canale_prevalente": s.get("canale_prevalente"),
-            "canali_secondari": s.get("canali_secondari") or None,
-            "classificazione": "pertinente" if s["pertinente"] == "si" else "da_valutare",
-            "mandati_attuali": s.get("mandati_attuali") or None,
-            "conflitto_stato": c.get("stato") or "da_verificare",
-            "conflitto_dettaglio": c.get("dettaglio"),
-            "agente_di_concorrente": bool(s.get("agente_di_concorrente")),
-            "categorie_clienti": s.get("categorie_clienti") or None,
-            "province_coperte": [str(x) for x in (s.get("province_coperte") or [])] or None,
-            "regione_prevalente": _regione_di(s),
-            "zona_da_confermare": not (s.get("province_coperte") or []),
-            "residenza": s.get("residenza"),
-            "note": s.get("nota"),
-            "fonte": "exa",
-        }
+        record = record_scheda(s)
         try:
             sb.table("agenti").insert(record).execute()
             inserite += 1
