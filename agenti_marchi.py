@@ -119,6 +119,23 @@ def correggi_conflitto(d: dict) -> dict:
     return d
 
 
+def prompt_classifica(testo: str, marchi: list[str] | None = None) -> str:
+    """Il prompt v4 della ricerca agenti piu' l'estrazione dei marchi, nella
+    stessa chiamata (9/10: anche nei giri normali, senza query in piu')."""
+    marchi = marchi or list(MARCHI)
+    prompt = PROMPT_V4.replace('"nota": "max 20 parole"}}', '"nota": "max 20 parole", '
+                               '"marchi": [{{"marchio": "...", "stato": "...", "evidenza": "..."}}]}}')
+    return (prompt.format(testo=testo) + "\n\n" + REGOLE_MARCHI.format(marchi=_descrizione(marchi))
+            + '\nMetti i marchi nella chiave "marchi" dello stesso JSON.')
+
+
+def marchi_della_scheda(d: dict, testo: str, url: str, marchi: list[str] | None = None) -> list:
+    """Dopo la classificazione: marchi controllati (evidenza letterale,
+    contesto dei generici) e conflitto corretto. Modifica `d`."""
+    correggi_conflitto(d)
+    return controlla(d.pop("marchi", None), testo, marchi or list(MARCHI), "profilo", url)
+
+
 def unisci(vecchi: list | None, nuovi: list) -> list:
     """Un marchio per fonte: il nuovo aggiorna quello della stessa fonte."""
     tenuti = {(x["marchio"], x["fonte"]): x for x in vecchi or []}
@@ -346,12 +363,8 @@ def giro(marchi: list[str], regioni: list[str], cache: str, scrivi: bool, log=pr
                                               ).eq("id", r["id"]).execute()
                     esiti["esistenti con marchi"] += 1
             else:
-                prompt = PROMPT_V4.replace('"nota": "max 20 parole"}}', '"nota": "max 20 parole", '
-                                           '"marchi": [{{"marchio": "...", "stato": "...", "evidenza": "..."}}]}}')
-                d = _chiama(client, prompt.format(testo=p["testo"]) + "\n\n" + REGOLE_MARCHI.format(marchi=descr)
-                            + '\nMetti i marchi nella chiave "marchi" dello stesso JSON.', tot, 900)
-                trovati = controlla(d.get("marchi"), p["testo"], marchi, "profilo", u)
-                d = correggi_conflitto(d)
+                d = _chiama(client, prompt_classifica(p["testo"], marchi), tot, 900)
+                trovati = marchi_della_scheda(d, p["testo"], u, marchi)
                 if d.get("pertinente") not in ("si", "da_valutare"):
                     esiti["non pertinenti"] += 1
                     continue

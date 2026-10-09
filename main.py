@@ -52,9 +52,9 @@ def _argomenti():
                    help="riusa il sourcing salvato QUALUNQUE sia la sua età: "
                         "le aziende su Maps non cambiano in pochi giorni e "
                         "rifarlo costa ~4,70 USD")
-    p.add_argument("--gratuite-openapi", type=int,
-                   default=config.CHIAMATE_OPENAPI_GRATUITE_MESE,
-                   help="chiamate Openapi gratuite ancora disponibili questo mese")
+    p.add_argument("--gratuite-openapi", type=int, default=None,
+                   help="chiamate Openapi gratuite ancora disponibili questo mese "
+                        "(default: dal registro del wallet, crediti.py)")
     return p.parse_args()
 
 
@@ -410,7 +410,11 @@ async def esegui(args) -> int:
     from anthropic import Anthropic
     from crawl4ai import AsyncWebCrawler
 
-    totali = costi.nuovo_ciclo(gratuite_openapi=args.gratuite_openapi)
+    # le gratuite del mese le sa il registro del wallet (contate una volta al
+    # mese, non a ogni ciclo); --gratuite-openapi resta per forzarle a mano
+    gratuite = args.gratuite_openapi if args.gratuite_openapi is not None \
+        else crediti.gratuite_residue_openapi()
+    totali = costi.nuovo_ciclo(gratuite_openapi=gratuite)
     # dry-run = tutto tranne la SCRITTURA (§3): esclusioni e già-visti si
     # leggono comunque, altrimenti la prova non verifica il dedup
     try:

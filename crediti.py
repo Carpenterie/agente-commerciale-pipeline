@@ -82,14 +82,35 @@ def _registro() -> dict | None:
         return None
 
 
+def _mese() -> str:
+    import datetime
+    return datetime.date.today().strftime("%Y-%m")
+
+
 def registra_spesa_openapi(eur: float) -> None:
+    """Una visura: conta nel mese e, finite le gratuite del mese, scala il
+    saldo. Le gratuite (config.CHIAMATE_OPENAPI_GRATUITE_MESE) si contano UNA
+    volta al mese, non a ogni ciclo (9/10: ogni ciclo se ne toglieva 30, e i
+    riepiloghi toscani davano 5,40 EUR di visure contro 27,10 veri)."""
     import json
+    import config
     r = _registro()
     if r is None:
         return              # nessun saldo dichiarato: niente da scalare
-    r["speso_eur"] = round(r.get("speso_eur", 0) + eur, 2)
+    mesi = r.setdefault("visure_mese", {})
+    mesi[_mese()] = mesi.get(_mese(), 0) + 1
+    if mesi[_mese()] > config.CHIAMATE_OPENAPI_GRATUITE_MESE:
+        r["speso_eur"] = round(r.get("speso_eur", 0) + eur, 2)
     with open(REGISTRO_OPENAPI, "w") as f:
         json.dump(r, f)
+
+
+def gratuite_residue_openapi() -> int:
+    """Visure gratuite ancora disponibili questo mese, dal registro."""
+    import config
+    r = _registro() or {}
+    usate = (r.get("visure_mese") or {}).get(_mese(), 0)
+    return max(0, config.CHIAMATE_OPENAPI_GRATUITE_MESE - usate)
 
 
 def residuo_openapi(sb=None) -> float | None:
@@ -449,6 +470,10 @@ if __name__ == "__main__":
         assert residuo_openapi() is None
         registra_spesa_openapi(0.10)            # senza registro: niente
         dichiara_openapi(50)
+        import config as _cfg
+        for _ in range(_cfg.CHIAMATE_OPENAPI_GRATUITE_MESE):
+            registra_spesa_openapi(0.10)             # le gratuite del mese: saldo intatto
+        assert residuo_openapi() == 50.0 and gratuite_residue_openapi() == 0
         registra_spesa_openapi(0.10); registra_spesa_openapi(0.10)
         assert residuo_openapi() == 49.8, residuo_openapi()
         globals()["token_openapi_ok"] = lambda log=print: True     # niente rete nel test

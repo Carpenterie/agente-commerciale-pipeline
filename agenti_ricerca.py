@@ -409,13 +409,18 @@ def classifica(quante: int, log=print) -> bool:
                 log(f"TETTO Anthropic raggiunto ({costo:.2f} EUR): tranche fermata")
                 break
             try:
+                # dal 9/10 la stessa chiamata estrae anche i marchi della lista
+                # del committente (agenti_marchi): nessuna query in piu'
+                import agenti_marchi
                 r = client.messages.create(
-                    model=config.MODELLO, max_tokens=700, temperature=0,
+                    model=config.MODELLO, max_tokens=900, temperature=0,
                     timeout=config.TIMEOUT_ANTHROPIC_S,
                     messages=[{"role": "user",
-                               "content": PROMPT_V4.format(testo=c["testo"])}])
+                               "content": agenti_marchi.prompt_classifica(c["testo"])}])
                 d = classify.estrai_json(
                     next(b.text for b in r.content if b.type == "text"))
+                d["mandati_marchi"] = agenti_marchi.marchi_della_scheda(
+                    d, c["testo"], normalizza_linkedin(c["url"])) or None
                 costi.registra_analisi(tot, r.usage.input_tokens,
                                        r.usage.output_tokens)
                 serie = ciclo.aggiorna_serie(serie, "")
@@ -502,6 +507,7 @@ def record_scheda(s: dict) -> dict:
         "residenza": s.get("residenza"),
         "note": s.get("nota"),
         "fonte": "exa",
+        "mandati_marchi": s.get("mandati_marchi") or None,
     }
 
 
