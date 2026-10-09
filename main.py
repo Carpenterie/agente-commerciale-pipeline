@@ -52,6 +52,9 @@ def _argomenti():
                    help="riusa il sourcing salvato QUALUNQUE sia la sua età: "
                         "le aziende su Maps non cambiano in pochi giorni e "
                         "rifarlo costa ~4,70 USD")
+    p.add_argument("--recupero-dense", action="store_true",
+                   help="solo le ricerche dense del sourcing salvato, ripetute con "
+                        f"{config.MAX_RISULTATI_ALLARGATA} risultati (recupero, 9/10)")
     p.add_argument("--gratuite-openapi", type=int, default=None,
                    help="chiamate Openapi gratuite ancora disponibili questo mese "
                         "(default: dal registro del wallet, crediti.py)")
@@ -66,8 +69,25 @@ LIMITE_OPENAPI_EUR: float | None = None
 CARTELLA_CACHE = Path(__file__).parent / "cache"
 
 
+def allarga(provincia: str, schede: list[dict], totali: dict) -> tuple[list[dict], float]:
+    """Le ricerche dense (20 su 20, almeno 15 della provincia) si ripetono
+    con piu' risultati: la zona era tagliata (9/10). -> (schede nuove, USD)."""
+    dense = sourcing_maps.ricerche_dense(schede, provincia)
+    if not dense:
+        return [], 0.0
+    print(f"maps: {len(dense)} ricerche dense, si ripetono con "
+          f"{config.MAX_RISULTATI_ALLARGATA} risultati: {', '.join(dense[:6])}"
+          + (" …" if len(dense) > 6 else ""))
+    altre, costo = sourcing_maps.cerca([], ricerche=dense,
+                                       per_ricerca=config.MAX_RISULTATI_ALLARGATA,
+                                       tetto_usd=sourcing_maps.tetto_allargate(len(dense)))
+    costi.registra_apify(totali, len(altre), costo_usd=costo)
+    return altre, costo
+
+
 def raccogli(provincia: str, totali: dict, max_comuni: int | None = None,
-             fresco: bool = False, riusa: bool = False) -> list[dict]:
+             fresco: bool = False, riusa: bool = False,
+             recupero: bool = False) -> list[dict]:
     """Sourcing dalle due fonti validate. Maps per primo: a parità di
     dominio il dedup tiene la scheda coi recapiti (§4).
 
@@ -76,6 +96,14 @@ def raccogli(provincia: str, totali: dict, max_comuni: int | None = None,
     `fresco=True` (o dopo 24 ore) si interroga di nuovo la rete.
     """
     salvato = CARTELLA_CACHE / f"sourcing_{provincia}.json"
+    if recupero:
+        # solo le ricerche dense del sourcing gia' fatto, senza Exa e senza
+        # toccare il file salvato: il dedup sull'archivio toglie il gia' visto
+        dati = json.loads(salvato.read_text(encoding="utf-8"))
+        altre, costo = allarga(provincia, dati["schede"], totali)
+        (CARTELLA_CACHE / f"sourcing_{provincia}_dense.json").write_text(
+            json.dumps({"schede": altre, "costo_maps_usd": costo}), encoding="utf-8")
+        return altre
     if not fresco and salvato.exists():
         eta_ore = (time.time() - salvato.stat().st_mtime) / 3600
         if eta_ore < SOURCING_VALIDO_ORE or riusa:
@@ -92,6 +120,8 @@ def raccogli(provincia: str, totali: dict, max_comuni: int | None = None,
     schede, costo_maps = sourcing_maps.cerca(
         comuni, tetto_usd=config.stima_apify_usd(len(comuni)) * config.APIFY_FATTORE_TETTO)
     costi.registra_apify(totali, len(schede), costo_usd=costo_maps)
+    altre, costo_altre = allarga(provincia, schede, totali)
+    schede, costo_maps = schede + altre, costo_maps + costo_altre
 
     trovate_exa = sourcing_exa.cerca(config.PROVINCE[provincia])
     costi.registra_exa(totali, ricerche=len(config.QUERY_EXA),
@@ -449,13 +479,14 @@ async def esegui(args) -> int:
         # restano senza visura invece di fallire a meta' provincia
         LIMITE_OPENAPI_EUR = crediti.residuo_openapi(sb)
         ciclo_id = db.avvia_ciclo(sb, config.REGIONE_DI[args.provincia],
-                                  note=f"provincia {args.provincia}")
+                                  note=f"provincia {args.provincia}"
+                                  + (" — recupero ricerche dense" if getattr(args, "recupero_dense", False) else ""))
         print(f"ciclo {ciclo_id} avviato")
 
     # 1. sourcing
     try:
         schede = raccogli(args.provincia, totali, args.comuni, args.sourcing_fresco,
-                          args.riusa_sourcing)
+                          args.riusa_sourcing, recupero=getattr(args, "recupero_dense", False))
     except Exception as e:  # noqa: BLE001 - credito Apify finito, Exa giu', rete
         # la riga in cicli_ricerca esiste gia': va CHIUSA con il motivo,
         # altrimenti resta appesa e nessuno sa perche'

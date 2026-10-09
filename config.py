@@ -39,6 +39,13 @@ TIMEOUT_ANTHROPIC_S = 180
 ATTORE_MAPS = "compass/crawler-google-places"  # store Apify: "Google Maps Scraper"
 CATEGORIE_MAPS = ("fabbro", "serramenti in ferro", "carpenteria metallica")
 MAX_RISULTATI_PER_QUERY = 20
+# Ricerche DENSE (9/10): se una ricerca riempie i 20 posti con almeno 15
+# schede della provincia cercata, la zona e' tagliata e si ripete con 60.
+# Nella Toscana erano 23 ricerche su 361: di solito Maps riempie i 20 posti
+# con aziende lontane, e allargare tutto costerebbe senza trovare niente.
+SOGLIA_RICERCA_DENSA = 15
+MAX_RISULTATI_ALLARGATA = 60
+APIFY_USD_PER_SCHEDA = 0.0035   # misurato ~0,0030 in Toscana, per eccesso
 LINGUA_MAPS = "it"
 PAESE_MAPS = "it"   # senza, l'attore geolocalizza dagli USA (Rome, NY)
 

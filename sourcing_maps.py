@@ -67,8 +67,28 @@ def credito(log=print) -> tuple[float, float] | None:
         return None
 
 
-def cerca(comuni: list[str], log=print,
-          tetto_usd: float | None = None) -> tuple[list[dict], float]:
+def ricerche_dense(schede: list[dict], provincia: str) -> list[str]:
+    """Le ricerche Maps che hanno riempito tutti i posti con almeno
+    config.SOGLIA_RICERCA_DENSA schede della provincia cercata."""
+    from collections import defaultdict
+    per = defaultdict(list)
+    for s in schede:
+        if s.get("fonte") == "maps" and s.get("query"):
+            per[s["query"]].append(s)
+    return sorted(q for q, v in per.items()
+                  if len(v) >= config.MAX_RISULTATI_PER_QUERY
+                  and sum((config.sigla_provincia(s.get("provincia") or "") or "").upper() == provincia
+                          for s in v) >= config.SOGLIA_RICERCA_DENSA)
+
+
+def tetto_allargate(n_ricerche: int) -> float:
+    return round(max(0.5, n_ricerche * config.MAX_RISULTATI_ALLARGATA
+                     * config.APIFY_USD_PER_SCHEDA * config.APIFY_FATTORE_TETTO), 2)
+
+
+def cerca(comuni: list[str], log=print, tetto_usd: float | None = None,
+          ricerche: list[str] | None = None,
+          per_ricerca: int | None = None) -> tuple[list[dict], float]:
     """-> (schede normalizzate, costo REALE della run in USD).
 
     Il costo lo dichiara Apify a fine run (`usage_total_usd`): va nel report
@@ -77,13 +97,14 @@ def cerca(comuni: list[str], log=print,
     from apify_client import ApifyClient
 
     client = ApifyClient(os.environ["APIFY_TOKEN"])
-    ricerche = [f"{cat} {com}" for com in comuni for cat in config.CATEGORIE_MAPS]
+    ricerche = ricerche or [f"{cat} {com}" for com in comuni for cat in config.CATEGORIE_MAPS]
+    per_ricerca = per_ricerca or config.MAX_RISULTATI_PER_QUERY
     log(f"maps: {len(ricerche)} ricerche in una sola run "
-        f"(max {config.MAX_RISULTATI_PER_QUERY} schede l'una)")
+        f"(max {per_ricerca} schede l'una)")
 
     run = client.actor(config.ATTORE_MAPS).call(run_input={
         "searchStringsArray": ricerche,
-        "maxCrawledPlacesPerSearch": config.MAX_RISULTATI_PER_QUERY,
+        "maxCrawledPlacesPerSearch": per_ricerca,
         "language": config.LINGUA_MAPS,
         # senza questo l'attore geolocalizza dagli USA e "fabbro Roma"
         # pesca Rome (NY): i posti lontani li scarta, ma sono ricerche buttate
@@ -118,6 +139,15 @@ if __name__ == "__main__":
     assert v["chiusa_definitivamente"] is False
     assert n["telefono"] == "+39 06 123" and n["comune"] == "Roma"
     assert _normalizza({})["sito"] == ""  # senza sito: campi vuoti, non None/KeyError
+    # ricerche dense: 20 su 20 e almeno 15 della provincia -> si allarga
+    def _s(q, prov, n):
+        return [{"fonte": "maps", "query": q, "provincia": prov}] * n
+    schede = (_s("fabbro Livorno", "LI", 16) + _s("fabbro Livorno", "PI", 4)      # densa
+              + _s("fabbro Cecina", "LI", 14) + _s("fabbro Cecina", "BO", 6)      # 14: no
+              + _s("fabbro Piombino", "Provincia di Livorno", 15)                 # 15 ma non piena
+              + _s("fabbro Bibbona", "LI", 20) + [{"fonte": "exa", "query": "x", "provincia": "LI"}])
+    assert ricerche_dense(schede, "LI") == ["fabbro Bibbona", "fabbro Livorno"], ricerche_dense(schede, "LI")
+    assert tetto_allargate(0) == 0.5 and tetto_allargate(10) > 3
     assert _normalizza({"categoryName": " Parrucchiere "})["categoria_maps"] == "Parrucchiere"
     assert _normalizza({})["categoria_maps"] == ""
     print("ok")

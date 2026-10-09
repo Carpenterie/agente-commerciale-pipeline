@@ -16,6 +16,7 @@ queste colonne per sapere cosa e' stato mandato.
     python salva_bozze.py --scrivi --rigenera   # riscrive anche quelle che ce l'hanno
     python salva_bozze.py --scrivi --ripieghi   # solo quelle finite sul testo fisso
     python salva_bozze.py --scrivi --ciclo ID   # solo le schede di un ciclo
+    python salva_bozze.py --scrivi --ids FILE   # solo le schede di un elenco di id
     (--ripieghi e --rigenera vogliono --ciclo ID oppure --tutte)
 
 Di suo tocca SOLO le schede senza bozza: chi lo rilancia per sbaglio non
@@ -71,9 +72,10 @@ def main() -> int:
     classe = sys.argv[sys.argv.index("--classe") + 1] if "--classe" in sys.argv else "TUTTE"
     classi = ["A", "B", "C"] if classe == "TUTTE" else [classe]
     ciclo = sys.argv[sys.argv.index("--ciclo") + 1] if "--ciclo" in sys.argv else ""
+    file_ids = sys.argv[sys.argv.index("--ids") + 1] if "--ids" in sys.argv else ""
     # 7/10: un --ripieghi lanciato senza ciclo ha riscritto anche 11 bozze del
     # Lazio. Riscrivere bozze gia' in archivio vuole il perimetro esplicito
-    if (solo_ripieghi or not solo_mancanti) and not ciclo and "--tutte" not in sys.argv:
+    if (solo_ripieghi or not solo_mancanti) and not (ciclo or file_ids) and "--tutte" not in sys.argv:
         print("--ripieghi e --rigenera riscrivono bozze esistenti: indicare --ciclo ID "
               "oppure --tutte")
         return 1
@@ -81,6 +83,12 @@ def main() -> int:
     sb = db.client()
     righe, off = [], 0
     while True:
+        if file_ids:
+            # le schede di un elenco (rimetti_dentro.py -> cache/rientro_ids.txt)
+            ids = [x.strip() for x in open(file_ids) if x.strip()]
+            righe = [r for k in range(0, len(ids), 100) for r in
+                     sb.table("aziende").select(CAMPI_LETTI).in_("id", ids[k:k + 100]).execute().data]
+            break
         q = sb.table("aziende").select(CAMPI_LETTI)
         b = (q.eq("ciclo_id", ciclo) if ciclo else q).range(off, off + 999).execute().data
         righe += b
