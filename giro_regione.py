@@ -101,6 +101,8 @@ def riepilogo(sb, provincia: str, avvio: str, log: pathlib.Path, log_bozze: path
         "token Openapi rifiutato": testo_log.count("Wrong Token"),
         "doppioni Exa non scritti": int((re.findall(r"DOPPIONI EXA[^:]*: (\d+)", testo_log) or ["0"])[-1]),
         "aziende saltate per errore": testo_log.count("SALTATA "),
+        "ricerca Apify fermata al tetto (raccolta forse incompleta)":
+            testo_log.count("ricerca Apify fermata al tetto"),
     }
     territorio = _ultima(log, r"^territorio: ")
     costo = round((c["costo_eur"] or 0) + costo_bozze, 2)
@@ -301,6 +303,12 @@ if __name__ == "__main__":
             assert rc == 0 and lanciati == ["main.py", "salva_bozze.py"] * 2, (rompi, lanciati)
             assert riep.count("## PO") == 1 and riep.count("## MS") == 1, riep
             assert ("ERRORE nel riepilogo" in riep) == rompi, riep
+        # una ricerca fermata al tetto finisce fra le anomalie del riepilogo
+        d = pathlib.Path(tempfile.mkdtemp())
+        sequenza("Toscana", ["PO"], _SB(), lambda a, f: (f.write_text(
+            "ATTENZIONE: ricerca Apify fermata al tetto (3.90 su 3.90 USD)\nESITO: ciclo COMPLETATO\n"), 0)[1],
+                 d, d / "riep.md", log=lambda m: None)
+        assert "ricerca Apify fermata al tetto (raccolta forse incompleta) 1" in (d / "riep.md").read_text()
         # il caso dell'8/10: log delle bozze ancora assente -> vuoto, nessun errore
         assert _ultima(pathlib.Path("/non/esiste.log"), "x") == ""
         # gli stop veri restano: ciclo in errore -> la seconda provincia non parte

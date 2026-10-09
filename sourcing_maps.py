@@ -81,6 +81,18 @@ def ricerche_dense(schede: list[dict], provincia: str) -> list[str]:
                           for s in v) >= config.SOGLIA_RICERCA_DENSA)
 
 
+FERMATA_AL_TETTO = "ricerca Apify fermata al tetto"
+
+
+def fermata_al_tetto(costo_usd: float, tetto_usd: float | None, stato: str = "") -> bool:
+    """La run si e' fermata per il tetto rigido (9/10: il tetto e' calcolato
+    quasi esatto sul costo medio toscano): costo arrivato a ~tetto, oppure
+    run non conclusa normalmente."""
+    stato = str(stato or "").upper().split(".")[-1]
+    return bool(tetto_usd) and (costo_usd >= tetto_usd * 0.97
+                                or stato not in ("", "SUCCEEDED"))
+
+
 def tetto_allargate(n_ricerche: int) -> float:
     return max(0.5, config.tetto_apify_usd(n_ricerche, config.MAX_RISULTATI_ALLARGATA))
 
@@ -112,6 +124,11 @@ def cerca(comuni: list[str], log=print, tetto_usd: float | None = None,
     schede = [_normalizza(v)
               for v in client.dataset(run.default_dataset_id).iterate_items()]
     costo_usd = float(run.usage_total_usd or 0)
+    stato = getattr(run, "status", "")
+    if fermata_al_tetto(costo_usd, tetto_usd, stato):
+        # la provincia puo' essere incompleta: lo dicono il log e il riepilogo
+        log(f"ATTENZIONE: {FERMATA_AL_TETTO} ({costo_usd:.2f} su {tetto_usd:.2f} USD, "
+            f"{len(schede)} schede, stato {stato}): la raccolta puo' essere incompleta")
     con_sito = sum(1 for s in schede if s["sito"])
     chiuse = sum(1 for s in schede if s["chiusa_definitivamente"])
     log(f"maps: {len(schede)} schede, {con_sito} con sito, "
@@ -146,6 +163,8 @@ if __name__ == "__main__":
               + _s("fabbro Piombino", "Provincia di Livorno", 15)                 # 15 ma non piena
               + _s("fabbro Bibbona", "LI", 20) + [{"fonte": "exa", "query": "x", "provincia": "LI"}])
     assert ricerche_dense(schede, "LI") == ["fabbro Bibbona", "fabbro Livorno"], ricerche_dense(schede, "LI")
+    assert fermata_al_tetto(3.88, 3.90) and not fermata_al_tetto(3.17, 3.90, "SUCCEEDED")
+    assert fermata_al_tetto(1.0, 3.90, "ActorJobStatus.ABORTED") and not fermata_al_tetto(9, None)
     assert tetto_allargate(0) == 0.5 and tetto_allargate(10) == round(0.30 + 10 * 60 * 0.0030, 2)
     assert _normalizza({"categoryName": " Parrucchiere "})["categoria_maps"] == "Parrucchiere"
     assert _normalizza({})["categoria_maps"] == ""
