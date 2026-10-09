@@ -29,15 +29,50 @@ MOTIVAZIONE_FUORI = "fuori territorio"
 CODICE_DUPLICATO = "23505"
 
 
+# Tempo massimo di una chiamata al database (9/10: il ciclo di Teramo e' rimasto
+# appeso 5 ore su una connessione chiusa dal server, CLOSE-WAIT, senza timeout)
+TIMEOUT_DB_S = 60
+ERRORI_RETE = ("TimeoutException", "NetworkError", "RemoteProtocolError")
+
+
+def _ritenta_su_timeout() -> None:
+    """Dopo un timeout o un errore di rete la chiamata si ripete UNA volta:
+    httpx scarta la connessione rotta, quindi il nuovo tentativo ne apre una
+    nuova. Solo GET/HEAD/PATCH (letture e aggiornamenti, ripetibili): un
+    POST ripetuto potrebbe scrivere due volte, e l'errore arriva al chiamante
+    (il ciclo salta quell'azienda, la riprende il giro successivo)."""
+    import httpx
+    from postgrest.base_request_builder import RequestConfig
+    if getattr(RequestConfig.send, "_ritenta", False):
+        return
+    originale = RequestConfig.send
+    errori = tuple(getattr(httpx, n) for n in ERRORI_RETE)
+
+    def send(self, additional_headers):
+        try:
+            return originale(self, httpx.Headers(additional_headers))
+        except errori as e:
+            if self.http_method not in ("GET", "HEAD", "PATCH"):
+                raise
+            print(f"database: {type(e).__name__} su {self.http_method}, nuovo tentativo "
+                  f"con una connessione nuova", flush=True)
+            return originale(self, httpx.Headers(additional_headers))
+
+    send._ritenta = True
+    RequestConfig.send = send
+
+
 def client():
     from dotenv import load_dotenv
-    from supabase import create_client
+    from supabase import ClientOptions, create_client
 
     load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
     url = os.environ["SUPABASE_URL"].rstrip("/")
     if not url.startswith("http"):  # nel .env a volte finisce il solo project ref
         url = f"https://{url}.supabase.co"
-    return create_client(url, os.environ["SUPABASE_SERVICE_ROLE_KEY"])
+    _ritenta_su_timeout()
+    return create_client(url, os.environ["SUPABASE_SERVICE_ROLE_KEY"],
+                         options=ClientOptions(postgrest_client_timeout=TIMEOUT_DB_S))
 
 
 def _enum(valore: str, valide: tuple[str, ...], default: str | None) -> str | None:
@@ -349,6 +384,36 @@ def _nessun_delete_nel_repo() -> list[str]:
 
 
 if __name__ == "__main__":
+    # timeout del database: una lettura bloccata si ripete una volta, un
+    # inserimento no (niente doppie scritture), e due blocchi danno errore
+    import httpx
+    from postgrest.base_request_builder import RequestConfig
+    _ritenta_su_timeout()
+    _ritenta_su_timeout()                          # idempotente
+
+    class _Sessione:
+        def __init__(self, guasti): self.guasti, self.chiamate = guasti, 0
+        def request(self, *a, **k):
+            self.chiamate += 1
+            if self.chiamate <= self.guasti:
+                raise httpx.ReadTimeout("appesa")
+            return "risposta"
+
+    def _rc(metodo, guasti):
+        s = _Sessione(guasti)
+        return RequestConfig(s, httpx.URL("https://x.supabase.co/rest/v1/aziende"), metodo,
+                             httpx.Headers(), httpx.QueryParams(), None, {}), s
+    rc, s = _rc("GET", 1)
+    assert rc.send(httpx.Headers()) == "risposta" and s.chiamate == 2
+    rc, s = _rc("PATCH", 1)
+    assert rc.send(httpx.Headers()) == "risposta" and s.chiamate == 2
+    for metodo, guasti in (("POST", 1), ("GET", 2)):
+        rc, s = _rc(metodo, guasti)
+        try:
+            rc.send(httpx.Headers())
+            raise AssertionError(f"{metodo} con {guasti} guasti doveva dare errore")
+        except httpx.ReadTimeout:
+            assert s.chiamate == (1 if metodo == "POST" else 2)
     r = riga_azienda({"nome": "X"}, dati={"email_aziendale": "x@pec.it"})
     assert r["email_aziendale"] is None and r["email_pec"] == "x@pec.it", r
     r = riga_azienda({"nome": "X"}, dati={"email_aziendale": "a@x.it", "email_pec": "x@legalmail.it"})

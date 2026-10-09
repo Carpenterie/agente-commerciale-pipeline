@@ -21,10 +21,13 @@ from __future__ import annotations
 
 import datetime
 import fcntl
+import os
 import pathlib
 import re
+import signal
 import subprocess
 import sys
+import time
 
 import config
 from data.comuni import COMUNI
@@ -51,6 +54,8 @@ def ordine(regione: str, salta: set) -> list[str]:
 
 
 def motivo_stop(rc_ciclo: int, rc_bozze: int | None, costo: float, proj: float | None) -> str:
+    if rc_ciclo == BLOCCATO:
+        return "ciclo bloccato due volte (log muto): ripresa a mano"
     if rc_ciclo != 0:
         return f"ciclo uscito con codice {rc_ciclo}"
     if rc_bozze not in (0, None):
@@ -60,10 +65,45 @@ def motivo_stop(rc_ciclo: int, rc_bozze: int | None, costo: float, proj: float |
     return ""
 
 
-def _gira(argv: list[str], log: pathlib.Path) -> int:
+# SORVEGLIANZA (9/10: Teramo e' rimasto appeso 5 ore su una chiamata al
+# database). Un processo il cui log non cresce per SILENZIO_S e' bloccato:
+# nessuna fase normale resta muta cosi' a lungo (Apify scrive lo stato della
+# run, l'analisi una riga per azienda, le bozze ogni 20).
+SILENZIO_S = 30 * 60
+BLOCCATO = 124
+
+
+def _gira(argv: list[str], log: pathlib.Path, silenzio_s: int = SILENZIO_S,
+          interprete: str | None = None) -> int:
     with log.open("a") as f:
-        return subprocess.run([str(QUI / ".venv/bin/python"), "-u", *argv], cwd=QUI,
-                              stdout=f, stderr=subprocess.STDOUT).returncode
+        proc = subprocess.Popen([interprete or str(QUI / ".venv/bin/python"), "-u", *argv], cwd=QUI,
+                                stdout=f, stderr=subprocess.STDOUT, start_new_session=True)
+    dim, ultimo = log.stat().st_size, time.time()
+    while proc.poll() is None:
+        time.sleep(min(30, max(1, silenzio_s // 4)))
+        if log.stat().st_size != dim:
+            dim, ultimo = log.stat().st_size, time.time()
+        elif time.time() - ultimo > silenzio_s:
+            os.killpg(proc.pid, signal.SIGTERM)          # anche il browser figlio
+            try:
+                proc.wait(30)
+            except subprocess.TimeoutExpired:
+                os.killpg(proc.pid, signal.SIGKILL)
+                proc.wait()
+            with log.open("a") as f:
+                f.write(f"\n[sorveglianza] nessuna riga da {silenzio_s // 60} minuti: "
+                        f"processo considerato bloccato e interrotto\n")
+            return BLOCCATO
+    return proc.returncode
+
+
+def chiudi_bloccato(sb, ciclo_id: str | None, provincia: str) -> None:
+    if not ciclo_id:
+        return
+    sb.table("cicli_ricerca").update({
+        "concluso_il": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "note": f"provincia {provincia} — interrotto: bloccato (sorveglianza, log muto)"}
+    ).eq("id", ciclo_id).execute()
 
 
 def _testo(log: pathlib.Path) -> str:
@@ -177,23 +217,44 @@ def sequenza(regione: str, province: list[str], sb, gira, cartella_log: pathlib.
         flog = cartella_log / f"pipeline-{p.lower()}.log"
         flog_b = cartella_log / f"pipeline-bozze-{p.lower()}.log"
         log(f"{datetime.datetime.now():%H:%M} {p}: ciclo (proiezione {proiezione(p):.2f} EUR)")
-        rc = gira(["main.py", "--provincia", p, *argv_extra], flog)
-        rc_b, costo_b, costo, stop = None, 0.0, None, ""
-        try:
-            ciclo_id = ciclo_di(sb, p, avvio)
-        except Exception as e:  # noqa: BLE001
-            ciclo_id = None
-            log(f"  {p}: ciclo non leggibile ({type(e).__name__})")
-        if rc == 0 and ciclo_id:
-            log(f"{datetime.datetime.now():%H:%M} {p}: bozze del ciclo {ciclo_id[:8]}")
-            rc_b = gira(["salva_bozze.py", "--scrivi", "--ciclo", ciclo_id], flog_b)
-            t = re.findall(r"TOTALE\s+([\d.]+) EUR", _testo(flog_b))
-            costo_b = float(t[-1]) if t else 0.0
+        rc_b, costo_b, costo, stop, nota_blocco = None, 0.0, None, "", ""
+        cicli = []
+        for tentativo in (1, 2):
+            rc = gira(["main.py", "--provincia", p, *argv_extra]
+                      + (["--riusa-sourcing"] if tentativo == 2 else []), flog)
+            try:
+                ciclo_id = ciclo_di(sb, p, avvio)
+            except Exception as e:  # noqa: BLE001
+                ciclo_id = None
+                log(f"  {p}: ciclo non leggibile ({type(e).__name__})")
+            if ciclo_id and ciclo_id not in cicli:
+                cicli.append(ciclo_id)
+            if rc != BLOCCATO:
+                break
+            try:
+                chiudi_bloccato(sb, ciclo_id, p)
+            except Exception as e:  # noqa: BLE001
+                log(f"  {p}: chiusura del ciclo bloccato non riuscita ({type(e).__name__})")
+            nota_blocco += f"- ciclo bloccato (log muto {SILENZIO_S // 60} minuti), tentativo {tentativo}\n"
+            log(f"{datetime.datetime.now():%H:%M} {p}: ciclo BLOCCATO (tentativo {tentativo})"
+                + (", si rilancia una volta riusando la raccolta" if tentativo == 1 else ""))
+        if rc == 0 or (rc == BLOCCATO and cicli):
+            # le bozze di OGNI ciclo della provincia, anche di quello interrotto
+            for cid in cicli:
+                log(f"{datetime.datetime.now():%H:%M} {p}: bozze del ciclo {cid[:8]}")
+                rc_b = gira(["salva_bozze.py", "--scrivi", "--ciclo", cid], flog_b)
+                t = re.findall(r"TOTALE\s+([\d.]+) EUR", _testo(flog_b))
+                costo_b += float(t[-1]) if t else 0.0
+                if rc_b != 0:
+                    break
         try:
             testo, costo, _ = riepilogo(sb, p, avvio, flog, flog_b, costo_b)
         except Exception as e:  # noqa: BLE001 - il riepilogo non ferma mai la sequenza
             testo = (f"## {p}\n- ERRORE nel riepilogo ({type(e).__name__}: {str(e)[:160]}): "
                      f"vedi {flog} e {flog_b}\n")
+        testo += nota_blocco
+        if rc == BLOCCATO:
+            testo += "- **bloccato due volte: la provincia va ripresa a mano**\n"
         speso += costo or 0.0
         massimo = max(massimo, costo or 0.0)
         stop = motivo_stop(rc, rc_b, costo if costo is not None else 0.0,
@@ -309,6 +370,48 @@ if __name__ == "__main__":
             "ATTENZIONE: ricerca Apify fermata al tetto (3.90 su 3.90 USD)\nESITO: ciclo COMPLETATO\n"), 0)[1],
                  d, d / "riep.md", log=lambda m: None)
         assert "ricerca Apify fermata al tetto (raccolta forse incompleta) 1" in (d / "riep.md").read_text()
+        # SORVEGLIANZA: un processo vero che resta muto viene interrotto
+        d = pathlib.Path(tempfile.mkdtemp())
+        t0 = time.time()
+        rc = _gira(["-c", "print('parto', flush=True); import time; time.sleep(60)"], d / "muto.log",
+                   silenzio_s=2, interprete=sys.executable)
+        assert rc == BLOCCATO and time.time() - t0 < 30, rc
+        assert "[sorveglianza]" in (d / "muto.log").read_text()
+        assert _gira(["-c", "print('ok')"], d / "vivo.log", silenzio_s=2, interprete=sys.executable) == 0
+
+        class _SBcicli(_SB):
+            """ogni ciclo lanciato ha il suo id"""
+            def __init__(self): super().__init__(); self.n = 0
+            def table(self, t):
+                if t == "cicli_ricerca":
+                    self.n += 1
+                    return _Q([{"id": f"c-{(self.n + 1) // 2}", "avviato_il": "x", "concluso_il": None,
+                                "n_trovate": 1, "n_analizzate": 1, "costo_eur": 1.0, "costo_apify_eur": 0,
+                                "costo_exa_eur": 0, "costo_anthropic_eur": 1, "costo_openapi_eur": 0}])
+                return super().table(t)
+
+        def gira_bloccato(quante):
+            chiamate = []
+            def g(argv, flog):
+                chiamate.append(argv)
+                if argv[0] == "main.py" and sum(a[0] == "main.py" for a in chiamate) <= quante:
+                    return BLOCCATO
+                return finto(argv, flog)
+            return g, chiamate
+        g, chiamate = gira_bloccato(1)                    # bloccato una volta -> rilancio
+        d = pathlib.Path(tempfile.mkdtemp())
+        rc = sequenza("Abruzzo", ["TE", "CH"], _SBcicli(), g, d, d / "r.md", log=lambda m: None)
+        mains = [a for a in chiamate if a[0] == "main.py"]
+        bozze = [a for a in chiamate if a[0] == "salva_bozze.py"]
+        assert rc == 0 and mains[1][-1] == "--riusa-sourcing" and len(mains) == 3, mains
+        assert len(bozze) == 3, bozze                     # TE: ciclo interrotto + rilancio; CH
+        assert "ciclo bloccato" in (d / "r.md").read_text()
+        g, chiamate = gira_bloccato(2)                    # bloccato due volte -> stop pulito
+        d = pathlib.Path(tempfile.mkdtemp())
+        rc = sequenza("Abruzzo", ["TE", "CH"], _SBcicli(), g, d, d / "r.md", log=lambda m: None)
+        assert rc == 1 and not any(a[:3] == ["main.py", "--provincia", "CH"] for a in chiamate)
+        riep = (d / "r.md").read_text()
+        assert "bloccato due volte" in riep and "SEQUENZA FERMATA" in riep
         # il caso dell'8/10: log delle bozze ancora assente -> vuoto, nessun errore
         assert _ultima(pathlib.Path("/non/esiste.log"), "x") == ""
         # gli stop veri restano: ciclo in errore -> la seconda provincia non parte
