@@ -355,3 +355,18 @@ assert lavorate < 6, f"le ha lavorate tutte lo stesso: {lavorate}"
 print("ok (database giu' a meta': si interrompe, non analizza tutto)")
 
 db.client, db.esclusioni, db.riferimenti_aziende = _client, _escl, _rif
+
+# --- ricerche dense: senza credito Apify l'allargamento si salta (9/10) ---
+_dense, _credito, _cerca = sourcing_maps.ricerche_dense, sourcing_maps.credito, sourcing_maps.cerca
+chiamate_allarga = []
+sourcing_maps.ricerche_dense = lambda schede, provincia: ["fabbro Livorno", "fabbro Cecina"]
+sourcing_maps.cerca = lambda *a, **k: (chiamate_allarga.append(k), ([{"fonte": "maps"}], 0.4))[1]
+sourcing_maps.credito = lambda log=print: (99.0, 100.0)          # 1 USD di residuo
+with contextlib.redirect_stdout(io.StringIO()):
+    assert main.allarga("LI", [], costi.nuovo_ciclo()) == ([], 0.0) and not chiamate_allarga
+sourcing_maps.credito = lambda log=print: (10.0, 100.0)          # credito largo
+with contextlib.redirect_stdout(io.StringIO()):
+    altre, costo = main.allarga("LI", [], costi.nuovo_ciclo())
+assert len(altre) == 1 and costo == 0.4 and chiamate_allarga[0]["per_ricerca"] == 60
+sourcing_maps.ricerche_dense, sourcing_maps.credito, sourcing_maps.cerca = _dense, _credito, _cerca
+print("ok (ricerche dense: allargate solo se il credito Apify le copre)")

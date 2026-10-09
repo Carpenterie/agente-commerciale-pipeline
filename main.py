@@ -75,12 +75,19 @@ def allarga(provincia: str, schede: list[dict], totali: dict) -> tuple[list[dict
     dense = sourcing_maps.ricerche_dense(schede, provincia)
     if not dense:
         return [], 0.0
+    tetto = sourcing_maps.tetto_allargate(len(dense))
+    c = sourcing_maps.credito()
+    if c and c[1] - c[0] < tetto + config.APIFY_MARGINE_USD:
+        # niente fallimento: il ciclo va avanti con le schede che ha
+        print(f"maps: {len(dense)} ricerche dense NON allargate — residuo Apify "
+              f"{c[1] - c[0]:.2f} USD, ne servono {tetto + config.APIFY_MARGINE_USD:.2f}")
+        return [], 0.0
     print(f"maps: {len(dense)} ricerche dense, si ripetono con "
           f"{config.MAX_RISULTATI_ALLARGATA} risultati: {', '.join(dense[:6])}"
           + (" …" if len(dense) > 6 else ""))
     altre, costo = sourcing_maps.cerca([], ricerche=dense,
                                        per_ricerca=config.MAX_RISULTATI_ALLARGATA,
-                                       tetto_usd=sourcing_maps.tetto_allargate(len(dense)))
+                                       tetto_usd=tetto)
     costi.registra_apify(totali, len(altre), costo_usd=costo)
     return altre, costo
 
@@ -118,7 +125,7 @@ def raccogli(provincia: str, totali: dict, max_comuni: int | None = None,
     comuni = list(COMUNI[provincia])[:max_comuni] if max_comuni else list(COMUNI[provincia])
     # tetto RIGIDO della run: la stima per il fattore di sicurezza
     schede, costo_maps = sourcing_maps.cerca(
-        comuni, tetto_usd=config.stima_apify_usd(len(comuni)) * config.APIFY_FATTORE_TETTO)
+        comuni, tetto_usd=config.tetto_apify_usd(len(comuni) * len(config.CATEGORIE_MAPS)))
     costi.registra_apify(totali, len(schede), costo_usd=costo_maps)
     altre, costo_altre = allarga(provincia, schede, totali)
     schede, costo_maps = schede + altre, costo_maps + costo_altre
@@ -463,7 +470,8 @@ async def esegui(args) -> int:
     if not args.dry_run:
         # Apify: la stima di QUESTA provincia (dai suoi comuni) piu' il
         # margine che deve restare nel periodo (7/10: almeno 10 USD)
-        stima_apify = config.stima_apify_usd(len(COMUNI[args.provincia]))
+        # il residuo Apify deve coprire il tetto rigido della ricerca + 2 USD
+        stima_apify = config.tetto_apify_usd(len(COMUNI[args.provincia]) * len(config.CATEGORIE_MAPS))
         problemi = crediti.controllo(
             serve_apify_usd=0 if args.riusa_sourcing
             else stima_apify + config.APIFY_MARGINE_USD,

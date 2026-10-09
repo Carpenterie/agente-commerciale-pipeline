@@ -45,7 +45,6 @@ MAX_RISULTATI_PER_QUERY = 20
 # con aziende lontane, e allargare tutto costerebbe senza trovare niente.
 SOGLIA_RICERCA_DENSA = 15
 MAX_RISULTATI_ALLARGATA = 60
-APIFY_USD_PER_SCHEDA = 0.0035   # misurato ~0,0030 in Toscana, per eccesso
 LINGUA_MAPS = "it"
 PAESE_MAPS = "it"   # senza, l'attore geolocalizza dagli USA (Rome, NY)
 
@@ -604,25 +603,24 @@ def fuori_settore_maps(categoria: str | None) -> bool:
 # ciclo (A/B/C nuove, ~60-100 teste) 6-10 EUR Openapi.
 STIMA_APIFY_CICLO_USD = 5.0
 STIMA_OPENAPI_CICLO_EUR = 8.0
-# Apify: il costo del sourcing segue il numero di comuni (3 ricerche l'uno).
-# Misurato nel Lazio: RM 21 comuni 3,51 USD, FR 18 2,93, RI 15 2,42 ->
-# ~0,165 USD a comune; la stima tiene 0,17 + 0,30 di avvio (per eccesso).
-APIFY_USD_PER_COMUNE = 0.17
+# Apify (9/10): il TETTO RIGIDO di una run (max_total_charge_usd) e' il
+# massimo di schede che puo' restituire (ricerche x risultati) per il costo
+# a scheda MISURATO in Toscana (20,22 USD su ~6.700 schede = 0,0030), piu'
+# l'avvio. Una provincia parte solo se il residuo del periodo copre il suo
+# tetto piu' APIFY_MARGINE_USD (decisione del committente: il piano non va
+# oltre 100 USD/mese, e una provincia che non ci sta si fa dopo il rinnovo).
+APIFY_USD_SCHEDA_MISURATO = 0.0030
 APIFY_USD_AVVIO = 0.30
-# Il tetto RIGIDO della run (max_total_charge_usd) e' la stima per questo
-# fattore: un ciclo che sfora di piu' si ferma da solo invece di mangiare
-# il periodo. Il controllo pre-giro vuole che dopo il ciclo resti un
-# margine (decisione del 7/10, limite del piano alzato a 100 USD/mese).
-APIFY_FATTORE_TETTO = 1.5
-APIFY_MARGINE_USD = 10.0
+APIFY_MARGINE_USD = 2.0
 # Openapi: visure ~0,10 EUR l'una, in proporzione alle A/B del ciclo.
 # Misurato: RM 14,50, le altre del Lazio 4,40-7,10. Le tre grandi come RM.
 STIMA_OPENAPI_GRANDI_EUR = 15.0
 PROVINCE_GRANDI = ("RM", "NA", "FI", "BA")
 
 
-def stima_apify_usd(n_comuni: int) -> float:
-    return round(APIFY_USD_AVVIO + APIFY_USD_PER_COMUNE * n_comuni, 2)
+def tetto_apify_usd(n_ricerche: int, per_ricerca: int = MAX_RISULTATI_PER_QUERY) -> float:
+    """Tetto rigido di una run Maps: tutte le schede possibili al costo misurato."""
+    return round(APIFY_USD_AVVIO + n_ricerche * per_ricerca * APIFY_USD_SCHEDA_MISURATO, 2)
 
 
 def stima_openapi_eur(provincia: str) -> float:

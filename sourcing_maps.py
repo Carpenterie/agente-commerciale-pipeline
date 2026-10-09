@@ -82,8 +82,7 @@ def ricerche_dense(schede: list[dict], provincia: str) -> list[str]:
 
 
 def tetto_allargate(n_ricerche: int) -> float:
-    return round(max(0.5, n_ricerche * config.MAX_RISULTATI_ALLARGATA
-                     * config.APIFY_USD_PER_SCHEDA * config.APIFY_FATTORE_TETTO), 2)
+    return max(0.5, config.tetto_apify_usd(n_ricerche, config.MAX_RISULTATI_ALLARGATA))
 
 
 def cerca(comuni: list[str], log=print, tetto_usd: float | None = None,
@@ -147,7 +146,7 @@ if __name__ == "__main__":
               + _s("fabbro Piombino", "Provincia di Livorno", 15)                 # 15 ma non piena
               + _s("fabbro Bibbona", "LI", 20) + [{"fonte": "exa", "query": "x", "provincia": "LI"}])
     assert ricerche_dense(schede, "LI") == ["fabbro Bibbona", "fabbro Livorno"], ricerche_dense(schede, "LI")
-    assert tetto_allargate(0) == 0.5 and tetto_allargate(10) > 3
+    assert tetto_allargate(0) == 0.5 and tetto_allargate(10) == round(0.30 + 10 * 60 * 0.0030, 2)
     assert _normalizza({"categoryName": " Parrucchiere "})["categoria_maps"] == "Parrucchiere"
     assert _normalizza({})["categoria_maps"] == ""
     print("ok")
