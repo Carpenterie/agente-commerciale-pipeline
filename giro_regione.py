@@ -41,6 +41,12 @@ QUI = pathlib.Path(__file__).parent
 EUR_PER_COMUNE = 0.91
 EUR_PER_COMUNE_GRANDI = 1.05
 SOGLIA_SFORO = 1.5
+# 10/10: il 150% da solo fermava le province piccole e dense (BT: 21,12 EUR
+# su 9,10 di proiezione, ma 0,19 EUR per azienda in classe). Ora lo stop al
+# 150% vale solo se anche il costo per azienda in classe e' alto; il 300%
+# ferma comunque (protezione dagli errori).
+SOGLIA_EUR_PER_CLASSE = 0.40
+SOGLIA_SFORO_ASSOLUTA = 3.0
 
 
 def proiezione(provincia: str) -> float:
@@ -53,15 +59,22 @@ def ordine(regione: str, salta: set) -> list[str]:
     return sorted(prov, key=lambda p: (p in config.PROVINCE_GRANDI, len(COMUNI[p]), p))
 
 
-def motivo_stop(rc_ciclo: int, rc_bozze: int | None, costo: float, proj: float | None) -> str:
+def motivo_stop(rc_ciclo: int, rc_bozze: int | None, costo: float, proj: float | None,
+                n_classe: int = 0) -> str:
     if rc_ciclo == BLOCCATO:
         return "ciclo bloccato due volte (log muto): ripresa a mano"
     if rc_ciclo != 0:
         return f"ciclo uscito con codice {rc_ciclo}"
     if rc_bozze not in (0, None):
         return f"bozze uscite con codice {rc_bozze}"
-    if proj is not None and costo > proj * SOGLIA_SFORO:
-        return f"costo {costo:.2f} EUR oltre il 150% della proiezione ({proj:.2f})"
+    if proj is None:
+        return ""
+    if costo > round(proj * SOGLIA_SFORO_ASSOLUTA, 2):
+        return f"costo {costo:.2f} EUR oltre il 300% della proiezione ({proj:.2f})"
+    per_classe = costo / n_classe if n_classe else float("inf")
+    if costo > round(proj * SOGLIA_SFORO, 2) and per_classe > SOGLIA_EUR_PER_CLASSE:
+        return (f"costo {costo:.2f} EUR oltre il 150% della proiezione ({proj:.2f}) "
+                f"e {per_classe:.2f} EUR per azienda in classe ({n_classe} A/B/C)")
     return ""
 
 
@@ -118,12 +131,12 @@ def _ultima(log: pathlib.Path, pattern: str) -> str:
 
 
 def riepilogo(sb, provincia: str, avvio: str, log: pathlib.Path, log_bozze: pathlib.Path,
-              costo_bozze: float) -> tuple[str, float, str | None]:
-    """-> (testo, costo totale EUR, id ciclo)."""
+              costo_bozze: float) -> tuple[str, float, str | None, int]:
+    """-> (testo, costo totale EUR, id ciclo, aziende A/B/C)."""
     c = (sb.table("cicli_ricerca").select("*").like("note", f"provincia {provincia}%")
          .gte("avviato_il", avvio).order("avviato_il", desc=True).limit(1).execute().data)
     if not c:
-        return f"## {provincia}\nnessun ciclo registrato (vedi {log})\n", 0.0, None
+        return f"## {provincia}\nnessun ciclo registrato (vedi {log})\n", 0.0, None, 0
     c = c[0]
     righe, i = [], 0
     while True:
@@ -157,7 +170,7 @@ def riepilogo(sb, provincia: str, avvio: str, log: pathlib.Path, log_bozze: path
              f"- {territorio}\n"
              f"- anomalie: " + ", ".join(f"{k} {v}" for k, v in anomalie.items() if v) + "\n"
              f"- {_ultima(log, r'ESITO:')} | bozze: {_ultima(log_bozze, r'salvate:')}\n")
-    return testo, costo, c["id"]
+    return testo, costo, c["id"], sum(classi.values())
 
 
 def ciclo_di(sb, provincia: str, avvio: str) -> str | None:
@@ -217,7 +230,7 @@ def sequenza(regione: str, province: list[str], sb, gira, cartella_log: pathlib.
         flog = cartella_log / f"pipeline-{p.lower()}.log"
         flog_b = cartella_log / f"pipeline-bozze-{p.lower()}.log"
         log(f"{datetime.datetime.now():%H:%M} {p}: ciclo (proiezione {proiezione(p):.2f} EUR)")
-        rc_b, costo_b, costo, stop, nota_blocco = None, 0.0, None, "", ""
+        rc_b, costo_b, costo, stop, nota_blocco, n_classe = None, 0.0, None, "", "", 0
         cicli = []
         for tentativo in (1, 2):
             rc = gira(["main.py", "--provincia", p, *argv_extra]
@@ -248,7 +261,7 @@ def sequenza(regione: str, province: list[str], sb, gira, cartella_log: pathlib.
                 if rc_b != 0:
                     break
         try:
-            testo, costo, _ = riepilogo(sb, p, avvio, flog, flog_b, costo_b)
+            testo, costo, _, n_classe = riepilogo(sb, p, avvio, flog, flog_b, costo_b)
         except Exception as e:  # noqa: BLE001 - il riepilogo non ferma mai la sequenza
             testo = (f"## {p}\n- ERRORE nel riepilogo ({type(e).__name__}: {str(e)[:160]}): "
                      f"vedi {flog} e {flog_b}\n")
@@ -258,7 +271,7 @@ def sequenza(regione: str, province: list[str], sb, gira, cartella_log: pathlib.
         speso += costo or 0.0
         massimo = max(massimo, costo or 0.0)
         stop = motivo_stop(rc, rc_b, costo if costo is not None else 0.0,
-                           proiezione(p) if con_proiezione else None)
+                           proiezione(p) if con_proiezione else None, n_classe)
         if costo is None and not stop:
             testo += "- costo non verificabile: controllo del 150% saltato per questa provincia\n"
         _scrivi(file_riep, testo + (f"- **SEQUENZA FERMATA: {stop}**\n" if stop else "") + "\n", log)
@@ -284,7 +297,7 @@ def province_dense(regione: str, salta: set) -> list[str]:
 
 
 def main() -> int:
-    """--regioni A,B[,..] [--rientro] [--salta X,Y] | --regione R --recupero-dense --tetto-eur N"""
+    """--regioni A,B[,..] [--rientro [--rientro-salta R]] [--salta X,Y] | --regione R --recupero-dense --tetto-eur N"""
     from dotenv import load_dotenv
     load_dotenv(QUI / ".env")
     import db
@@ -305,7 +318,8 @@ def main() -> int:
         file_riep = QUI / "cache" / f"riepilogo_{regione}{'_recupero' if recupero else ''}.md"
         log(f"{datetime.datetime.now():%Y-%m-%d %H:%M} {regione}"
             f"{' (recupero ricerche dense)' if recupero else ''}: {', '.join(province)}")
-        if "--rientro" in sys.argv and rientro(regione, _gira, pathlib.Path("/var/log"), file_riep, log) != 0:
+        if ("--rientro" in sys.argv and regione not in arg("--rientro-salta").split(",")
+                and rientro(regione, _gira, pathlib.Path("/var/log"), file_riep, log) != 0):
             log(f"ESITO: rientro {regione} FALLITO — sequenza fermata")
             return 1
         rc = sequenza(regione, province, sb, _gira, pathlib.Path("/var/log"), file_riep, log=log,
@@ -328,6 +342,15 @@ if __name__ == "__main__":
         assert motivo_stop(0, 0, 999, None) == ""          # recupero: niente 150%
         assert motivo_stop(0, 0, 10, 10) == "" and motivo_stop(0, 0, 15, 10) == ""
         assert "150%" in motivo_stop(0, 0, 15.1, 10)
+        # regola del 10/10 sui casi veri: (costo EUR, aziende A/B/C) -> passano
+        for prov, costo, n in (("BT", 21.12, 114), ("MC", 5.35, 11), ("AN", 10.78, 20),
+                               ("AP", 6.43, 14), ("PU", 15.30, 61), ("CH", 13.87, 58)):
+            assert motivo_stop(0, 0, costo, proiezione(prov), n) == "", (prov, proiezione(prov))
+        assert proiezione("BT") * 1.5 < 21.12 < proiezione("BT") * 3   # BT passa per le A/B/C
+        assert "per azienda" in motivo_stop(0, 0, 21.12, proiezione("BT"), 40)  # 0,53 a testa
+        assert "300%" in motivo_stop(0, 0, 27.31, proiezione("BT"), 500)        # errore: ferma comunque
+        assert motivo_stop(0, 0, 27.30, proiezione("BT"), 500) == ""
+        assert "per azienda" in motivo_stop(0, 0, 15.1, 10, 0)                  # nessuna in classe
         assert "ciclo" in motivo_stop(1, None, 0, 10) and "bozze" in motivo_stop(0, 1, 0, 10)
         # PROVA A VUOTO: due province di fila con ciclo e bozze finti
         import tempfile
