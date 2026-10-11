@@ -119,20 +119,31 @@ def chiudi_bloccato(sb, ciclo_id: str | None, provincia: str) -> None:
     ).eq("id", ciclo_id).execute()
 
 
-def _testo(log: pathlib.Path) -> str:
-    """Il log, o vuoto se non c'e' ancora (8/10: il log delle bozze letto
-    prima delle bozze ha fermato la sequenza dopo Prato)."""
-    return log.read_text(errors="replace") if log.exists() else ""
+def _dim(log: pathlib.Path) -> int:
+    return log.stat().st_size if log.exists() else 0
 
 
-def _ultima(log: pathlib.Path, pattern: str) -> str:
-    righe = [r for r in _testo(log).splitlines() if re.search(pattern, r)]
+def _testo(log: pathlib.Path, da: int = 0) -> str:
+    """Il log dal byte `da` (11/10: i log si accodano fra un giro e l'altro e
+    il riepilogo contava anche le righe vecchie, es. i 137 token rifiutati del
+    pilota di Pisa nel recupero), o vuoto se non c'e' ancora (8/10: il log
+    delle bozze letto prima delle bozze ha fermato la sequenza dopo Prato)."""
+    if not log.exists():
+        return ""
+    with log.open("rb") as f:
+        f.seek(da)
+        return f.read().decode(errors="replace")
+
+
+def _ultima(log: pathlib.Path, pattern: str, da: int = 0) -> str:
+    righe = [r for r in _testo(log, da).splitlines() if re.search(pattern, r)]
     return re.sub(r"\x1b\[[0-9;]*m", "", righe[-1]).strip() if righe else ""
 
 
 def riepilogo(sb, provincia: str, avvio: str, log: pathlib.Path, log_bozze: pathlib.Path,
-              costo_bozze: float) -> tuple[str, float, str | None, int]:
-    """-> (testo, costo totale EUR, id ciclo, aziende A/B/C)."""
+              costo_bozze: float, da_log: int = 0, da_bozze: int = 0) -> tuple[str, float, str | None, int]:
+    """-> (testo, costo totale EUR, id ciclo, aziende A/B/C). Dei log conta
+    solo quello scritto da `da_log` / `da_bozze` in poi (il giro corrente)."""
     c = (sb.table("cicli_ricerca").select("*").like("note", f"provincia {provincia}%")
          .gte("avviato_il", avvio).order("avviato_il", desc=True).limit(1).execute().data)
     if not c:
@@ -147,7 +158,7 @@ def riepilogo(sb, provincia: str, avvio: str, log: pathlib.Path, log_bozze: path
             break
         i += 1000
     classi = {k: sum(r["classe"] == k for r in righe) for k in ("A", "B", "C")}
-    testo_log = _testo(log)
+    testo_log = _testo(log, da_log)
     anomalie = {
         "siti non scaricabili": sum(r["esito_fetch"] == "FETCH_FALLITO" for r in righe),
         "visure fermate per credito": testo_log.count("STOP visure"),
@@ -157,7 +168,7 @@ def riepilogo(sb, provincia: str, avvio: str, log: pathlib.Path, log_bozze: path
         "ricerca Apify fermata al tetto (raccolta forse incompleta)":
             testo_log.count("ricerca Apify fermata al tetto"),
     }
-    territorio = _ultima(log, r"^territorio: ")
+    territorio = _ultima(log, r"^territorio: ", da_log)
     costo = round((c["costo_eur"] or 0) + costo_bozze, 2)
     testo = (f"## {provincia} — {config.PROVINCE[provincia]} ({len(COMUNI[provincia])} comuni)\n"
              f"- ciclo {c['id']}, {c['avviato_il'][:16]} -> {(c['concluso_il'] or '')[:16]}\n"
@@ -169,7 +180,7 @@ def riepilogo(sb, provincia: str, avvio: str, log: pathlib.Path, log_bozze: path
              f"per il recupero non vale)\n"
              f"- {territorio}\n"
              f"- anomalie: " + ", ".join(f"{k} {v}" for k, v in anomalie.items() if v) + "\n"
-             f"- {_ultima(log, r'ESITO:')} | bozze: {_ultima(log_bozze, r'salvate:')}\n")
+             f"- {_ultima(log, r'ESITO:', da_log)} | bozze: {_ultima(log_bozze, r'salvate:', da_bozze)}\n")
     return testo, costo, c["id"], sum(classi.values())
 
 
@@ -188,6 +199,7 @@ def rientro(regione: str, gira, cartella_log: pathlib.Path, file_riep: pathlib.P
     flog = cartella_log / f"pipeline-rientro-{regione.lower()}.log"
     ids = QUI / "cache" / "rientro_ids.txt"
     log(f"{datetime.datetime.now():%H:%M} {regione}: rientro delle schede fuori territorio")
+    da = _dim(flog)
     for argv in (["rimetti_dentro.py", "--regione", regione, "--scrivi"],
                  ["riprendi_analisi.py", "--ids", str(ids), "--scrivi"],
                  ["salva_bozze.py", "--scrivi", "--ids", str(ids)]):
@@ -196,7 +208,7 @@ def rientro(regione: str, gira, cartella_log: pathlib.Path, file_riep: pathlib.P
             testo = f"## Rientro {regione}\n- **SEQUENZA FERMATA: {argv[0]} uscito con codice {rc}**\n\n"
             _scrivi(file_riep, testo, log)
             return rc
-    testo_log = _testo(flog)
+    testo_log = _testo(flog, da)
     righe = [r for r in testo_log.splitlines()
              if re.search(r"schede fuori da rimettere|segnale tolto|classi:|salvate:|TOTALE", r)]
     _scrivi(file_riep, f"## Rientro {regione}\n" + "".join(f"- {r.strip()}\n" for r in righe) + "\n", log)
@@ -231,6 +243,7 @@ def sequenza(regione: str, province: list[str], sb, gira, cartella_log: pathlib.
         flog_b = cartella_log / f"pipeline-bozze-{p.lower()}.log"
         log(f"{datetime.datetime.now():%H:%M} {p}: ciclo (proiezione {proiezione(p):.2f} EUR)")
         rc_b, costo_b, costo, stop, nota_blocco, n_classe = None, 0.0, None, "", "", 0
+        da_log, da_bozze = _dim(flog), _dim(flog_b)
         cicli = []
         for tentativo in (1, 2):
             rc = gira(["main.py", "--provincia", p, *argv_extra]
@@ -255,13 +268,14 @@ def sequenza(regione: str, province: list[str], sb, gira, cartella_log: pathlib.
             # le bozze di OGNI ciclo della provincia, anche di quello interrotto
             for cid in cicli:
                 log(f"{datetime.datetime.now():%H:%M} {p}: bozze del ciclo {cid[:8]}")
+                da_ciclo = _dim(flog_b)
                 rc_b = gira(["salva_bozze.py", "--scrivi", "--ciclo", cid], flog_b)
-                t = re.findall(r"TOTALE\s+([\d.]+) EUR", _testo(flog_b))
+                t = re.findall(r"TOTALE\s+([\d.]+) EUR", _testo(flog_b, da_ciclo))
                 costo_b += float(t[-1]) if t else 0.0
                 if rc_b != 0:
                     break
         try:
-            testo, costo, _, n_classe = riepilogo(sb, p, avvio, flog, flog_b, costo_b)
+            testo, costo, _, n_classe = riepilogo(sb, p, avvio, flog, flog_b, costo_b, da_log, da_bozze)
         except Exception as e:  # noqa: BLE001 - il riepilogo non ferma mai la sequenza
             testo = (f"## {p}\n- ERRORE nel riepilogo ({type(e).__name__}: {str(e)[:160]}): "
                      f"vedi {flog} e {flog_b}\n")
@@ -437,6 +451,21 @@ if __name__ == "__main__":
         assert "bloccato due volte" in riep and "SEQUENZA FERMATA" in riep
         # il caso dell'8/10: log delle bozze ancora assente -> vuoto, nessun errore
         assert _ultima(pathlib.Path("/non/esiste.log"), "x") == ""
+        # 11/10: il riepilogo conta solo le righe del giro corrente, non quelle
+        # vecchie dello stesso log (pilota di Pisa: 137 token rifiutati)
+        d = pathlib.Path(tempfile.mkdtemp())
+        fl, fb = d / "pipeline-pi.log", d / "pipeline-bozze-pi.log"
+        fl.write_text("Wrong Token\n" * 137 + "territorio: VECCHIO\nESITO: VECCHIO\n")
+        fb.write_text("salvate: 99\nTOTALE   7.00 EUR\n")
+        def g_nuovo(a, f):
+            with f.open("a") as h:
+                h.write("territorio: NUOVO\nESITO: NUOVO\n" if a[0] == "main.py"
+                        else "salvate: 1\nTOTALE   0.01 EUR\n")
+            return 0
+        sequenza("Toscana", ["PI"], _SB(), g_nuovo, d, d / "r.md", log=lambda m: None)
+        riep = (d / "r.md").read_text()
+        assert "token Openapi" not in riep and "VECCHIO" not in riep, riep
+        assert "territorio: NUOVO" in riep and "salvate: 1" in riep and "bozze 0.01" in riep, riep
         # gli stop veri restano: ciclo in errore -> la seconda provincia non parte
         d = pathlib.Path(tempfile.mkdtemp())
         lanciati.clear()
