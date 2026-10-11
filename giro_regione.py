@@ -167,6 +167,10 @@ def riepilogo(sb, provincia: str, avvio: str, log: pathlib.Path, log_bozze: path
         "aziende saltate per errore": testo_log.count("SALTATA "),
         "ricerca Apify fermata al tetto (raccolta forse incompleta)":
             testo_log.count("ricerca Apify fermata al tetto"),
+        # 11/10: Exa senza credito non ferma il ciclo, ma va visto
+        "Exa esaurito: solo Maps": testo_log.count("Exa esaurito: solo Maps"),
+        "segnali di lavoro non cercati, Exa esaurito (A per annuncio perse)":
+            testo_log.count("segnali non cercati (Exa esaurito)"),
     }
     territorio = _ultima(log, r"^territorio: ", da_log)
     costo = round((c["costo_eur"] or 0) + costo_bozze, 2)
@@ -466,6 +470,13 @@ if __name__ == "__main__":
         riep = (d / "r.md").read_text()
         assert "token Openapi" not in riep and "VECCHIO" not in riep, riep
         assert "territorio: NUOVO" in riep and "salvate: 1" in riep and "bozze 0.01" in riep, riep
+        fl.write_text("")
+        g_exa = lambda a, f: (f.open("a").write("Exa esaurito: solo Maps (HTTPError)\n"
+                              + "segnali non cercati (Exa esaurito): X\n" * 3), 0)[1]
+        sequenza("Toscana", ["PI"], _SB(), g_exa, d, d / "r2.md", log=lambda m: None)
+        riep = (d / "r2.md").read_text()
+        assert "Exa esaurito: solo Maps 1" in riep and "annuncio perse) 3" in riep, riep
+        assert "SEQUENZA FERMATA" not in riep                 # la sequenza prosegue
         # gli stop veri restano: ciclo in errore -> la seconda provincia non parte
         d = pathlib.Path(tempfile.mkdtemp())
         lanciati.clear()

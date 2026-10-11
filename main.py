@@ -113,8 +113,15 @@ def raccogli(provincia: str, totali: dict, max_comuni: int | None = None,
         return altre
     if not fresco and salvato.exists():
         eta_ore = (time.time() - salvato.stat().st_mtime) / 3600
+        dati = json.loads(salvato.read_text(encoding="utf-8"))
+        if not dati.get("exa_fatto", True):
+            # raccolta interrotta dopo Maps (11/10, Lecce): Maps e' pagato e
+            # si riusa a qualunque eta', Exa si ritenta
+            print(f"sourcing Maps riusato da {salvato.name} ({dati['schede_maps']} schede, "
+                  f"{eta_ore:.1f} ore fa, gia' pagato {dati['costo_maps_usd']:.4f} USD); Exa da fare")
+            costi.registra_apify(totali, dati["schede_maps"], costo_usd=0.0)
+            return _con_exa(provincia, salvato, dati["schede"], dati["costo_maps_usd"], totali)
         if eta_ore < SOURCING_VALIDO_ORE or riusa:
-            dati = json.loads(salvato.read_text(encoding="utf-8"))
             print(f"sourcing riusato da {salvato.name} "
                   f"({len(dati['schede'])} schede, {eta_ore:.1f} ore fa, "
                   f"già pagato {dati['costo_maps_usd']:.4f} USD): "
@@ -129,16 +136,38 @@ def raccogli(provincia: str, totali: dict, max_comuni: int | None = None,
     costi.registra_apify(totali, len(schede), costo_usd=costo_maps)
     altre, costo_altre = allarga(provincia, schede, totali)
     schede, costo_maps = schede + altre, costo_maps + costo_altre
+    # 11/10 (Lecce): Maps su disco PRIMA di Exa, un errore dopo non ripaga Apify
+    _salva_sourcing(salvato, schede, len(schede), costo_maps, exa_fatto=False)
+    return _con_exa(provincia, salvato, schede, costo_maps, totali)
 
-    trovate_exa = sourcing_exa.cerca(config.PROVINCE[provincia])
+
+def _salva_sourcing(salvato, schede: list[dict], n_maps: int, costo_maps: float,
+                    exa_fatto: bool) -> None:
+    salvato.parent.mkdir(parents=True, exist_ok=True)
+    salvato.write_text(json.dumps({"schede": schede, "schede_maps": n_maps,
+                                   "costo_maps_usd": costo_maps, "exa_fatto": exa_fatto}),
+                       encoding="utf-8")
+
+
+EXA_ESAURITO = "Exa esaurito: solo Maps"
+
+
+def _con_exa(provincia: str, salvato, schede: list[dict], costo_maps: float,
+             totali: dict) -> list[dict]:
+    """Aggiunge Exa alle schede Maps. Se Exa non c'e' (402 credito finito,
+    rete, tempo scaduto) il ciclo va avanti con le sole schede Maps e il
+    file resta "Exa da fare"; anche i segnali di lavoro si saltano."""
+    try:
+        trovate_exa = sourcing_exa.cerca(config.PROVINCE[provincia])
+    except OSError as e:  # HTTPError, URLError e timeout sono tutti OSError
+        # ponytail: i risultati Exa gia' arrivati prima dell'errore si perdono (~0,02 EUR)
+        print(f"{EXA_ESAURITO} ({type(e).__name__}: {str(e)[:120]})")
+        segnali_lavoro.ESAURITO = True
+        return schede
     costi.registra_exa(totali, ricerche=len(config.QUERY_EXA),
                        risultati=len(trovate_exa))
-
     tutte = schede + trovate_exa
-    salvato.parent.mkdir(parents=True, exist_ok=True)
-    salvato.write_text(json.dumps({"schede": tutte, "schede_maps": len(schede),
-                                   "costo_maps_usd": costo_maps}),
-                       encoding="utf-8")
+    _salva_sourcing(salvato, tutte, len(schede), costo_maps, exa_fatto=True)
     return tutte
 
 

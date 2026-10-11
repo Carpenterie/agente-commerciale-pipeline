@@ -370,3 +370,49 @@ with contextlib.redirect_stdout(io.StringIO()):
 assert len(altre) == 1 and costo == 0.4 and chiamate_allarga[0]["per_ricerca"] == 60
 sourcing_maps.ricerche_dense, sourcing_maps.credito, sourcing_maps.cerca = _dense, _credito, _cerca
 print("ok (ricerche dense: allargate solo se il credito Apify le copre)")
+
+# --- Exa esaurito (11/10, Lecce): Maps salvato prima, il ciclo va avanti --
+import json as _json  # noqa: E402
+import os as _os  # noqa: E402
+import urllib.error  # noqa: E402
+import segnali_lavoro  # noqa: E402
+
+_maps, _exa = sourcing_maps.cerca, sourcing_exa.cerca
+pagate = {"maps": 0, "exa": 0}
+sourcing_maps.cerca = lambda comuni, log=print, tetto_usd=None, **k: (
+    pagate.__setitem__("maps", pagate["maps"] + 1), ([{"fonte": "maps", "nome": "M"}], 1.5))[1]
+
+
+def _exa_402(provincia, log=print):
+    pagate["exa"] += 1
+    raise urllib.error.HTTPError("https://api.exa.ai/search", 402, "Payment Required", None, None)
+
+
+sourcing_exa.cerca = _exa_402
+segnali_lavoro.ESAURITO = False
+buf = io.StringIO()
+with contextlib.redirect_stdout(buf):
+    schede = main.raccogli("LE", costi.nuovo_ciclo(), fresco=True)
+assert schede == [{"fonte": "maps", "nome": "M"}], schede
+assert main.EXA_ESAURITO in buf.getvalue() and segnali_lavoro.ESAURITO
+f_le = main.CARTELLA_CACHE / "sourcing_LE.json"
+dati_le = _json.loads(f_le.read_text())
+assert dati_le["exa_fatto"] is False and dati_le["schede_maps"] == 1 and dati_le["costo_maps_usd"] == 1.5
+# i segnali di lavoro (quelli veri: sopra sono finti) non chiamano piu' Exa
+# e lo dicono nel log
+importlib.reload(segnali_lavoro)
+segnali_lavoro.ESAURITO = True
+righe_log = []
+assert segnali_lavoro.cerca("Officina X", log=righe_log.append) == []
+assert righe_log == [f"{segnali_lavoro.NON_CERCATI}: Officina X"], righe_log
+# giorni dopo, Exa ricaricato: Maps NON si ripaga (anche oltre le 24 ore), Exa si fa
+_os.utime(f_le, (0, 0))
+sourcing_exa.cerca = lambda provincia, log=print: (
+    pagate.__setitem__("exa", pagate["exa"] + 1), [{"fonte": "exa", "nome": "E"}])[1]
+with contextlib.redirect_stdout(io.StringIO()):
+    schede = main.raccogli("LE", costi.nuovo_ciclo())
+assert pagate == {"maps": 1, "exa": 2} and len(schede) == 2, (pagate, schede)
+assert _json.loads(f_le.read_text())["exa_fatto"] is True
+sourcing_maps.cerca, sourcing_exa.cerca = _maps, _exa
+segnali_lavoro.ESAURITO = False
+print("ok (Exa esaurito: solo Maps, raccolta Maps salvata e riusata)")

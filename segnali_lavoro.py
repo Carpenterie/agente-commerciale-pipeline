@@ -62,9 +62,20 @@ def _segnali_da_risultati(risultati: list[dict]) -> list[dict]:
     return sorted(segnali, key=lambda s: config.RUOLI_ANNUNCI.index(s["ruolo"]))
 
 
+# 11/10: Exa senza credito (402) o che non risponde -> niente piu' query per
+# il resto del ciclo (ognuna aspetterebbe fino a 120 s). Il log lo dice per
+# azienda: senza segnali una TARGET che sarebbe A per annuncio resta B.
+ESAURITO = False
+NON_CERCATI = "segnali non cercati (Exa esaurito)"
+
+
 def cerca(ragione_sociale: str, log=print) -> list[dict]:
     """Una query Exa per azienda. Lista vuota se non trova nulla o su errore
     (un fallimento qui non ferma il ciclo)."""
+    global ESAURITO
+    if ESAURITO:
+        log(f"{NON_CERCATI}: {ragione_sociale}")
+        return []
     chiave = os.environ["EXA_API_KEY"]
     query = SAGOMA_QUERY.format(nome=ragione_sociale)
     req = urllib.request.Request(
@@ -78,6 +89,10 @@ def cerca(ragione_sociale: str, log=print) -> list[dict]:
             risultati = json.load(r).get("results", [])
     except Exception as e:  # noqa: BLE001 - un fallimento non ferma il ciclo
         log(f"segnali: errore per {ragione_sociale}: {type(e).__name__}: {e}")
+        if getattr(e, "code", None) == 402 or isinstance(e, TimeoutError) \
+                or isinstance(getattr(e, "reason", None), TimeoutError):
+            ESAURITO = True
+            log(f"{NON_CERCATI}: {ragione_sociale}")
         return []
 
     segnali = _segnali_da_risultati(risultati)
