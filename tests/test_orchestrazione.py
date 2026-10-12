@@ -46,6 +46,10 @@ import tempfile  # noqa: E402
 from pathlib import Path  # noqa: E402
 
 main.CARTELLA_CACHE = Path(tempfile.mkdtemp(prefix="sourcing-test-"))
+# idem i registri dei crediti: il test chiude cicli finti con costi finti
+import crediti  # noqa: E402
+crediti.REGISTRO_EXA = str(main.CARTELLA_CACHE / "exa_saldo.json")
+crediti.REGISTRO_OPENAPI = str(main.CARTELLA_CACHE / "openapi_saldo.json")
 import segnali_lavoro  # noqa: E402
 import sourcing_exa  # noqa: E402
 import sourcing_maps  # noqa: E402

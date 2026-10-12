@@ -505,7 +505,8 @@ async def esegui(args) -> int:
             serve_apify_usd=0 if args.riusa_sourcing
             else stima_apify + config.APIFY_MARGINE_USD,
             serve_anthropic=True,
-            serve_openapi_eur=config.stima_openapi_eur(args.provincia), sb=sb)
+            serve_openapi_eur=config.stima_openapi_eur(args.provincia), sb=sb,
+            serve_exa_eur=config.STIMA_EXA_PROVINCIA_EUR)
         if problemi:
             return _verdetto(False, "crediti insufficienti, giro NON partito — "
                              + "; ".join(problemi))
@@ -531,6 +532,7 @@ async def esegui(args) -> int:
         if ciclo_id:
             db.chiudi_ciclo(sb, ciclo_id, costi.riepilogo(totali), 0, 0,
                             note=f"provincia {args.provincia} — INTERROTTO: {motivo}")
+            crediti.registra_spesa_exa(costi.riepilogo(totali)["costo_exa_eur"])
             print(f"ciclo {ciclo_id} chiuso come interrotto")
         return _verdetto(False, motivo)
     n_trovate = len(schede)
@@ -778,6 +780,9 @@ async def esegui(args) -> int:
         db.chiudi_ciclo(sb, ciclo_id, riepilogo, n_trovate, n_in_target,
                         note=nota + (f" — INTERROTTO: {interrotto}" if interrotto
                                      else ""))
+        # ponytail: un ciclo ucciso dal sorvegliante non arriva qui e la sua
+        # spesa Exa (<=1 EUR) non si scala: il margine del controllo la copre
+        crediti.registra_spesa_exa(riepilogo["costo_exa_eur"])
         print(f"ciclo {ciclo_id} chiuso")
     if interrotto:
         return _verdetto(False, interrotto)

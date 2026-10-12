@@ -372,6 +372,8 @@ def raccogli(log=print) -> None:
             if i % 28 == 0:
                 log(f"  [{i}/{len(query)}] profili unici: {len(visti)}, spesi {speso:.2f} USD", )
     log(f"RACCOLTA: {len(visti)} profili unici ({nuovi} nuovi) — Exa {speso:.2f} USD")
+    import config, crediti
+    crediti.registra_spesa_exa(speso * config.USD_EUR)
 
 
 def classifica(quante: int, log=print) -> bool:

@@ -274,6 +274,8 @@ def raccogli(log=print) -> None:
                                    ensure_ascii=False) + "\n")
             log(f"  {n:>2} nuovi  {q}")
     log(f"RACCOLTA: Exa {speso:.3f} USD")
+    import config, crediti
+    crediti.registra_spesa_exa(speso * config.USD_EUR)
 
 
 def in_coda() -> list[dict]:

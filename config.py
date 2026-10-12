@@ -241,6 +241,9 @@ QUERY_EXA = (
     "fabbro artigiano lavorazione ferro battuto {provincia} e provincia",
 )
 EXA_NUM_RISULTATI = 25
+# Exa a provincia (12/10, misurato): 0,2-1,0 EUR (sourcing + segnali sulle
+# TARGET). Il controllo pre-provincia chiede questo residuo nel registro.
+STIMA_EXA_PROVINCIA_EUR = 1.5
 
 # --- Portali e domini da escludere (dal test, lista già estesa) ---
 PORTALI_ESCLUSI = (

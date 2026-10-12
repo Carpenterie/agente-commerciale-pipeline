@@ -224,6 +224,8 @@ def raccogli(marchi: list[str], regioni: list[str], visti: set, log=print,
                 nuovi.append({"url": u, "nome": res.get("title") or "",
                               "testo": (res.get("text") or "")[:2500], "query": q})
     log(f"raccolta: {len(query)} query, {len(nuovi)} profili nuovi, Exa {speso:.3f} USD")
+    import config, crediti
+    crediti.registra_spesa_exa(speso * config.USD_EUR)
     return nuovi, speso
 
 
@@ -269,6 +271,8 @@ def pagine_agenzie(marchi: list[str], log=print) -> tuple[list[dict], float]:
                 viste.add(dom)
                 pagine.append({"url": u, "dominio": dom, "testo": t})
     log(f"siti di agenzie candidati: {len(pagine)} — Exa {speso:.3f} USD")
+    import config, crediti
+    crediti.registra_spesa_exa(speso * config.USD_EUR)
     return pagine, speso
 
 

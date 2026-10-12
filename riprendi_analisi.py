@@ -116,7 +116,8 @@ def main_() -> int:
     from crawl4ai import AsyncWebCrawler
     import crediti
     problemi = crediti.controllo(serve_anthropic=True,
-                                 serve_openapi_eur=len(righe) * 0.03, sb=sb)
+                                 serve_openapi_eur=len(righe) * 0.03, sb=sb,
+                                 serve_exa_eur=len(righe) * 0.01)
     if problemi:
         print("ESITO: ripresa NON partita — " + "; ".join(problemi))
         return 1
@@ -169,7 +170,7 @@ def main_() -> int:
         print(f"ESITO: ripresa INTERROTTA — {interrotto}")
     print(f"esiti: {dict(esiti)}")
     print(f"classi: {dict(stat['classi'])}")
-    costi.stampa(totali)
+    crediti.registra_spesa_exa(costi.stampa(totali)["costo_exa_eur"])
     return 1 if interrotto else 0
 
 

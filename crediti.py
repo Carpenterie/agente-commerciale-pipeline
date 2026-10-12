@@ -113,6 +113,47 @@ def gratuite_residue_openapi() -> int:
     return max(0, config.CHIAMATE_OPENAPI_GRATUITE_MESE - usate)
 
 
+# REGISTRO EXA (12/10): Exa non espone il saldo e il 10/10 e' finito a meta'
+# Foggia. Come per Openapi: alla ricarica `python crediti.py --exa-saldo 25`,
+# ogni ciclo/rianalisi/giro agenti scala la sua spesa (stimata coi prezzi del
+# codice) e il controllo pre-provincia non parte se il residuo non basta.
+REGISTRO_EXA = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "cache", "exa_saldo.json")
+
+
+def dichiara_exa(saldo_eur: float) -> dict:
+    import datetime
+    import json
+    r = {"saldo_eur": float(saldo_eur), "speso_eur": 0.0,
+         "dal": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")}
+    os.makedirs(os.path.dirname(REGISTRO_EXA), exist_ok=True)
+    with open(REGISTRO_EXA, "w") as f:
+        json.dump(r, f)
+    return r
+
+
+def registra_spesa_exa(eur: float) -> None:
+    import json
+    try:
+        with open(REGISTRO_EXA) as f:
+            r = json.load(f)
+    except (OSError, ValueError):
+        return              # nessun saldo dichiarato: niente da scalare
+    r["speso_eur"] = round(r.get("speso_eur", 0) + eur, 4)
+    with open(REGISTRO_EXA, "w") as f:
+        json.dump(r, f)
+
+
+def residuo_exa() -> float | None:
+    import json
+    try:
+        with open(REGISTRO_EXA) as f:
+            r = json.load(f)
+    except (OSError, ValueError):
+        return None
+    return round(r["saldo_eur"] - r.get("speso_eur", 0), 2)
+
+
 def residuo_openapi(sb=None) -> float | None:
     """EUR residui stimati dal registro, o None se nessun saldo e' dichiarato."""
     r = _registro()
@@ -276,7 +317,7 @@ def scrivi_stato(sb, righe, log=print) -> None:
 def letture(serve_apify_usd: float = 0, serve_anthropic: bool = False,
             serve_openapi_eur: float = 0, serve_exa: bool = False,
             fonte: str = "controllo_pre_giro",
-            log=print) -> tuple[list[dict], list[str]]:
+            log=print, serve_exa_eur: float = 0) -> tuple[list[dict], list[str]]:
     """Legge SOLO i saldi richiesti. -> (righe per stato_sistema, problemi
     che fermano il giro). Ogni problema dice quale credito e di quanto."""
     righe, problemi = [], []
@@ -353,6 +394,19 @@ def letture(serve_apify_usd: float = 0, serve_anthropic: bool = False,
             righe.append(_riga("exa", "ok", None, None, None,
                                "Credito Exa presente (il saldo non e' esposto: "
                                "i giri hanno il tetto di spesa interno)", fonte))
+    residuo_e = residuo_exa() if serve_exa_eur > 0 else None
+    if residuo_e is not None:
+        if residuo_e < serve_exa_eur:
+            m = (f"Credito Exa quasi finito: residuo stimato {residuo_e:.2f} EUR, "
+                 f"ne servono {serve_exa_eur:.2f} — ricaricare e poi "
+                 f"'python crediti.py --exa-saldo <saldo>'")
+            righe.append(_riga("exa", "sotto_soglia", residuo_e, "EUR", serve_exa_eur, m, fonte))
+            problemi.append(f"Exa: residuo stimato {residuo_e:.2f} EUR, ne servono "
+                            f"{serve_exa_eur:.2f} — ricaricare prima di questa provincia")
+        else:
+            righe.append(_riga("exa", "ok", residuo_e, "EUR", serve_exa_eur,
+                               f"Credito Exa: residuo stimato {residuo_e:.2f} EUR "
+                               f"(saldo dichiarato meno la spesa registrata)", fonte))
     residuo = residuo_openapi() if serve_openapi_eur > 0 else None
     if serve_openapi_eur > 0 and token_openapi_ok(log) is False:
         m = ("Token Openapi RIFIUTATO (401 Wrong Token): generarne uno nuovo "
@@ -429,17 +483,21 @@ def allarmi(sb=None, log=print) -> list[dict]:
 
 def controllo(serve_apify_usd: float = 0, serve_anthropic: bool = False,
               serve_openapi_eur: float = 0, serve_exa: bool = False,
-              log=print, sb=None) -> list[str]:
+              log=print, sb=None, serve_exa_eur: float = 0) -> list[str]:
     """-> gli avvisi che devono FERMARE il giro (vuota = si parte).
     Se `sb` c'e', la lettura finisce anche in `stato_sistema`."""
     righe, problemi = letture(serve_apify_usd, serve_anthropic,
                               serve_openapi_eur, serve_exa,
-                              "controllo_pre_giro", log)
+                              "controllo_pre_giro", log, serve_exa_eur)
     scrivi_stato(sb, righe, log)
     return problemi
 
 
 if __name__ == "__main__":
+    if "--exa-saldo" in sys.argv:
+        r = dichiara_exa(float(sys.argv[sys.argv.index("--exa-saldo") + 1].replace(",", ".")))
+        print(f"saldo Exa dichiarato: {r['saldo_eur']:.2f} EUR dal {r['dal']}")
+        sys.exit(0)
     if "--openapi-saldo" in sys.argv:
         r = dichiara_openapi(float(sys.argv[sys.argv.index("--openapi-saldo") + 1]
                                    .replace(",", ".")))
@@ -468,6 +526,16 @@ if __name__ == "__main__":
         import tempfile
         globals()["REGISTRO_OPENAPI"] = os.path.join(tempfile.mkdtemp(), "o.json")
         assert residuo_openapi() is None
+        # registro Exa: senza saldo nessun controllo, poi si scala e ferma
+        globals()["REGISTRO_EXA"] = os.path.join(tempfile.mkdtemp(), "e.json")
+        assert residuo_exa() is None and letture(serve_exa_eur=1.5, log=lambda m: None)[1] == []
+        dichiara_exa(25)
+        registra_spesa_exa(0.4)
+        registra_spesa_exa(0.0123)
+        assert residuo_exa() == 24.59
+        assert letture(serve_exa_eur=1.5, log=lambda m: None)[1] == []
+        registra_spesa_exa(23.2)
+        assert "Exa: residuo stimato 1.39" in letture(serve_exa_eur=1.5, log=lambda m: None)[1][0]
         registra_spesa_openapi(0.10)            # senza registro: niente
         dichiara_openapi(50)
         import config as _cfg
