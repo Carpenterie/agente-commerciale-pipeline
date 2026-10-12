@@ -6,6 +6,7 @@ Openapi rifiutato: 134 A/B/C senza visura.
 
     python visure.py --ciclo ID --classi A,B --per-nome A            # misura
     python visure.py --ciclo ID --classi A,B --per-nome A --scrivi
+    python visure.py --ciclo ID --classi A --per-nome A --solo "Nome" --scrivi   # una scheda
     python visure.py --sede-legale [--solo "Nome|Nome"] [--scrivi]
 
 --classi:   le classi da visurare (con P.IVA in scheda: una visura).
@@ -48,7 +49,8 @@ def da_visurare(righe: list[dict], classi: set, per_nome: set) -> list[dict]:
             and ((r.get("partita_iva") or "").strip() or r.get("classe") in per_nome)]
 
 
-def giro(ciclo: str, classi: set, per_nome: set, scrivi: bool, log=print) -> None:
+def giro(ciclo: str, classi: set, per_nome: set, scrivi: bool, log=print,
+         solo: set | None = None) -> None:
     import costi
     import crediti
     import db
@@ -58,7 +60,8 @@ def giro(ciclo: str, classi: set, per_nome: set, scrivi: bool, log=print) -> Non
     righe = (sb.table("aziende").select("id,ragione_sociale,comune,provincia,partita_iva,"
                                         "categoria,classe,stato,segnali")
              .eq("ciclo_id", ciclo).execute().data)
-    coda = da_visurare(righe, classi, per_nome)
+    coda = [r for r in da_visurare(righe, classi, per_nome)
+            if not solo or r["ragione_sociale"] in solo]
     con_piva = sum(bool((r.get("partita_iva") or "").strip()) for r in coda)
     per_nome_n = len(coda) - con_piva
     log(f"da visurare: {len(coda)} ({con_piva} con P.IVA, {per_nome_n} per nome) — "
@@ -230,4 +233,5 @@ if __name__ == "__main__":
     load_dotenv()
     arg = lambda k: sys.argv[sys.argv.index(k) + 1] if k in sys.argv else ""
     giro(arg("--ciclo"), set(filter(None, arg("--classi").split(","))),
-         set(filter(None, arg("--per-nome").split(","))), "--scrivi" in sys.argv)
+         set(filter(None, arg("--per-nome").split(","))), "--scrivi" in sys.argv,
+         solo={x.strip() for x in arg("--solo").split("|")} if arg("--solo") else None)
