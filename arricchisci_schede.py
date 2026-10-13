@@ -46,7 +46,7 @@ CAMPI_SCRITTI = ("gamma", "leva_commerciale", "referente_nome",
                  "motivazione", "categoria", "officina_propria",
                  "livello_fornitura")
 
-CONSERVATI = ("annuncio_lavoro", "reputazione_google", "territorio",
+CONSERVATI = ("annuncio_lavoro", "annuncio_lavoro_scartato", "reputazione_google", "territorio",
               "ex_cliente", "verniciatura_interna", "chiusa_temporaneamente",
               "fuori_territorio_sede_dichiarata", "visura_non_agganciata",
               "fuori_settore", "recapito_facebook", "chiusa_definitivamente",

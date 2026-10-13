@@ -405,7 +405,8 @@ def _scheda_per_modello(azienda: dict) -> str:
                # di vendita: al modello non si passa
                # ex_cliente INCERTO nemmeno: il modello non deve poter
                # alludere a un rapporto passato non accertato
-               if s.get("tipo") not in ("annuncio_lavoro", "territorio",
+               if s.get("tipo") not in ("annuncio_lavoro", "annuncio_lavoro_scartato",
+                                        "territorio",
                                         "reputazione_google",
                                         "visura_non_agganciata",
                                         "recapito_facebook", "fuori_settore",
@@ -567,6 +568,10 @@ if __name__ == "__main__" and "--test" in sys.argv:
     # e l'incerto non arriva nemmeno al modello che personalizza
     assert "possibile ex cliente" not in _scheda_per_modello(incerto)
     assert "ex_cliente" not in _scheda_per_modello(incerto)
+    # l'annuncio scartato (13/10) non arriva al modello, nemmeno la sua nota
+    scartato = {"segnali": [{"tipo": "annuncio_lavoro_scartato", "nota": "annuncio a Firenze"}]}
+    assert "Firenze" not in _scheda_per_modello(scartato)
+    assert scegli_testo({**scartato, "categoria": "fabbro"}) != "carico_produttivo"
     per_certo = _scheda_per_modello({**ex, "gamma": ["grate"]})
     assert "ex_cliente" in per_certo or "gamma" in per_certo  # il certo passa
     # il link tracciato: per-azienda quando c'e' l'id, PDF diretto senza
