@@ -4,6 +4,7 @@ pagina misurati sul pilota (45 pagine: 78% con email, 78% con telefono).
 
     python recapiti_facebook.py                          # misura, non spende
     python recapiti_facebook.py --scrivi --budget-usd 3.4
+    python recapiti_facebook.py --scrivi --budget-usd 0.85 --ids FILE   # solo quelle schede
 
 Regole (decise col pilota):
 - solo agganci CERTI: la pagina Facebook viene dal LORO sito (dal campo
@@ -128,6 +129,9 @@ def main_() -> int:
         if len(b) < 1000:
             break
         off += 1000
+    if "--ids" in sys.argv:
+        ids = {x.strip() for x in open(sys.argv[sys.argv.index("--ids") + 1]) if x.strip()}
+        righe = [r for r in righe if r["id"] in ids]
     cand = candidate(righe, scrappate)
     print(f"candidate certe mai comprate: {len(cand)} "
           f"(in classe: {sum(1 for r, _ in cand if r.get('classe') in 'ABC')})")
