@@ -40,7 +40,7 @@ import sys
 import bozze_email
 import costi
 import db
-import rimetti_dentro
+import territorio
 
 # Le colonne che questo script DEVE scrivere. Stessa guardia di
 # arricchisci_schede.py, per lo stesso motivo: il 2026-09-15 due campi
@@ -51,7 +51,7 @@ CAMPI_SCRITTI = ("bozza_oggetto", "bozza_corpo", "bozza_testo_id",
 CAMPI_LETTI = ("id,ragione_sociale,classe,stato,categoria,livello_fornitura,"
                "segnali,materiali,gamma,comune,officina_propria,"
                "prodotto_apertura,leva_commerciale,referente_nome,"
-               "referente_ruolo,bozza_corpo,bozza_generata,motivazione")
+               "referente_ruolo,bozza_corpo,bozza_generata")
 
 
 def da_scrivere(righe: list[dict], classi: list[str], solo_mancanti: bool,
@@ -60,7 +60,7 @@ def da_scrivere(righe: list[dict], classi: list[str], solo_mancanti: bool,
             if r.get("classe") in classi and r.get("stato") != "scartato"
             and not any(x.get("tipo") in ("chiusa_definitivamente", "doppione")
                         for x in r.get("segnali") or [])
-            and not rimetti_dentro.fuori(r)]     # 13/10: fuori territorio, niente bozza
+            and not territorio.esclusa(r)]     # 13/10: fuori territorio, niente bozza
     if solo_ripieghi:
         return [r for r in vive if r.get("bozza_generata") is False]
     return [r for r in vive
@@ -189,8 +189,10 @@ if __name__ == "__main__":
                     {"classe": "A", "stato": "da_lavorare", "bozza_generata": None},
                     {"classe": "A", "stato": "scartato", "bozza_generata": False}]
         assert len(da_scrivere(ripieghi, ["A"], True, True)) == 1
-        fuori = [{"classe": "A", "stato": "da_lavorare", "motivazione": "fuori territorio (x)"},
-                 {"classe": "A", "stato": "da_lavorare",
+        dentro = {"classe": "A", "stato": "da_lavorare", "motivazione": "fuori territorio (x)",
+                  "segnali": [{"tipo": "territorio", "esito": "dentro"}]}   # rimessa dentro
+        assert da_scrivere([dentro], ["A"], False) == [dentro]
+        fuori = [{"classe": "A", "stato": "da_lavorare",
                   "segnali": [{"tipo": "fuori_territorio_sede_dichiarata"}]},
                  {"classe": "A", "stato": "da_lavorare",
                   "segnali": [{"tipo": "territorio", "esito": "fuori"}]}]

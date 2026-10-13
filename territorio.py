@@ -207,6 +207,15 @@ def verifica_sede(dati: dict) -> dict | None:
                        f"{FUORI_DA}"}
 
 
+def esclusa(r: dict) -> bool:
+    """Fuori territorio come lo vede l'app: dai SEGNALI, non dalla
+    motivazione (13/10: le rimesse dentro dal rientro conservano il prefisso
+    "fuori territorio" nella motivazione del modello)."""
+    return any(s.get("tipo") == "fuori_territorio_sede_dichiarata"
+               or (s.get("tipo") == "territorio" and s.get("esito") == "fuori")
+               for s in r.get("segnali") or [])
+
+
 def riepilogo(valutazioni: list[dict], log=print) -> None:
     """Da chiamare a fine ciclo: quante scartate come `fuori` e con quali
     segnali, raggruppati. Se su un ciclo laziale la quota di fuori esplode,
@@ -257,6 +266,10 @@ def _test_sede():
 
 if __name__ == "__main__":
     _test_sede()
+    assert esclusa({"segnali": [{"tipo": "territorio", "esito": "fuori"}]})
+    assert esclusa({"segnali": [{"tipo": "fuori_territorio_sede_dichiarata"}]})
+    assert not esclusa({"motivazione": "fuori territorio (x)",          # rimessa dentro
+                        "segnali": [{"tipo": "territorio", "esito": "dentro"}]})
     # --- casi sintetici: le regole una per una ---
     v = valuta("# PAGINA: https://x.it/contatti\n\nVia Roma 1, 20121 Milano - Tel 02 1234567")
     assert v["esito"] == "fuori" and "cap 20121" in v["segnale"], v
