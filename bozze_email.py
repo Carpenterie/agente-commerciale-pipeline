@@ -406,6 +406,7 @@ def _scheda_per_modello(azienda: dict) -> str:
                # ex_cliente INCERTO nemmeno: il modello non deve poter
                # alludere a un rapporto passato non accertato
                if s.get("tipo") not in ("annuncio_lavoro", "annuncio_lavoro_scartato",
+                                        "bozza_da_rivedere",
                                         "territorio",
                                         "reputazione_google",
                                         "visura_non_agganciata",
@@ -571,6 +572,8 @@ if __name__ == "__main__" and "--test" in sys.argv:
     # l'annuncio scartato (13/10) non arriva al modello, nemmeno la sua nota
     scartato = {"segnali": [{"tipo": "annuncio_lavoro_scartato", "nota": "annuncio a Firenze"}]}
     assert "Firenze" not in _scheda_per_modello(scartato)
+    assert "rivedere" not in _scheda_per_modello(
+        {"segnali": [{"tipo": "bozza_da_rivedere", "nota": "Bozza da rivedere"}]})
     assert scegli_testo({**scartato, "categoria": "fabbro"}) != "carico_produttivo"
     per_certo = _scheda_per_modello({**ex, "gamma": ["grate"]})
     assert "ex_cliente" in per_certo or "gamma" in per_certo  # il certo passa
