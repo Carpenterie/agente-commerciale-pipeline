@@ -53,6 +53,8 @@ crediti.REGISTRO_OPENAPI = str(main.CARTELLA_CACHE / "openapi_saldo.json")
 import segnali_lavoro  # noqa: E402
 import sourcing_exa  # noqa: E402
 import sourcing_maps  # noqa: E402
+# il saldo Apify vero non deve decidere il test (13/10: 4,46 USD a fine periodo)
+sourcing_maps.credito = lambda log=print: (0.0, 100.0)
 
 SCHEDE = [
     {"fonte": "maps", "nome": "Officina Rossi", "sito": "https://rossi.it",
@@ -116,7 +118,7 @@ _ANAGRAFICA = {
     "sede_comune": "Tivoli", "sede_provincia": "RM", "sede_cap": "00019",
     "anno_bilancio": 2024, "chiamate": 2}
 arricchimento.arricchisci = _arricchisci_finto
-segnali_lavoro.cerca = lambda nome, log=print: [
+segnali_lavoro.cerca = lambda nome, log=print, **k: [
     {"tipo": "annuncio_lavoro", "ruolo": "saldatore", "fonte": "https://indeed.com/x"}]
 
 

@@ -17,6 +17,7 @@ import asyncio
 import json
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 
 import arricchimento
 import classify
@@ -275,7 +276,8 @@ def arricchisci_ab(azienda: dict, esito: dict, totali: dict,
 
     preliminare = esito["classe"]
     nome = azienda.get("nome", "")
-    segnali = segnali_lavoro.cerca(nome)
+    segnali = segnali_lavoro.cerca(
+        nome, dominio=urlparse(azienda.get("sito") or "").netloc, provincia=provincia)
     costi.registra_exa(totali, ricerche=1, risultati=len(segnali))
 
     # classe definitiva: ora i segnali sono noti

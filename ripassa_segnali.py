@@ -20,6 +20,7 @@ import classify
 import config
 import costi
 import crediti
+import rimetti_dentro
 import segnali_lavoro
 
 
@@ -52,13 +53,18 @@ def main() -> int:
     righe, i = [], 0
     while True:
         b = (sb.table("aziende").select("id,ragione_sociale,classe,esito_analisi,confidenza,"
-                                        "officina_propria,categoria,n_dipendenti,segnali")
+                                        "officina_propria,categoria,n_dipendenti,segnali,"
+                                        "dominio,provincia,motivazione")
              .eq("ciclo_id", ciclo).range(i, i + 999).execute().data)
         righe += b
         if len(b) < 1000:
             break
         i += 1000
     righe = [r for r in righe if (r["ragione_sociale"] or "").strip() in nomi]
+    fuori = [r for r in righe if rimetti_dentro.fuori(r)]
+    if fuori:   # 13/10: le schede fuori territorio non si ripassano
+        print(f"saltate perche' fuori territorio: {len(fuori)}")
+        righe = [r for r in righe if not rimetti_dentro.fuori(r)]
     print(f"righe del ciclo {ciclo[:8]} da ripassare: {len(righe)} (nomi nel file: {len(nomi)})")
     if not scrivi:
         print("(misura: niente cercato ne' scritto. Rilancia con --scrivi)")
@@ -69,7 +75,8 @@ def main() -> int:
         return 1
     totali, cambi = costi.nuovo_ciclo(), []
     for r in righe:
-        segnali = segnali_lavoro.cerca(r["ragione_sociale"])
+        segnali = segnali_lavoro.cerca(r["ragione_sociale"], dominio=r.get("dominio") or "",
+                                       provincia=r.get("provincia") or "")
         costi.registra_exa(totali, ricerche=1, risultati=len(segnali))
         if segnali_lavoro.ESAURITO:
             print("ESITO: ripasso INTERROTTO — Exa esaurito di nuovo")
