@@ -166,6 +166,29 @@ def verniciatura_interna(dati: dict) -> bool:
     return any(i in testo for i in config.INDIZI_VERNICIATURA)
 
 
+CAMPI_INDIRIZZO = ("indirizzo", "cap", "indirizzo_fonte")
+
+
+def indirizzo_maps(scheda: dict) -> dict:
+    """Sede OPERATIVA dalla scheda Maps -> {indirizzo, cap, indirizzo_fonte}, o {}.
+
+    Solo Maps (4/11, decisione del committente): la sede legale della visura
+    resta fuori, e le pagine del sito pure (l'estrazione dal testo prende
+    anche fornitori e showroom). La stringa e' quella di Google (via e
+    civico, CAP, comune, provincia) senza il ", Italia" finale. comune,
+    provincia e regione NON si toccano: servono a territorio e filtri."""
+    if (scheda.get("fonte") or "") != "maps":
+        return {}
+    testo = " ".join((scheda.get("indirizzo") or "").split())
+    for coda in (", Italia", ", Italy"):
+        if testo.endswith(coda):
+            testo = testo[: -len(coda)].rstrip()
+    if not testo:
+        return {}
+    return {"indirizzo": testo, "cap": (scheda.get("cap") or "").strip() or None,
+            "indirizzo_fonte": "maps"}
+
+
 def riga_azienda(scheda: dict, dati: dict | None = None,
                  territorio: dict | None = None, anagrafica: dict | None = None,
                  segnali: list[dict] | None = None, classe: str = "indeterminato",
@@ -282,6 +305,8 @@ def riga_azienda(scheda: dict, dati: dict | None = None,
         "pagine_analizzate": pagine,
         "esito_fetch": _testo(esito_fetch),
         "costo_analisi_eur": round(costo, 6) if costo else 0,
+        # sede operativa da Maps; assente per Exa e liste (la colonna resta vuota)
+        **indirizzo_maps(scheda),
     }
 
 
@@ -477,7 +502,7 @@ if __name__ == "__main__":
         "referente_nome", "referente_ruolo", "referente_email", "stato",
         "assegnato_a", "ultimo_contatto", "n_contatti", "prossima_azione",
         "fonte", "pagine_analizzate", "esito_fetch", "costo_analisi_eur",
-        "esito_analisi"}
+        "esito_analisi", "indirizzo", "cap", "indirizzo_fonte"}
 
     # senza sito: entra comunque, con recapiti Maps e motivazione onesta
     s = riga_azienda({"nome": "Fabbro Bianchi", "sito": "", "fonte": "maps",
@@ -488,6 +513,17 @@ if __name__ == "__main__":
     assert s["classe"] == "indeterminato" and s["confidenza"] == "bassa"
     assert s["esito_analisi"] is None and s["telefono"] == "0774 456"
     assert s["comune"] == "Tivoli" and s["dominio"] is None
+    # sede operativa da Maps: stringa di Google senza ", Italia", CAP a parte
+    assert (s["indirizzo"], s["cap"], s["indirizzo_fonte"]) == ("Via X 1", None, "maps")
+    m = riga_azienda({"nome": "Z", "fonte": "maps", "comune": "Roma", "cap": "00141",
+                      "indirizzo": "Via dei Prati Fiscali, 265, 00141 Roma RM, Italia"})
+    assert m["indirizzo"] == "Via dei Prati Fiscali, 265, 00141 Roma RM"
+    assert m["cap"] == "00141" and m["comune"] == "Roma"
+    # Exa e liste non hanno un indirizzo Maps: le colonne non compaiono
+    for f in ("exa", "lista_commerciale"):
+        assert not set(CAMPI_INDIRIZZO) & set(riga_azienda(
+            {"nome": "Q", "fonte": f, "indirizzo": "Via Q 1"}))
+    assert indirizzo_maps({"fonte": "maps", "indirizzo": "  "}) == {}
 
     # pagina social al posto del sito: il sito resta come recapito, il
     # dominio no (13 aziende su Facebook collasserebbero sull'indice unico)

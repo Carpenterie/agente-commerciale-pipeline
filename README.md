@@ -818,6 +818,23 @@ li rivalidi e ricongeli, senza riaprire l'indagine: `--salva` rifà tutte e
 24 le classificazioni, mentre correggere a mano le sole righe cambiate in
 `risultati.csv` costa zero (il gate confronta solo `classificazione`).
 
+## Indirizzo: solo la sede operativa di Maps (4/11/2026)
+
+`indirizzo` (la stringa di Google: via e civico, CAP, comune, provincia),
+`cap` e `indirizzo_fonte`. Li scrive `db.riga_azienda` per le schede nuove
+da Maps; Exa e liste li lasciano vuoti. `comune`, `provincia` e `regione`
+restano quelli di prima (visura > sito > Maps) e servono a territorio e
+filtri: il comune puo' quindi essere la sede LEGALE, l'indirizzo e' sempre
+quella OPERATIVA. La sede legale della visura non si salva, e nemmeno le
+vie lette dalle pagine dei siti (estrazione inaffidabile).
+
+`indirizzi_maps.py --cache` ha riempito l'archivio dalla cache di Maps;
+`--ricerca` cerca su Maps le A/B/C rimaste (tetto 3 USD, lucchetto). Una
+scheda Maps vale solo se coincide dominio o telefono, oppure nome identico
+E comune; se gli abbinamenti danno indirizzi diversi (aziende con piu'
+sedi) non si scrive. `indirizzo_fonte = 'manuale'` non si sovrascrive mai,
+nemmeno dalla rianalisi.
+
 ## Limiti noti
 
 - **Il numero di dipendenti esiste solo per chi deposita un bilancio.**

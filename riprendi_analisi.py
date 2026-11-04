@@ -63,6 +63,11 @@ def aggiornamento(riga_nuova: dict, esistente: dict) -> dict:
         agg["email_pec"] = esistente["email_pec"]
     if not agg.get("telefono") and esistente.get("telefono"):
         agg["telefono"] = esistente["telefono"]
+    # l'indirizzo corretto a mano non si tocca mai; e una rianalisi senza
+    # indirizzo Maps non svuota quello gia' scritto
+    if esistente.get("indirizzo_fonte") == "manuale" or not agg.get("indirizzo"):
+        for k in db.CAMPI_INDIRIZZO:
+            agg.pop(k, None)
     # la marcatura ex cliente fu fatta all'import, PRIMA della scrittura:
     # la rianalisi non puo' rifarla (non ha l'elenco davanti) e non deve
     # perderla — e' la lezione dei referenti del 15/9, i campi si perdono
@@ -209,6 +214,11 @@ if __name__ == "__main__":
                              {"segnali": [{"tipo": "ex_cliente",
                                            "riconosciuto_per": "ragione+comune"}]})
         assert [x["tipo"] for x in agg3["segnali"]] == ["ex_cliente", "territorio"]
+        ind = {"indirizzo": "Via A 1, 00100 Roma RM", "cap": "00100", "indirizzo_fonte": "maps"}
+        assert aggiornamento(dict(ind), {"indirizzo_fonte": "manuale"}).get("indirizzo") is None
+        assert aggiornamento(dict(ind), {"indirizzo_fonte": "maps"})["indirizzo"] == ind["indirizzo"]
+        assert "indirizzo_fonte" not in aggiornamento({"indirizzo": None, "indirizzo_fonte": None},
+                                                      {"indirizzo_fonte": "maps"})
         assert aggiornamento({"segnali": None}, {"segnali": [{"tipo": "ex_cliente"}]}
                              )["segnali"][0]["tipo"] == "ex_cliente"
         print("ok")
