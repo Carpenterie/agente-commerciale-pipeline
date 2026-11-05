@@ -8,6 +8,9 @@ la frase copiata alla lettera e controllata qui; mai dedotti.
     python agenti_marchi.py --marchi ... --cache FILE --senza-ricerca --scrivi   # solo la cache
     opzioni: --sagome 1|2, --senza-nazionali, --senza-agenzie (per dividere il giro
     in tranche dentro i tetti; AGENTI_MARCHI_CARTELLA diversa per ogni tranche)
+    python agenti_marchi.py --pilota --regioni ... --scrivi --tetto-eur 30 --entro ISO
+        # pilota B1 (5/11): le 30 aziende di data/marchi_pilota, lucchetto
+        # dell'archivio, tetto unico Exa+Anthropic, ripresa dopo un'interruzione
 
 --cache: profili gia' raccolti (jsonl url/nome/testo) da rivalutare.
 Per ogni profilo: gia' in tabella -> solo i marchi (update della colonna,
@@ -34,6 +37,10 @@ import unicodedata
 from agenti_ricerca import (PROMPT_V4, _exa, _righe_json, normalizza_linkedin,
                             record_scheda)
 from data.marchi_agenti import CONTESTO, CONTESTO_CARATTERI, MARCHI
+from data.marchi_pilota import PILOTA, PROFILI_GRANDE
+
+# regole di tutti i marchi noti; il giro usa solo quelli che gli si passano
+TUTTI = {**MARCHI, **PILOTA}
 
 CARTELLA = pathlib.Path(os.environ.get("AGENTI_MARCHI_CARTELLA")
                         or pathlib.Path(__file__).parent / "cache" / "agenti_marchi")
@@ -45,9 +52,20 @@ ANTHROPIC_TETTO_EUR = 4.0
 
 
 def _descrizione(marchi: list[str]) -> str:
-    return "\n".join(f"- {m}" + (f" (sito: {MARCHI[m]['dominio']})" if MARCHI[m]["dominio"] else "")
+    if not marchi:
+        return "- (nessun marchio dell'elenco compare nel testo: \"marchi\" resta vuoto)"
+    return "\n".join(f"- {m}" + (f" (sito: {TUTTI[m]['dominio']})" if TUTTI[m]["dominio"] else "")
                      + (" — nome generico: vale SOLO se il profilo lo lega a serramenti, finestre, "
-                        "infissi o porte" if MARCHI[m]["generico"] else "") for m in marchi)
+                        "infissi, porte o ai loro accessori" if TUTTI[m]["generico"] else "")
+                     for m in marchi)
+
+
+def presenti(marchi: list[str], testo: str) -> list[str]:
+    """I soli marchi il cui nome compare nel testo: al modello si passano
+    questi (5/11: con decine di marchi il prompt crescerebbe a ogni chiamata,
+    e un marchio che non compare non puo' comunque avere un'evidenza)."""
+    t = _norm(testo)
+    return [m for m in marchi if re.search(TUTTI[m]["regex"], t)]
 
 
 REGOLE_MARCHI = """MARCHI DA CERCARE (produttori di serramenti):
@@ -74,13 +92,13 @@ def _norm(t: str | None) -> str:
 def nel_settore(marchio: str, testo: str) -> bool:
     """Per i marchi dal nome generico: il nome compare vicino a una parola
     dei serramenti, o il testo cita il dominio del marchio."""
-    d = MARCHI[marchio]
+    d = TUTTI[marchio]
     if not d["generico"]:
         return True
     t = _norm(testo)
     if d["dominio"] and d["dominio"] in t:
         return True
-    return any(re.search(CONTESTO, t[max(0, m.start() - CONTESTO_CARATTERI):m.end() + CONTESTO_CARATTERI])
+    return any(re.search(d.get("contesto", CONTESTO), t[max(0, m.start() - CONTESTO_CARATTERI):m.end() + CONTESTO_CARATTERI])
                for m in re.finditer(d["regex"], t))
 
 
@@ -94,7 +112,7 @@ def controlla(marchi: list, testo: str, ammessi: list[str], fonte: str, url: str
         m = per_nome.get(_norm(x.get("marchio")))
         ev = (x.get("evidenza") or "").strip()
         if not m or len(_norm(ev)) < 6 or _norm(ev) not in corpo \
-                or not re.search(MARCHI[m]["regex"], _norm(ev)) or not nel_settore(m, testo):
+                or not re.search(TUTTI[m]["regex"], _norm(ev)) or not nel_settore(m, testo):
             continue
         stato = x.get("stato") if x.get("stato") in STATI else "non_chiaro"
         buoni.append({"marchio": m, "stato": stato, "fonte": fonte, "url": url, "evidenza": ev[:300]})
@@ -110,7 +128,7 @@ def correggi_conflitto(d: dict) -> dict:
     un concorrente vero, diventa "da_verificare" e l'agente resta."""
     c = d.get("conflitto") or {}
     dett = _norm(c.get("dettaglio"))
-    della_lista = any(re.search(v["regex"], dett) for v in MARCHI.values())
+    della_lista = any(re.search(v["regex"], dett) for v in TUTTI.values())
     if della_lista and not re.search(CONCORRENTI, dett) \
             and (d.get("agente_di_concorrente") or c.get("stato") == "attuale"):
         d["agente_di_concorrente"] = False
@@ -121,8 +139,9 @@ def correggi_conflitto(d: dict) -> dict:
 
 def prompt_classifica(testo: str, marchi: list[str] | None = None) -> str:
     """Il prompt v4 della ricerca agenti piu' l'estrazione dei marchi, nella
-    stessa chiamata (9/10: anche nei giri normali, senza query in piu')."""
-    marchi = marchi or list(MARCHI)
+    stessa chiamata (9/10: anche nei giri normali, senza query in piu').
+    `marchi` None: i 14 marchi del committente; [] : nessuno (5/11)."""
+    marchi = list(MARCHI) if marchi is None else marchi
     prompt = PROMPT_V4.replace('"nota": "max 20 parole"}}', '"nota": "max 20 parole", '
                                '"marchi": [{{"marchio": "...", "stato": "...", "evidenza": "..."}}]}}')
     return (prompt.format(testo=testo) + "\n\n" + REGOLE_MARCHI.format(marchi=_descrizione(marchi))
@@ -133,7 +152,8 @@ def marchi_della_scheda(d: dict, testo: str, url: str, marchi: list[str] | None 
     """Dopo la classificazione: marchi controllati (evidenza letterale,
     contesto dei generici) e conflitto corretto. Modifica `d`."""
     correggi_conflitto(d)
-    return controlla(d.pop("marchi", None), testo, marchi or list(MARCHI), "profilo", url)
+    return controlla(d.pop("marchi", None), testo, list(MARCHI) if marchi is None else marchi,
+                     "profilo", url)
 
 
 def unisci(vecchi: list | None, nuovi: list) -> list:
@@ -434,6 +454,324 @@ def giro(marchi: list[str], regioni: list[str], cache: str, scrivi: bool, log=pr
     costi.stampa(tot, log=log)
 
 
+class Spesa:
+    """Spesa del giro su file (Exa + Anthropic in EUR): il tetto vale anche
+    dopo una ripresa, non solo dentro un processo."""
+
+    def __init__(self, file: pathlib.Path, tetto_eur: float):
+        self.file, self.tetto = file, tetto_eur
+        d = json.loads(file.read_text()) if file.exists() else {}
+        self.exa_usd, self.anth_prima = d.get("exa_usd", 0.0), d.get("anthropic_eur", 0.0)
+        self.anth_ora = 0.0
+
+    def eur(self) -> float:
+        import config
+        return self.exa_usd * config.USD_EUR + self.anth_prima + self.anth_ora
+
+    def finita(self) -> bool:
+        return self.eur() >= self.tetto
+
+    def salva(self) -> None:
+        self.file.write_text(json.dumps({"exa_usd": round(self.exa_usd, 6),
+                                         "anthropic_eur": round(self.anth_prima + self.anth_ora, 6)}))
+
+
+def query_pilota(marchi: list[str], regioni: list[str]) -> list[tuple[str, str, str]]:
+    """-> (marchio, tipo, query). Come l'8/10: una sagoma per regione, la
+    nazionale e due ricerche di agenzie; le grandi solo la nazionale."""
+    out = []
+    for m in marchi:
+        if not TUTTI[m].get("grande"):
+            out += [(m, "persone", SAGOME[0].format(m=m, r=r)) for r in regioni]
+        out.append((m, "persone", f"agente o rappresentante {m} serramenti Italia"))
+        if not TUTTI[m].get("grande"):
+            out += [(m, "agenzie", s.format(m=m)) for s in SAGOME_AGENZIE]
+    return out
+
+
+def _exa_web(q: str, chiave: str) -> dict:
+    import urllib.request
+    req = urllib.request.Request(
+        "https://api.exa.ai/search",
+        data=json.dumps({"query": q, "type": "auto", "numResults": 10,
+                         "contents": {"text": {"maxCharacters": 6000}}}).encode(),
+        headers={"content-type": "application/json", "x-api-key": chiave})
+    with urllib.request.urlopen(req, timeout=120) as r:
+        return json.load(r)
+
+
+def _aggiungi(f: pathlib.Path, righe: list[dict]) -> None:
+    with f.open("a") as h:
+        for x in righe:
+            h.write(json.dumps(x, ensure_ascii=False) + "\n")
+
+
+def a_turno(righe: list[dict]) -> list[dict]:
+    """Un profilo per azienda a giro: se il tetto ferma l'analisi, nessuna
+    azienda resta senza profili valutati (l'ordine e' stabile: ripresa ok)."""
+    gruppi = collections.defaultdict(list)
+    for x in righe:
+        gruppi[x["marchio"]].append(x)
+    out, k = [], 0
+    while len(out) < len(righe):
+        out += [g[k] for g in gruppi.values() if k < len(g)]
+        k += 1
+    return out
+
+
+def raccogli_pilota(marchi: list[str], regioni: list[str], visti: set, spesa: Spesa,
+                    entro: str | None, log=print) -> bool:
+    """Raccolta INCREMENTALE: ogni ricerca scrive subito i risultati e si
+    segna fatta; una ripartenza riprende dalla successiva. -> True se completa."""
+    import config
+    import crediti
+    import lucchetto
+    chiave = os.environ["EXA_API_KEY"]
+    f_racc, f_pag, f_q = CARTELLA / "raccolta.jsonl", CARTELLA / "pagine.jsonl", CARTELLA / "query_fatte.jsonl"
+    fatte = {x["q"] for x in _righe_json(f_q) if x} if f_q.exists() else set()
+    per_marchio = collections.Counter(x["marchio"] for x in _righe_json(f_racc) if x) \
+        if f_racc.exists() else collections.Counter()
+    viste_pag = {x["dominio"] for x in _righe_json(f_pag) if x} if f_pag.exists() else set()
+    domini_marchi = [d["dominio"] for d in TUTTI.values() if d["dominio"]]
+    lista = query_pilota(marchi, regioni)
+    da_fare = [x for x in lista if x[2] not in fatte]
+    log(f"raccolta: {len(lista)} ricerche, gia' fatte {len(lista) - len(da_fare)}")
+    for m, tipo, q in da_fare:
+        if spesa.finita() or lucchetto.scaduto(entro):
+            log(f"STOP raccolta: {'tetto di spesa' if spesa.finita() else 'ora limite'} "
+                f"({spesa.eur():.2f} EUR)")
+            return False
+        grande = TUTTI[m].get("grande")
+        try:
+            d = _exa(q, chiave) if tipo == "persone" else _exa_web(q, chiave)
+        except Exception as e:  # noqa: BLE001
+            log(f"  ricerca KO ({type(e).__name__}) [{m}]")
+            continue
+        costo = (d.get("costDollars") or {}).get("total", 0) or 0
+        spesa.exa_usd += costo
+        crediti.registra_spesa_exa(costo * config.USD_EUR)
+        nuovi = []
+        for res in d.get("results", []):
+            if tipo == "persone":
+                if grande and per_marchio[m] >= PROFILI_GRANDE:
+                    break
+                u = normalizza_linkedin(res.get("url"))
+                if u and u not in visti:
+                    visti.add(u)
+                    per_marchio[m] += 1
+                    nuovi.append({"url": u, "nome": res.get("title") or "",
+                                  "testo": (res.get("text") or "")[:2500], "marchio": m})
+            else:
+                u, t = res.get("url") or "", res.get("text") or ""
+                dom = re.sub(r"^https?://(www\.)?", "", u).split("/")[0].lower()
+                if not dom or dom in viste_pag or "linkedin.com" in dom \
+                        or any(x in dom for x in domini_marchi):
+                    continue
+                if re.search(r"rappresentanz|agenzia|mandant|aziende rappresentate|plurimandat", t, re.I) \
+                        and re.search(TUTTI[m]["regex"], _norm(t)) and nel_settore(m, t):
+                    viste_pag.add(dom)
+                    nuovi.append({"url": u, "dominio": dom, "testo": t, "marchio": m})
+        _aggiungi(f_racc if tipo == "persone" else f_pag, nuovi)
+        _aggiungi(f_q, [{"q": q, "marchio": m, "tipo": tipo, "nuovi": len(nuovi),
+                         "usd": round(costo, 5)}])
+        spesa.salva()
+    return True
+
+
+def pilota(marchi: list[str], regioni: list[str], tetto_eur: float, entro: str | None,
+           log=print) -> int:
+    """Pilota B1 (5/11). Una sola chiamata per profilo, con i soli marchi
+    che compaiono nel testo; esiti per azienda su file (solo numeri)."""
+    import config
+    import costi
+    import db
+    import lucchetto
+    from agenti_ricerca import _regione_di, completa_nomi
+    from anthropic import Anthropic
+
+    h = lucchetto.prendi("agenti_marchi.py", log)
+    if h is None:
+        return 1
+    CARTELLA.mkdir(parents=True, exist_ok=True)
+    spesa = Spesa(CARTELLA / "spesa.json", tetto_eur)
+    log(f"pilota: {len(marchi)} aziende, regioni {', '.join(regioni)}, tetto {tetto_eur:.2f} EUR, "
+        f"gia' spesi {spesa.eur():.2f} EUR")
+    sb = db.client()
+    righe, i = [], 0
+    while True:
+        b = (sb.table("agenti").select("id,nome_completo,linkedin_url,regione_prevalente,mandati_marchi,"
+                                       "province_coperte,residenza,telefono,email")
+             .range(i, i + 999).execute().data)
+        righe += b
+        if len(b) < 1000:
+            break
+        i += 1000
+    per_url = {normalizza_linkedin(r["linkedin_url"]): r for r in righe if r.get("linkedin_url")}
+    f_racc, f_pag, f_fatti, f_esiti = (CARTELLA / "raccolta.jsonl", CARTELLA / "pagine.jsonl",
+                                       CARTELLA / "fatti.jsonl", CARTELLA / "esiti.jsonl")
+    # gia' in archivio = in tabella PRIMA del pilota: si fissa alla prima partenza
+    f_prima = CARTELLA / "in_archivio_prima.json"
+    if not f_prima.exists():
+        f_prima.write_text(json.dumps(sorted(per_url)))
+    prima = set(json.loads(f_prima.read_text()))
+    visti = set()
+    if f_racc.exists():
+        visti = {x["url"] for x in _righe_json(f_racc) if x}
+    # anche gli agenti gia' in tabella si raccolgono: possono avere un mandato
+    # con una di queste aziende (solo la chiamata dei marchi, se il nome compare)
+    completa = raccogli_pilota(marchi, regioni, visti, spesa, entro, log)
+
+    fatti = {x["url"] for x in _righe_json(f_fatti) if x} if f_fatti.exists() else set()
+    tutti = a_turno([x for x in _righe_json(f_racc) if x] if f_racc.exists() else [])
+    pagine = a_turno([x for x in _righe_json(f_pag) if x] if f_pag.exists() else [])
+    client = Anthropic(max_retries=2)
+    tot = costi.nuovo_ciclo()
+    esiti = collections.Counter()
+
+    def costo_ora() -> None:
+        spesa.anth_ora = costi.costo_anthropic(tot["token_input"], tot["token_output"])
+        spesa.salva()
+
+    for k, p in enumerate(tutti, 1):
+        u = p["url"]
+        if u in fatti:
+            continue
+        if spesa.finita() or lucchetto.scaduto(entro):
+            log(f"STOP analisi: {'tetto di spesa' if spesa.finita() else 'ora limite'} ({spesa.eur():.2f} EUR)")
+            completa = False
+            break
+        if k % 20 == 0:
+            log(f"  [{k}/{len(tutti)}] {dict(esiti)} — {spesa.eur():.2f} EUR")
+        pres = presenti(marchi, p["testo"])
+        esito = {"marchio_query": p["marchio"], "marchi": [], "in_archivio": u in prima, "nuovo": False}
+        try:
+            if u in per_url:
+                if pres:
+                    d = _chiama(client, PROMPT_SOLO_MARCHI.format(marchi=_descrizione(pres),
+                                                                  testo=p["testo"]), tot, 500)
+                    trovati = controlla(d.get("marchi"), p["testo"], pres, "profilo", u)
+                    if trovati:
+                        r = per_url[u]
+                        r["mandati_marchi"] = unisci(r.get("mandati_marchi"), trovati)
+                        sb.table("agenti").update({"mandati_marchi": r["mandati_marchi"]}
+                                                  ).eq("id", r["id"]).execute()
+                        esiti["esistenti con marchi"] += 1
+                    esito["marchi"] = [{"marchio": x["marchio"], "stato": x["stato"]} for x in trovati]
+                else:
+                    esiti["esistenti senza marchi nel testo (nessuna chiamata)"] += 1
+            else:
+                d = _chiama(client, prompt_classifica(p["testo"], pres), tot, 900)
+                trovati = marchi_della_scheda(d, p["testo"], u, pres)
+                esito["marchi"] = [{"marchio": x["marchio"], "stato": x["stato"]} for x in trovati]
+                if d.get("pertinente") not in ("si", "da_valutare"):
+                    esiti["non pertinenti"] += 1
+                    esito["marchi"] = []       # non entra: non conta come agente trovato
+                else:
+                    rec = record_scheda({**d, "url": u, "nome": p["nome"], "query": p["marchio"]})
+                    rec["mandati_marchi"] = trovati or None
+                    sb.table("agenti").insert(rec).execute()
+                    esiti["agenti nuovi"] += 1
+                    esito["nuovo"] = True
+        except Exception as e:  # noqa: BLE001
+            if "23505" in str(e) or "duplicate key" in str(e):
+                esiti["gia' presenti (dedup)"] += 1
+            else:
+                esiti["errori"] += 1
+                log(f"  errore: {type(e).__name__}")     # mai il testo: puo' contenere nomi
+        costo_ora()
+        _aggiungi(f_fatti, [{"url": u}])
+        _aggiungi(f_esiti, [esito])
+
+    for pg in pagine:
+        if pg["url"] in fatti:
+            continue
+        if spesa.finita() or lucchetto.scaduto(entro):
+            completa = False
+            break
+        pres = presenti(marchi, pg["testo"])
+        esito = {"marchio_query": pg["marchio"], "marchi": [], "in_archivio": False, "nuovo": False,
+                 "agenzia": True}
+        try:
+            d = _chiama(client, PROMPT_AGENZIA.format(marchi=_descrizione(pres), url=pg["url"],
+                                                      testo=pg["testo"][:6000]), tot, 1200)
+            trovati = controlla(d.get("marchi"), pg["testo"], pres, "sito_agenzia", pg["url"]) \
+                if d.get("agenzia") and (d.get("nome") or "").strip() else []
+            if not d.get("agenzia"):
+                esiti["siti non di agenzie"] += 1
+            elif not trovati:
+                esiti["agenzie senza marchi dichiarati"] += 1
+            else:
+                regione = _regione_di({"province_coperte": d.get("province") or [],
+                                       "residenza": d.get("zona") or ""})
+                regione = regione if regione in config.REGIONI else ""
+                tipo, r = abbinamento(d["nome"], regione, righe,
+                                      {"zona": d.get("zona"), "telefono": d.get("telefono"),
+                                       "email": d.get("email")})
+                esito["marchi"] = [{"marchio": x["marchio"], "stato": x["stato"]} for x in trovati]
+                if tipo == "certo":
+                    sb.table("agenti").update({"mandati_marchi": unisci(r.get("mandati_marchi"), trovati)}
+                                              ).eq("id", r["id"]).execute()
+                    esiti["agenzie gia' in tabella, marchi aggiunti"] += 1
+                    esito["in_archivio"] = True
+                else:
+                    rec = scheda_agenzia(d, pg["url"], trovati)
+                    rec["regione_prevalente"] = regione or None
+                    if r:
+                        rec["note"] += f"; possibile doppione di {r['id']}"
+                    sb.table("agenti").insert(rec).execute()
+                    esiti["agenzie nuove"] += 1
+                    esiti["possibili doppioni"] += bool(r)
+                    esito["nuovo"] = True
+        except Exception as e:  # noqa: BLE001
+            esiti["errori"] += 1
+            log(f"  agenzia: {type(e).__name__}")
+        costo_ora()
+        _aggiungi(f_fatti, [{"url": pg["url"]}])
+        _aggiungi(f_esiti, [esito])
+
+    if esiti["agenti nuovi"] or esiti["agenzie nuove"]:
+        completa_nomi(log)
+    costo_ora()
+    log(f"\nESITI di questa sessione: {dict(esiti)}")
+    log(f"spesa del giro: Exa {spesa.exa_usd:.3f} USD, Anthropic {spesa.anth_prima + spesa.anth_ora:.2f} EUR, "
+        f"totale {spesa.eur():.2f} EUR su {tetto_eur:.2f}")
+    resoconto(marchi, log)
+    log("ESITO: pilota COMPLETO" if completa else "ESITO: pilota FERMATO — si riprende rilanciando")
+    return 0
+
+
+def resoconto(marchi: list[str], log=print) -> dict:
+    """Per azienda, solo numeri: profili raccolti dalle sue ricerche e agenti
+    (persone o agenzie) con un suo mandato attuale/passato, nuovi o gia' in archivio."""
+    f_esiti, f_racc = CARTELLA / "esiti.jsonl", CARTELLA / "raccolta.jsonl"
+    esiti = [x for x in _righe_json(f_esiti) if x] if f_esiti.exists() else []
+    racc = collections.Counter(x["marchio"] for x in _righe_json(f_racc) if x) \
+        if f_racc.exists() else collections.Counter()
+    tab = {m: collections.Counter() for m in marchi}
+    for e in esiti:
+        for x in e["marchi"]:
+            if x["marchio"] not in tab:
+                continue
+            c = tab[x["marchio"]]
+            c["agenti"] += 1
+            c[x["stato"]] += 1
+            c["nuovi" if e["nuovo"] else "gia_in_archivio"] += 1
+    out = {"per_azienda": {m: {"profili_raccolti": racc[m], **tab[m]} for m in marchi},
+           "profili_valutati": len(esiti),
+           "agenti_nuovi_totali": sum(e["nuovo"] for e in esiti),
+           "agenti_con_mandato": sum(bool(e["marchi"]) for e in esiti),
+           "agenti_con_mandato_nuovi": sum(bool(e["marchi"]) and e["nuovo"] for e in esiti)}
+    (CARTELLA / "resoconto.json").write_text(json.dumps(out, ensure_ascii=False, indent=1))
+    log(f"{'azienda':<18}{'racc.':>6}{'agenti':>7}{'att.':>5}{'pass.':>6}{'n.c.':>5}{'nuovi':>6}{'arch.':>6}")
+    for m, v in out["per_azienda"].items():
+        log(f"{m[:17]:<18}{v['profili_raccolti']:>6}{v.get('agenti', 0):>7}{v.get('attuale', 0):>5}"
+            f"{v.get('passato', 0):>6}{v.get('non_chiaro', 0):>5}{v.get('nuovi', 0):>6}"
+            f"{v.get('gia_in_archivio', 0):>6}")
+    log(f"profili valutati {out['profili_valutati']}, agenti nuovi in tabella {out['agenti_nuovi_totali']}, "
+        f"con mandato {out['agenti_con_mandato']} (nuovi {out['agenti_con_mandato_nuovi']})")
+    return out
+
+
 if __name__ == "__main__":
     if "--test" in sys.argv:
         testo = "Agente plurimandatario: mandato FINSTRAL per il Lazio. In passato agente Internorm."
@@ -476,12 +814,74 @@ if __name__ == "__main__":
                            [{"marchio": "Internorm"}])
         assert r["province_coperte"] == ["RM", "LT"] and r["fonte"] == "sito_agenzia" \
             and r["telefono"] is None and r["agente_di_concorrente"] is False
+        # --- pilota B1 (5/11) ---
+        assert len(PILOTA) == 30 and sum(d["grande"] for d in PILOTA.values()) == 5
+        assert not set(PILOTA) & set(MARCHI)
+        # al modello solo i marchi che compaiono nel testo
+        t = "Agente plurimandatario: porte FerreroLegno e maniglie Colfert. Ex agente Schüco."
+        assert presenti(list(PILOTA), t) == ["Schüco", "FerreroLegno", "Colfert"]
+        assert presenti(list(PILOTA), "agente di commercio settore alimentare") == []
+        p0 = prompt_classifica("testo", [])
+        assert "nessun marchio dell'elenco" in p0 and "Finstral" not in p0
+        assert "Finstral" in prompt_classifica("testo")          # giri normali: i 14 di sempre
+        assert "Colfert" in prompt_classifica("testo", ["Colfert"]) and "Finstral" not in \
+            prompt_classifica("testo", ["Colfert"])
+        # generici: serve il contesto della filiera
+        assert nel_settore("Scrigno", "agente controtelai Scrigno per il Lazio")
+        assert not nel_settore("Scrigno", "il mio scrigno di ricordi")
+        assert nel_settore("Olivari", "rappresento maniglie Olivari")
+        assert not nel_settore("Olivari", "studio legale Olivari")
+        ok = controlla([{"marchio": "Colfert", "stato": "attuale", "evidenza": "maniglie Colfert"},
+                        {"marchio": "Schüco", "stato": "passato", "evidenza": "Ex agente Schüco"}],
+                       t, ["Colfert", "Schüco"], "profilo", "u")
+        assert [(x["marchio"], x["stato"]) for x in ok] == [("Colfert", "attuale"), ("Schüco", "passato")]
+        # ricerche: le grandi solo la nazionale, le altre regioni + nazionale + 2 agenzie
+        q = query_pilota(["Schüco", "Colfert"], ["Lazio", "Toscana"])
+        assert [x for x in q if x[0] == "Schüco"] == [("Schüco", "persone",
+                                                       "agente o rappresentante Schüco serramenti Italia")]
+        assert [x[1] for x in q if x[0] == "Colfert"] == ["persone"] * 3 + ["agenzie"] * 2
+        # la spesa resta su file: dopo una ripresa il tetto conta anche il gia' speso
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            f = pathlib.Path(tmp, "spesa.json")
+            sp = Spesa(f, 1.0)
+            sp.exa_usd, sp.anth_ora = 0.5, 0.3
+            sp.salva()
+            sp2 = Spesa(f, 1.0)
+            assert abs(sp2.eur() - (0.5 * 0.92 + 0.3)) < 1e-6 and not sp2.finita()
+            sp2.anth_ora = 0.3
+            assert sp2.finita()
+        assert [x["n"] for x in a_turno([{"marchio": "A", "n": 1}, {"marchio": "A", "n": 2},
+                                         {"marchio": "B", "n": 3}])] == [1, 3, 2]
+        # resoconto: solo numeri, per azienda
+        with tempfile.TemporaryDirectory() as tmp:
+            CARTELLA = pathlib.Path(tmp)
+            _aggiungi(CARTELLA / "raccolta.jsonl", [{"url": "a", "marchio": "Colfert"}] * 3)
+            _aggiungi(CARTELLA / "esiti.jsonl", [
+                {"marchio_query": "Colfert", "marchi": [{"marchio": "Colfert", "stato": "attuale"}],
+                 "in_archivio": False, "nuovo": True},
+                {"marchio_query": "Colfert", "marchi": [{"marchio": "Colfert", "stato": "passato"}],
+                 "in_archivio": True, "nuovo": False},
+                {"marchio_query": "Colfert", "marchi": [], "in_archivio": False, "nuovo": True}])
+            out = resoconto(["Colfert"], log=lambda *_: None)
+            c = out["per_azienda"]["Colfert"]
+            assert (c["profili_raccolti"], c["agenti"], c["attuale"], c["passato"], c["nuovi"],
+                    c["gia_in_archivio"]) == (3, 2, 1, 1, 1, 1)
+            assert out["agenti_nuovi_totali"] == 2 and out["agenti_con_mandato_nuovi"] == 1
         print("ok")
         sys.exit(0)
 
     from dotenv import load_dotenv
     load_dotenv(pathlib.Path(__file__).parent / ".env")
     arg = lambda k: sys.argv[sys.argv.index(k) + 1] if k in sys.argv else ""
+    if "--pilota" in sys.argv:
+        if "--scrivi" not in sys.argv:
+            print(f"MISURA: {len(query_pilota(list(PILOTA), [r for r in arg('--regioni').split(',') if r]))}"
+                  " ricerche Exa; con --scrivi --tetto-eur N il giro parte")
+            sys.exit(0)
+        sys.exit(pilota(list(PILOTA), [r.strip() for r in arg("--regioni").split(",") if r.strip()],
+                        float(arg("--tetto-eur")), arg("--entro") or None,
+                        lambda m: print(m, flush=True)))
     giro([m.strip() for m in arg("--marchi").split(",") if m.strip()],
          [r.strip() for r in arg("--regioni").split(",") if r.strip()],
          arg("--cache"), "--scrivi" in sys.argv, senza_ricerca="--senza-ricerca" in sys.argv,
