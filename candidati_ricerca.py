@@ -37,6 +37,7 @@ import os
 import pathlib
 import re
 import sys
+from dataclasses import dataclass
 
 from agenti_ricerca import (_exa, _righe_json, normalizza_linkedin,
                             parole_in_originale, separa_nome)
@@ -161,6 +162,20 @@ RE_CERCA_LAVORO = re.compile(r"in cerca|cerca(?:ndo)? (?:di )?(?:un )?(?:nuov[oa
                              r"senza (?:lavoro|occupazione)", re.I)
 
 
+@dataclass(frozen=True)
+class Posizione:
+    """Cio' che cambia da una posizione all'altra (5/11: tecnico-commerciale,
+    candidati_tecnico.py). Le regole di controllo e di privacy restano uniche."""
+    codice: str             # colonna `posizione` di `candidati`
+    criteri: tuple
+    solo_colloquio: frozenset
+    base: tuple
+    aziende: dict           # nome -> regex esatta: segnale, non filtro
+
+
+GEOMETRA = Posizione("geometra_cantiere", CRITERI, frozenset(SOLO_COLLOQUIO), BASE, RE_AZIENDE)
+
+
 def _norm(t: str | None) -> str:
     return re.sub(r"\s+", " ", (t or "").replace("’", "'")).strip().casefold()
 
@@ -169,9 +184,10 @@ def oggi() -> str:
     return dt.date.today().isoformat()
 
 
-def controlla(scheda: dict, testo: str) -> int:
+def controlla(scheda: dict, testo: str, pos: Posizione | None = None) -> int:
     """Le regole che il modello puo' sbagliare, rifatte nel codice.
     -> quanti esiti ha riportato a "da_verificare"."""
+    pos = pos or GEOMETRA
     corpo, corretti = _norm(testo), 0
     lazio = re.search(r"Lazio|Latium", scheda.get("localita") or "", re.I)
     for c in scheda.get("criteri") or []:
@@ -182,14 +198,14 @@ def controlla(scheda: dict, testo: str) -> int:
         torna = (
             # un "si" o un "no" senza frase LETTERALE del profilo
             (esito in ("si", "no") and (len(ev) < 4 or ev not in corpo))
-            or (n in SOLO_COLLOQUIO and esito != "da_verificare")
+            or (n in pos.solo_colloquio and esito != "da_verificare")
             or (n == 4 and esito == "si" and not RE_FORMAZIONE.search(ev))
             # il modello non conosce i 121 comuni della provincia (il 6/10
             # ha messo Lariano fuori zona): nel Lazio il "no" non lo decide lui
             or (n == 2 and esito == "no" and lazio))
         if torna:
             c["esito"], corretti = "da_verificare", corretti + 1
-        if n in SOLO_COLLOQUIO:
+        if n in pos.solo_colloquio:
             c["evidenza"] = None
     # della disponibilita' resta solo la parte prima del riferimento sensibile
     # ("in cerca di occupazione in NaSPI" -> "in cerca di occupazione")
@@ -199,7 +215,7 @@ def controlla(scheda: dict, testo: str) -> int:
     scheda["disponibilita"] = disp if len(disp) >= 12 and _norm(disp).strip(" .\"'«»") in corpo else None
     scheda["sintesi"] = " ".join(f for f in re.split(r"(?<=\.)\s+", scheda.get("sintesi") or "")
                                  if not RE_SENSIBILE.search(f)) or None
-    scheda["aziende_segnalate"] = [a for a, r in RE_AZIENDE.items() if re.search(r, testo, re.I)]
+    scheda["aziende_segnalate"] = [a for a, r in pos.aziende.items() if re.search(r, testo, re.I)]
     corpo_msg = (scheda.get("messaggio") or "").strip()
     if (RE_CERCA_LAVORO.search(corpo_msg) or RE_SENSIBILE.search(corpo_msg)
             or len(corpo_msg) > MAX_CORPO):
@@ -220,12 +236,12 @@ def verificati(scheda: dict) -> int:
     return sum(e == "si" for e in esiti(scheda).values())
 
 
-def base(scheda: dict) -> bool:
-    return all(esiti(scheda).get(n) == "si" for n in BASE)
+def base(scheda: dict, pos: Posizione | None = None) -> bool:
+    return all(esiti(scheda).get(n) == "si" for n in (pos or GEOMETRA).base)
 
 
-def ordine(scheda: dict) -> tuple:
-    return (not base(scheda), -verificati(scheda))
+def ordine(scheda: dict, pos: Posizione | None = None) -> tuple:
+    return (not base(scheda, pos), -verificati(scheda))
 
 
 def entra(scheda: dict) -> bool:
@@ -348,8 +364,9 @@ def sfoltisci(valutate: set, log=print) -> None:
     log(f"raccolta: tolti {prima - len(resta)} testi, ne restano {len(resta)} da valutare")
 
 
-def record(s: dict) -> dict:
-    nomi = dict(enumerate((n for n, _ in CRITERI), 1))
+def record(s: dict, pos: Posizione | None = None) -> dict:
+    pos = pos or GEOMETRA
+    nomi = dict(enumerate((n for n, _ in pos.criteri), 1))
     criteri = [{"n": c.get("n"), "criterio": nomi.get(c.get("n")),
                 "esito": c.get("esito"), "evidenza": c.get("evidenza")}
                for c in sorted(s.get("criteri") or [], key=lambda c: c.get("n") or 0)]
@@ -357,10 +374,11 @@ def record(s: dict) -> dict:
         "nome": s.get("nome_proprio"), "cognome": s.get("cognome"),
         "linkedin_url": s["url"], "localita": s.get("localita"),
         "sintesi": s.get("sintesi"), "criteri": criteri,
-        "criteri_verificati": verificati(s), "requisiti_base": base(s),
+        "criteri_verificati": verificati(s), "requisiti_base": base(s, pos),
         "aziende_segnalate": s.get("aziende_segnalate") or None,
         "nota_disponibilita": s.get("disponibilita"),
         "bozza_messaggio": messaggio(s), "trovato_il": s.get("trovato_il") or oggi(),
+        "posizione": pos.codice,
     }
 
 
@@ -452,6 +470,7 @@ if __name__ == "__main__":
         ok = {"criteri": [{"n": n, "esito": "si"} for n in BASE]}
         assert sorted([s, ok], key=ordine)[0] is ok
         assert record({**s, "url": "u"})["criteri"][0]["criterio"] == "Zona geografica"
+        assert record({**s, "url": "u"})["posizione"] == "geometra_cantiere"
         b = {"messaggio": "Buongiorno Ugo, ho visto i suoi cantieri.", "criteri": []}
         assert controlla(b, "x") == 0 and messaggio(b).endswith("rispondendo a questo messaggio.")
         import tempfile
