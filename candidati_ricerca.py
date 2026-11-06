@@ -169,8 +169,9 @@ class Posizione:
     codice: str             # colonna `posizione` di `candidati`
     criteri: tuple
     solo_colloquio: frozenset
-    base: tuple
+    base: tuple             # requisiti di base: esito "si"
     aziende: dict           # nome -> regex esatta: segnale, non filtro
+    base_non_no: tuple = ()  # requisiti di base: basta che l'esito non sia "no"
 
 
 GEOMETRA = Posizione("geometra_cantiere", CRITERI, frozenset(SOLO_COLLOQUIO), BASE, RE_AZIENDE)
@@ -237,7 +238,9 @@ def verificati(scheda: dict) -> int:
 
 
 def base(scheda: dict, pos: Posizione | None = None) -> bool:
-    return all(esiti(scheda).get(n) == "si" for n in (pos or GEOMETRA).base)
+    pos, e = pos or GEOMETRA, esiti(scheda)
+    return (all(e.get(n) == "si" for n in pos.base)
+            and all(e.get(n) != "no" for n in pos.base_non_no))
 
 
 def ordine(scheda: dict, pos: Posizione | None = None) -> tuple:

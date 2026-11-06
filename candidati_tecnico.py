@@ -57,8 +57,9 @@ CRITERI = (
     ("Tipo di rapporto", "Dipendente, partita IVA o agente: si chiarisce al colloquio."),
     ("Competenze in più", "Normative edilizie, efficienza energetica, protezione al fuoco."),
 )
+# requisiti di base (6/11): zona, ruolo e 3 anni "si", piu' il settore non "no"
 POS = Posizione("tecnico_commerciale", CRITERI, frozenset({13, 14}), (2, 3, 7),
-                {n: a["regex"] for n, a in AZIENDE.items()})
+                {n: a["regex"] for n, a in AZIENDE.items()}, base_non_no=(5,))
 
 ZONE = ("Roma", "Latina", "Frosinone", "Viterbo", "Rieti", "Lazio")
 RUOLI = ("tecnico commerciale edilizia", "commerciale tecnico case in legno",
@@ -364,7 +365,11 @@ if __name__ == "__main__":
                          {"n": 7, "esito": "si", "evidenza": "Tecnico commerciale"},
                          {"n": 13, "esito": "si", "evidenza": "Rome"},
                          {"n": 16, "esito": "si", "evidenza": "Rome"}]}
-        assert controlla(s, t, POS) == 1 and base(s, POS)
+        assert controlla(s, t, POS) == 1 and base(s, POS)      # settore assente: da verificare
+        no5 = {**s, "criteri": s["criteri"] + [{"n": 5, "esito": "no"}]}
+        dv5 = {**s, "criteri": s["criteri"] + [{"n": 5, "esito": "da_verificare"}]}
+        assert not base(no5, POS) and base(dv5, POS) and base(no5)   # il geometra non cambia
+        assert not record({**no5, "url": "u"}, POS)["requisiti_base"]
         r = record({**s, "url": "u"}, POS)
         assert r["posizione"] == "tecnico_commerciale" and r["aziende_segnalate"] == ["Technowood"]
         assert r["criteri"][1]["criterio"] == "Ruolo" and r["bozza_messaggio"].endswith(CHIUSURA)
