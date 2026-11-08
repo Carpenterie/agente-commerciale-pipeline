@@ -15,6 +15,8 @@ import pathlib
 import subprocess
 
 FILE = pathlib.Path(__file__).resolve().parent / "cache" / ".lucchetto_giro_regione"
+# Job con un lucchetto proprio che non scrivono sull'archivio: non occupano.
+ESENTI = ("testi_campagna.py",)
 
 
 def altri_lavori(mio: str) -> list[str]:
@@ -25,7 +27,8 @@ def altri_lavori(mio: str) -> list[str]:
     except OSError:
         return []
     pid = str(os.getpid())
-    return [r for r in righe if r.split(" ", 1)[0] != pid and mio not in r]
+    return [r for r in righe if r.split(" ", 1)[0] != pid and mio not in r
+            and not any(e in r for e in ESENTI)]
 
 
 def prendi(mio: str, log=print):

@@ -22,6 +22,7 @@ if not _os.environ.get("SSL_CERT_FILE"):
 
 # --- Modello e costi (§7) ---
 MODELLO = "claude-sonnet-4-6"
+MODELLO_TESTI = "claude-haiku-5-5"  # solo testi_campagna.py
 # Prezzi Anthropic per Claude Sonnet 4.6 (docs: $3.00 / $15.00 per milione di token)
 PREZZO_INPUT_USD_PER_TOKEN = 3.00 / 1_000_000
 PREZZO_OUTPUT_USD_PER_TOKEN = 15.00 / 1_000_000

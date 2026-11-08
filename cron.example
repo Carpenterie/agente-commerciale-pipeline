@@ -98,3 +98,7 @@
 # prova del 6-7/10 (0 da togliere su 266) erano coerenti, e la cancellazione
 # e' promessa nel messaggio ai candidati.
 30 4 * * * cd /opt/agente-commerciale-pipeline && .venv/bin/python candidati_ricerca.py --conservazione >> /var/log/candidati-conservazione.log 2>&1
+#
+# Testi personalizzati delle campagne: ogni 10 minuti, esce subito se non ci sono
+# campagne da preparare. Lucchetto proprio, scrive solo testi_campagna e testi_stato.
+*/10 * * * * cd /opt/agente-commerciale-pipeline && .venv/bin/python testi_campagna.py >> /var/log/pipeline-testi-campagna.log 2>&1
