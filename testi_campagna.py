@@ -27,7 +27,6 @@ import concurrent.futures as cf
 import datetime as dt
 import fcntl
 import json
-import math
 import pathlib
 import random
 import re
@@ -46,7 +45,7 @@ BLOCCO = 30
 PARALLELI = 6
 MAX_TOKEN = 2000
 USD_INPUT, USD_OUTPUT = 0.10 / 1e6, 0.50 / 1e6  # claude-haiku-5-5
-ALLUNGAMENTO_MAX = 1.40
+CARATTERI_IN_PIU_MAX = 80    # sul testo base: una percentuale escludeva i testi corti
 APERTURA_PAROLE_MAX = 15
 # Si alternano per azienda. Mai "Per il serramentista di Milano": sembra l'unico in citta'.
 APERTURE = ("Per chi lavora come", "Per chi fa il", "Se lavora come", "Per la Sua attività di")
@@ -208,7 +207,7 @@ def controlla(testo: str, base: str, az: dict) -> str | None:
     testo = (testo or "").strip()
     if not testo:
         return "testo vuoto"
-    if len(_spazi(testo)) > math.floor(len(_spazi(base)) * ALLUNGAMENTO_MAX):
+    if len(_spazi(testo)) > len(_spazi(base)) + CARATTERI_IN_PIU_MAX:
         return "testo troppo lungo"
     apertura = apertura_di(testo, base)
     if not apertura:
@@ -409,7 +408,7 @@ def prova(n: int, base: str) -> None:
         print(f"\n--- {i} | {_stringa(az.get('categoria')) or 'categoria assente'} | {zona(az)} | "
               f"{es['stato']}" + (f" ({es['motivo']})" if es["motivo"] else ""))
         if es["testo"]:
-            print(f"{es['testo']}\n[{len(es['testo'])} caratteri su {math.floor(len(base) * ALLUNGAMENTO_MAX)}]")
+            print(f"{es['testo']}\n[{len(es['testo'])} caratteri su {len(_spazi(base)) + CARATTERI_IN_PIU_MAX}]")
     print(f"\nPronti {sum(e['stato'] == 'pronto' for e in esiti)}/{n}, costo {sum(e['costo'] for e in esiti):.4f} EUR")
 
 
@@ -424,6 +423,16 @@ def _test() -> None:
     buono = ap + "le" + base[2:]
     assert controlla(buono, base, az) is None, controlla(buono, base, az)
     assert controlla(ap + base, base, az) is None
+    # limite: testo base + 80 caratteri, anche con un testo base corto
+    corto = "Le presentiamo le grate in acciaio."
+    assert controlla(ap + corto, corto, az) is None
+    def con_comune(n):
+        return f"Per chi lavora come serramentista a {'V' * n}, " + corto, {**az, "comune": "V" * n + "a"}
+    t80, az80 = con_comune(42)
+    assert len(t80) == len(corto) + 80
+    assert "lungo" not in (controlla(t80, corto, az80) or "")
+    t81, az81 = con_comune(43)
+    assert len(t81) == len(corto) + 81 and "lungo" in controlla(t81, corto, az81)
     assert zona(az) == "Viterbo" and zona({**az, "comune": None}) == "Lazio"
     casi = {
         "": "vuoto",
