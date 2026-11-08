@@ -581,6 +581,69 @@ CATEGORIE_FUORI_ESATTE = (
     'Parrocchia', 'Monastero', 'Convento', 'Abbazia', 'Basilica', 'Cattedrale',
     'Ufficio postale', 'Stazione di polizia', 'Stazione dei carabinieri',
     'Caserma', 'Tribunale', 'Prefettura', 'Questura', 'Cimitero',
+    # dalla revisione dell'8/11 sull'archivio (committente): le categorie
+    # estranee che il filtro lasciava passare. NON qui 'Pittura': in archivio
+    # etichetta una metallurgica vera, e le categorie vaghe (Ufficio
+    # aziendale, Produttore, Negozio): quelle restano dentro.
+    'Agenzia di assicurazioni', 'Agenzia di design', 'Agenzia di pubblicità',
+    'Agenzia funebre', 'Agenzia gestione affitti brevi', 'Agenzia per escursioni',
+    'Alloggio', 'Appartamenti', 'Area di servizio', 'Area per passeggiate',
+    'Arma dei Carabinieri', 'Asilo per cani diurno', 'Assistenza computer', 'Associazione',
+    'Associazione / Organizzazione', 'Associazione artistica', 'Autocarrozziere',
+    'Autoriparatore', 'Avvocato', 'Azienda agricola biologica', 'Azienda avicola',
+    'Azienda vinicola', 'Bar caffè', 'Base militare', 'Birrificio', 'Broker finanziario',
+    'Caffè', 'Call Center', 'Calzaturificio', 'Campo da calcio', 'Cappella', 'Carrozzeria',
+    'Cartoleria', 'Casa', 'Casa di alta moda', 'Casa farmaceutica', 'Caseificio',
+    'Cash and carry', 'Centro culturale', 'Centro di consulenza per i consumatori',
+    'Centro di formazione', 'Centro di riabilitazione', 'Centro estetico', 'Centro medico',
+    'Centro per la revisione tecnica delle auto', 'Chirurgo plastico', 'Circolo sociale',
+    'Clinica di medicina dello sport', 'Complesso residenziale',
+    'Concessionario di barche', 'Concessionario Hyundai', 'Concessionario Infiniti',
+    'Concessionario moto', 'Concessionario scooter', 'Condominio',
+    'Consulente finanziario', 'Consulente fiscale', 'Cucina italiana meridionale',
+    'Deposito di materiali di recupero', 'Dermatologo', 'Destinazione religiosa', 'Diner',
+    'Discarica per rifiuti speciali', 'DJ', 'Editore', 'Enoteca', 'Fabbrica di automobili',
+    'Fabbricanti di barche', 'Fattoria', "Fermata dell'autobus", 'Fiorista', 'Fondazione',
+    'Fontana di acqua potabile', "Fornaio all'ingrosso", 'Fornitore di accessori nautici',
+    'Fornitore di attrezzatura per telecomunicazioni',
+    'Fornitore di componenti elettronici', 'Gastronomia', 'Giardiniere',
+    'Giardino pubblico', 'Grossista di carni', 'Hotel Resort', 'Hub di interscambio',
+    'Impresa di organizzazione di eventi', 'Impresa di pulizie',
+    'Laboratorio di serigrafia', 'Laboratorio per la riparazione di articoli elettronici',
+    'Lavorazione di frutta e verdura', 'Libreria', 'Lodge', 'Manifattura tessile',
+    'Meccanico', 'Meccanico e assistenza automobili', 'Medico', 'Mulino',
+    "Museo all'aperto", "Museo d'arte", 'Museo storico locale',
+    'Negozio di accessori di moda', 'Negozio di articoli per il giardinaggio',
+    "Negozio di articoli per l'arte", 'Negozio di articoli per la decorazione di torte',
+    'Negozio di articoli per la pesca', 'Negozio di articoli sportivi',
+    'Negozio di biancheria', 'Negozio di cannabis', 'Negozio di computer',
+    'Negozio di elettrodomestici', 'Negozio di elettronica',
+    'Negozio di forniture ippiche', 'Negozio di forniture militari',
+    'Negozio di generi vari', 'Negozio di macchine da cucire',
+    'Negozio di magliette personalizzate', 'Negozio di materassi', 'Negozio di pianoforti',
+    'Negozio di ricambi per auto', 'Negozio di ricambi per auto usati',
+    'Negozio di scarpe', 'Negozio di strumenti a percussione',
+    'Negozio di telefoni cellulari', 'Negozio di timbri in gomma', 'Negozio di vini',
+    'Notaio', 'Notaio pubblico', 'Nutrizionista', 'Officina per la riparazione di barche',
+    'Oleificio', 'Organizzatore di mostre', 'Organizzazione di volontariato', 'Ottico',
+    'Parco', 'Parco giochi', 'Pelletteria', 'Piazza', 'Porticciolo turistico',
+    'Produttore di alimentari', 'Produttore di alimenti',
+    'Produttore di articoli elettronici', 'Produttore di maglieria',
+    'Produttore di ricambi per auto', 'Produttore di tappeti',
+    'Produzione distillati e liquori', "Punto d'interesse culturale", 'Punto panoramico',
+    'Residence', 'Rifugio di montagna', 'Rilegatore', 'Riserva naturale', 'Ristopub',
+    "Rivenditore d'oro", 'Rivenditore di auto', 'Rivenditore di auto usate', 'Sala giochi',
+    'Sarto', 'Sartoria su misura', 'Scuola di educazione generale', 'Scuola di kung fu',
+    'Scuola professionale', 'Servizi di chiaroveggenza', 'Servizi legali',
+    'Servizio agricolo', 'Servizio di amministrazione immobiliare',
+    'Servizio di contabilità', 'Servizio di produzione di video', 'Servizio di pulizia',
+    'Servizio di raccolta rifiuti', 'Servizio di recupero dati', 'Servizio di ricamo',
+    'Servizio di riparazione di bilance', 'Servizio di riparazione di elettrodomestici',
+    'Servizio di riparazione di televisioni', 'Servizio di sgombero case', 'Sito storico',
+    'Società immobiliare residenziale', 'Spa', 'Spedizioni e corrispondenza',
+    'Stabilimento balneare', 'Stazione della metropolitana', 'Tappezziere',
+    'Tappezziere per auto', 'Terme', "Ufficio dell'amministrazione comunale", 'Vivaio',
+    'Web designer',
 )
 
 
@@ -589,6 +652,10 @@ def fuori_settore_maps(categoria: str | None) -> bool:
     c = (categoria or "").strip().lower()
     if not c:
         return False            # vecchi sourcing senza il campo: si tiene
+    # prima dell'eccezione sui produttori: l'elenco esatto e' una decisione
+    # voce per voce ("Produttore di alimenti" e' deciso, le parole chiave no)
+    if any(c == e.lower() for e in CATEGORIE_FUORI_ESATTE):
+        return True
     if "produttore" in c or "produzione" in c or "fabbrica" in c:
         # chi PRODUCE non e' mai palesemente estraneo: "Produttore di
         # arredi per negozi e supermercati" conteneva "supermercat" ed era
@@ -596,9 +663,54 @@ def fuori_settore_maps(categoria: str | None) -> bool:
         return False
     if c == "bar":              # parola intera: "sbarre" non e' un bar
         return True
-    if any(c == e.lower() for e in CATEGORIE_FUORI_ESATTE):
-        return True
     return any(k in c for k in CATEGORIE_FUORI_SETTORE)
+
+
+# Regole dell'8/11 per chi non ha una categoria Google (lista commerciale,
+# Exa) e per l'analisi del sito. Conservative: una parola del settore nel
+# testo basta a tenere la riga ("Hotel del ferro battuto" resta); il cognome
+# Fabbri da solo non e' un mestiere estraneo.
+_SETTORE = re.compile(
+    r"\bferr[oaie]\b|ferramenta|\bfabbr[oi]\b|fabbrer|serram|infiss|carpent|metall|acciai|allumin"
+    r"|\bedil|costruz|cancell|inferr|\bgrat[ae]\b|\bporte\b|portoni|finestr|persian|blindat"
+    r"|saldat|tornit|zanzar|tapparell|avvolgib|vetr|\blegn|falegn|recinz|ringhier|lamier"
+    r"|serratur|sicurezza", re.I)
+_MESTIERI_ESTRANEI = (
+    r"pasticceri|gelateri|panifici|panetteri|ristorant|pizzeri|trattoria|osteria|macelleri"
+    r"|onoranze funebri|pompe funebri|impresa funebre|agenzia funebre"
+    r"|\bhotel\b|albergo|agriturismo|parrucchier|centro estetico|istituto di bellezza|farmacia"
+    r"|studio (?:legale|dentistico|medico|notarile)|\bnotaio\b|\bavvocat|commercialist"
+    r"|carrozzeria|autofficina|gommista|parrocchia")
+_NOME_ESTRANEO = re.compile(_MESTIERI_ESTRANEI, re.I)
+_ATTIVITA_ESTRANEA = re.compile(
+    _MESTIERI_ESTRANEI + r"|bed (?:and|&) breakfast|\bb&b\b|casa vacanze|struttura ricettiva"
+    r"|azienda agricola|azienda vinicola|autoriparazion|concessionari[oa] (?:auto|moto)"
+    r"|tipografia|stampa digitale|agenzia (?:immobiliare|di viaggi|di pubblicit|web)"
+    r"|sviluppo software|centro medico|clinica|associazione|ente pubblico|\bcomune di\b|\bscuola\b", re.I)
+MOTIVO_ANALISI_SITO = "fuori contesto (analisi sito)"
+
+
+def fuori_settore_nome(nome: str | None) -> bool:
+    """Lista commerciale ed Exa non hanno la categoria Google: decide il
+    mestiere scritto nel nome, se non c'e' anche una parola del settore."""
+    return bool(_NOME_ESTRANEO.search(nome or "")) and not _SETTORE.search(nome or "")
+
+
+def fuori_settore_scheda(scheda: dict) -> bool:
+    """Il filtro d'ingresso: la categoria Google se c'e', altrimenti il nome."""
+    if (scheda.get("categoria_maps") or "").strip():
+        return fuori_settore_maps(scheda["categoria_maps"])
+    return fuori_settore_nome(scheda.get("nome"))
+
+
+def attivita_estranea(dati: dict | None) -> bool:
+    """L'analisi del sito mostra un'attivita' chiaramente diversa? Solo
+    NON_TARGET e solo se la riga dell'attivita' nomina un mestiere estraneo
+    senza alcuna parola del settore: nel dubbio la riga resta."""
+    d = dati or {}
+    a = d.get("attivita_prevalente") or ""
+    return (d.get("classificazione") == "NON_TARGET" and bool(_ATTIVITA_ESTRANEA.search(a))
+            and not _SETTORE.search(a))
 
 
 # Soglie del controllo crediti PRE-giro (crediti.py). Stime dai cicli
@@ -637,6 +749,24 @@ VIETATE_EMAIL = ("saldator", "annuncio", "assunzione", "cercate", "offerta di la
 
 
 if __name__ == "__main__":
+    # revisione dell'8/11
+    for c_ in ("Agenzia funebre", "Carrozzeria", "Produttore di alimenti", "Negozio di elettronica"):
+        assert fuori_settore_maps(c_), c_
+    for c_ in ("Fabbro", "Produttore", "Ufficio aziendale", "Negozio", "Pittura", "Falegname",
+               "Produttore di arredi per negozi e supermercati", "Carcere"):
+        assert not fuori_settore_maps(c_), c_
+    assert fuori_settore_nome("Pasticceria Dolce Vita") and fuori_settore_nome("Onoranze Funebri Alfa")
+    assert not fuori_settore_nome("Fabbri Srl") and not fuori_settore_nome("Hotel del ferro battuto")
+    assert not fuori_settore_nome("Bar Sport") and not fuori_settore_nome("Alfa Spa") and not fuori_settore_nome(None)
+    assert fuori_settore_scheda({"fonte": "exa", "nome": "Ristorante Alfa"})
+    assert not fuori_settore_scheda({"nome": "Ristorante Alfa", "categoria_maps": "Fabbro"})   # Google vince
+    assert fuori_settore_scheda({"nome": "Fabbri", "categoria_maps": "Agenzia funebre"})
+    nt = {"classificazione": "NON_TARGET"}
+    assert attivita_estranea({**nt, "attivita_prevalente": "Studio legale civilista"})
+    assert not attivita_estranea({**nt, "attivita_prevalente": "Carpenteria pesante per Oil&Gas"})
+    assert not attivita_estranea({**nt, "attivita_prevalente": "Scuola di saldatura e carpenteria"})
+    assert not attivita_estranea({"classificazione": "TARGET", "attivita_prevalente": "Studio legale"})
+    assert not attivita_estranea(None) and not attivita_estranea(nt)
     # i tre formati sfuggiti allo sweep del 21/9 (menu Province dell'app)
     assert sigla_provincia("CI") == "SU"
     assert sigla_provincia("Provincia autonoma di Trento") == "TN"

@@ -146,6 +146,11 @@ def main_() -> int:
     # PERMISSIVO anche qui, a differenza del ciclo (vedi docstring)
     schede = dedup.filtra(schede, dedup.riferimenti(db.riferimenti_aziende(sb)),
                           "già in aziende", permissivo=True)
+    # stesso controllo del ciclo normale: la lista non ha la categoria Google (8/11)
+    estranee = [x for x in schede if config.fuori_settore_scheda(x)]
+    if estranee:
+        schede = [x for x in schede if not config.fuori_settore_scheda(x)]
+        print(f"escluse {len(estranee)} fuori settore (mestiere nel nome)")
     print(f"da importare: {len(schede)}   costo stimato: ~{len(schede) * 0.09:.0f} EUR")
     if not scrivi:
         print("\n(prova: nessun fetch, nessuna analisi. Rilancia con --scrivi)")

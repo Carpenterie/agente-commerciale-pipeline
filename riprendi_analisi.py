@@ -68,6 +68,11 @@ def aggiornamento(riga_nuova: dict, esistente: dict) -> dict:
     if esistente.get("indirizzo_fonte") == "manuale" or not agg.get("indirizzo"):
         for k in db.CAMPI_INDIRIZZO:
             agg.pop(k, None)
+    # un'esclusione gia' presente (anche a mano dall'app) non si tocca: si
+    # scrive solo se la riga risulta non esclusa, e solo verso true
+    if esistente.get("esclusa") is not False:
+        for k in db.CAMPI_ESCLUSIONE:
+            agg.pop(k, None)
     # la marcatura ex cliente fu fatta all'import, PRIMA della scrittura:
     # la rianalisi non puo' rifarla (non ha l'elenco davanti) e non deve
     # perderla — e' la lezione dei referenti del 15/9, i campi si perdono
@@ -202,6 +207,13 @@ if __name__ == "__main__":
         assert [x["tipo"] for x in tenuti] == ["chiusa_definitivamente", "fuori_settore",
                                                "territorio"], tenuti
         assert agg["telefono"] == "06 2020"
+        # esclusione: solo su chi non e' escluso, mai toccando quella altrui
+        ne = {"esclusa": True, "esclusa_motivo": "fuori contesto (analisi sito)", "esclusa_il": "t"}
+        assert aggiornamento(ne, {"esclusa": bool(0)})["esclusa"] is True
+        assert not set(db.CAMPI_ESCLUSIONE) & set(aggiornamento(
+            ne, {"esclusa": True, "esclusa_motivo": "fuori contesto (a mano)"}))
+        assert not set(db.CAMPI_ESCLUSIONE) & set(aggiornamento(ne, {}))     # stato ignoto: non si scrive
+        assert not set(db.CAMPI_ESCLUSIONE) & set(aggiornamento({"classe": "A"}, {"esclusa": bool(0)}))
         # ...ma il sito vince quando parla
         agg2 = aggiornamento({"email_aziendale": "nuova@sito.it",
                               "telefono": "06 999"},

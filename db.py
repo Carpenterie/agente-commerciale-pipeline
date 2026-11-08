@@ -189,6 +189,19 @@ def indirizzo_maps(scheda: dict) -> dict:
             "indirizzo_fonte": "maps"}
 
 
+CAMPI_ESCLUSIONE = ("esclusa", "esclusa_motivo", "esclusa_il")
+
+
+def esclusione_da_analisi(dati: dict | None) -> dict:
+    """I campi di esclusione se il sito mostra un'attivita' estranea, o {}.
+    La pipeline puo' solo escludere: non scrive MAI esclusa a false."""
+    if not config.attivita_estranea(dati):
+        return {}
+    import datetime as _dt
+    return {"esclusa": True, "esclusa_motivo": config.MOTIVO_ANALISI_SITO,
+            "esclusa_il": _dt.datetime.now(_dt.timezone.utc).isoformat()}
+
+
 def riga_azienda(scheda: dict, dati: dict | None = None,
                  territorio: dict | None = None, anagrafica: dict | None = None,
                  segnali: list[dict] | None = None, classe: str = "indeterminato",
@@ -307,6 +320,8 @@ def riga_azienda(scheda: dict, dati: dict | None = None,
         "costo_analisi_eur": round(costo, 6) if costo else 0,
         # sede operativa da Maps; assente per Exa e liste (la colonna resta vuota)
         **indirizzo_maps(scheda),
+        # solo true, e solo se l'analisi lo mostra: mai la chiave a false
+        **esclusione_da_analisi(dati),
     }
 
 
@@ -398,6 +413,8 @@ def _nessun_delete_nel_repo() -> list[str]:
     # giorni / 12 mesi dopo il colloquio), imposta dalla privacy e decisa
     # dal committente il 6/10. Cancella SOLO da `candidati`, mai da aziende.
     eccezioni = {"candidati_ricerca.py": 'table("candidati").' + "dele" + "te()"}
+    # l'esclusione puo' solo salire (8/11): nessuno la riporta a false
+    vietati += ('"esclusa"' + ": False", "'esclusa'" + ": False", "esclusa" + "=False")
     colpevoli = []
     for f in _pl.Path(__file__).parent.glob("*.py"):
         testo = f.read_text(encoding="utf-8")
@@ -674,6 +691,13 @@ if __name__ == "__main__":
     rep = next(s for s in r["segnali"] if s["tipo"] == "reputazione_google")
     assert rep["recensioni"] == 176 and rep["punteggio"] == 4.8
     # senza recensioni (Exa non le ha) nessun segnale vuoto
+    # esclusione (8/11): chiave presente solo a true, mai false
+    ex_ = riga_azienda({"nome": "Z", "fonte": "maps"}, dati={
+        "classificazione": "NON_TARGET", "attivita_prevalente": "Agenzia di onoranze funebri"})
+    assert ex_["esclusa"] is True and ex_["esclusa_motivo"] == "fuori contesto (analisi sito)" and ex_["esclusa_il"]
+    for d_ in ({"classificazione": "NON_TARGET", "attivita_prevalente": "Carpenteria pesante"},
+               {"classificazione": "TARGET", "attivita_prevalente": "Serramenti"}, None):
+        assert not set(CAMPI_ESCLUSIONE) & set(riga_azienda({"nome": "Z", "fonte": "maps"}, dati=d_))
     r2 = riga_azienda({"nome": "Y", "fonte": "exa"},
                       dati={"classificazione": "TARGET", "confidenza": "ALTA"},
                       classe="A", esito_fetch="OK")
