@@ -160,14 +160,23 @@ def attivita(az: dict) -> str:
     return "; ".join(pezzi)
 
 
+_ACCENTI = {"a": "à", "e": "è", "i": "ì", "o": "ò", "u": "ù"}
+
+
+def _con_accento(testo: str) -> str:
+    """Scorze' -> Scorzè, solo nel testo generato: l'archivio resta com'e'.
+    Solo a fine parola e da tre lettere in su: Ca' e Sant' restano."""
+    return re.sub(r"(\b[^\W\d_]{2,})([aeiou])'(?=\s|,|$)",
+                  lambda m: m.group(1) + _ACCENTI[m.group(2)], testo)
+
+
 def _nome_luogo(valore) -> str:
     """BAGNO A RIPOLI -> Bagno a Ripoli; i comuni arrivano spesso in maiuscolo."""
     testo = _stringa(valore).strip()
-    if testo != testo.upper():
-        return testo
-    minuscole = {"a", "al", "del", "della", "dei", "di", "da", "in", "sul", "e"}
-    parole = [p.capitalize() if p.lower() not in minuscole else p.lower() for p in testo.split()]
-    return " ".join(parole)
+    if testo == testo.upper():
+        minuscole = {"a", "al", "del", "della", "dei", "di", "da", "in", "sul", "e"}
+        testo = " ".join(p.capitalize() if p.lower() not in minuscole else p.lower() for p in testo.split())
+    return _con_accento(testo)
 
 
 def zona(az: dict) -> str:
@@ -207,7 +216,9 @@ def _nome_proprio_estraneo(testo: str, consentite: set[str]) -> bool:
 
 
 def _spazi(testo: str) -> str:
-    return " ".join((testo or "").split())
+    """Per i confronti: spazi uniformi e un solo tipo di apostrofo (il testo
+    salvato e' comunque l'originale, vedi `ricomponi`)."""
+    return " ".join((testo or "").replace("\u2019", "'").split())
 
 
 def registro(base: str) -> str:
@@ -533,6 +544,19 @@ def _test() -> None:
     es = genera(tu, az, lambda b, a: (piatto, 0.0))
     assert es["stato"] == "pronto" and es["testo"] == "Per la tua attività di serramentista a Viterbo: più" + tu[3:]
     assert "\nRispondi" in es["testo"]
+
+    # comuni con l'apostrofo finale: solo nel testo generato
+    for grezzo, atteso in (("Scorze'", "Scorzè"), ("CEFALU'", "Cefalù"), ("FORLI' DEL SANNIO", "Forlì del Sannio"),
+                           ("Trinita' d'Agultu", "Trinità d'Agultu"), ("Ca' Tron", "Ca' Tron"),
+                           ("Sant'Angelo", "Sant'Angelo"), ("Viterbo", "Viterbo")):
+        assert zona({"comune": grezzo}) == atteso, (grezzo, zona({"comune": grezzo}))
+    conaz = {**az, "comune": "Scorze'"}
+    assert controlla("Per chi lavora come serramentista a Scorzè, " + base, base, conaz) is None
+    # apostrofo tipografico: il modello puo' normalizzarlo, si salva quello originale
+    curvo = "Rispondi all\u2019offerta in 25 giorni.\nScrivici."
+    dritto = "Se lavori come serramentista a Viterbo, rispondi all'offerta in 25 giorni. Scrivici."
+    assert controlla(dritto, curvo, az) is None
+    assert genera(curvo, az, lambda b, a: (dritto, 0.0))["testo"] == "Se lavori come serramentista a Viterbo, r" + curvo[1:]
 
     assert dati_insufficienti({**az, "categoria": "Produttore"})
     assert dati_insufficienti({**az, "comune": None, "regione": None})
