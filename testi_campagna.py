@@ -348,7 +348,7 @@ class Archivio:
 
     def scrivi(self, campagna: str, azienda: str, esito: dict) -> None:
         (self.c.table("testi_campagna")
-         .update({"testo": esito["testo"], "stato": esito["stato"], "motivo": esito["motivo"],
+         .update({"testo": esito["testo"] or "", "stato": esito["stato"], "motivo": esito["motivo"],
                   "aggiornato_il": dt.datetime.now(dt.timezone.utc).isoformat()})
          .eq("campagna_id", campagna).eq("azienda_id", azienda).eq("stato", "da_generare").execute())
 
