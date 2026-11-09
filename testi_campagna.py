@@ -678,7 +678,7 @@ def _test() -> None:
     assert es["testo"].startswith("Per chi lavora nell'edilizia a Viterbo, Le presentiamo")
     ed = {**az, "categoria": "costruttore"}
     assert "forma" in controlla("Per chi lavora nell'edilizia a Viterbo, più" + tu2[3:], tu2, az)     # serramentista
-    assert "forma" in controlla("Per chi lavora nell'edilizia a Roma e dintorni, più" + tu2[3:], tu2, ed)
+    assert "forma" in controlla("Per chi lavora nell'edilizia a Viterbo e dintorni, più" + tu2[3:], tu2, ed)
     assert "forma" in controlla("Per chi lavora nell'edilizia a Viterbo, più" + tu2[3:], tu2, {**ed, "gamma": ["cancelli"]})
     assert "non di mestiere" in dati_insufficienti({**az, "categoria": "ferramenta"})
     for categoria in ("ferramenta", "showroom", "rivenditore", "negozio"):
