@@ -98,6 +98,8 @@ _CATEGORIE_VAGHE = {"", "ufficio aziendale", "produttore", "negozio", "azienda",
 _GAMMA_NOTE = {"persiane", "grate", "cancelli", "recinzioni", "porte blindate", "zanzariere", "finestre",
                "portoni", "ringhiere", "scale", "porte"}
 PRODOTTI_MAX = 2
+# Le aperture "Lavori come..." valgono solo per i mestieri: elenco chiuso, il resto va al testo base.
+_MESTIERE = re.compile(r"fabbr[oi]|serrament|carpent|costrutt|artigian|montator|posator|installator|lattonier|saldator", re.I)
 _ARTICOLI = {"la": "alla", "il": "al", "lo": "allo", "le": "alle", "i": "ai", "gli": "agli"}
 _LUOGHI_SPECIALI = {"Terre Roveresche": "nelle Terre Roveresche"}
 _REGIONI_PREP = {"Lazio": "nel Lazio", "Molise": "nel Molise", "Marche": "nelle Marche"}
@@ -201,7 +203,7 @@ def _a_comune(comune: str) -> str:
     parti = comune.split(" ", 1)
     if len(parti) == 2 and parti[0].lower() in _ARTICOLI:
         return f"{_ARTICOLI[parti[0].lower()]} {parti[1]}"
-    return ("ad " if comune[0].lower() in "aeiouàèéìòù" else "a ") + comune
+    return ("ad " if comune[0].lower() in "aà" else "a ") + comune
 
 
 def luogo(az: dict) -> str:
@@ -252,6 +254,8 @@ def dati_insufficienti(az: dict) -> str | None:
         return "dati insufficienti: attività non nota"
     if not zona(az):
         return "dati insufficienti: zona non nota"
+    if not prodotti_scheda(az, "") and not _MESTIERE.search(_stringa(az.get("categoria"))):
+        return "dati insufficienti: categoria non di mestiere"
     return None
 
 
@@ -644,8 +648,18 @@ def _test() -> None:
     opera = {"id": "o1", "ragione_sociale": "esempio.it", "categoria": "altro", "email_commerciale": "x@esempio.it"}
     es = genera(tu2, opera, non_chiamare)
     assert es["stato"] == "scartato" and "dati insufficienti" in es["motivo"]
+    # solo i mestieri con le aperture di oggi; negozi al testo base, salvo la gamma
+    for categoria in ("ferramenta", "showroom", "rivenditore", "negozio", "impresa_edile"):
+        assert "non di mestiere" in (dati_insufficienti({**az, "categoria": categoria}) or ""), categoria
+        assert not dati_insufficienti({**az, "categoria": categoria, "gamma": ["cancelli"]}), categoria
+    es = genera(tu2, {**az, "categoria": "ferramenta"}, non_chiamare)
+    assert es["stato"] == "scartato" and "non di mestiere" in es["motivo"]
+    es = genera(tu2, {**gam, "categoria": "ferramenta"}, non_chiamare)
+    assert es["stato"] == "pronto" and es["testo"].startswith("Per chi lavora con cancelli e ringhiere")
+    for categoria in ("fabbro", "serramentista", "Carpenteria metallica", "costruttore", "artigiano", "montatore"):
+        assert not dati_insufficienti({**az, "categoria": categoria}), categoria
     # luoghi
-    for comune, atteso in (("AVEZZANO", "ad Avezzano"), ("Ascoli Piceno", "ad Ascoli Piceno"), ("Isola del Liri", "ad Isola del Liri"),
+    for comune, atteso in (("AVEZZANO", "ad Avezzano"), ("Ascoli Piceno", "ad Ascoli Piceno"), ("Isola del Liri", "a Isola del Liri"), ("Itri", "a Itri"), ("Imola", "a Imola"), ("Orvieto", "a Orvieto"), ("Anzio", "ad Anzio"),
                            ("L'aquila", "all'Aquila"), ("L'AQUILA", "all'Aquila"), ("La Spezia", "alla Spezia"),
                            ("Sant'angelo a Cupolo", "a Sant'Angelo a Cupolo"), ("Roma", "a Roma"), ("Scorze'", "a Scorzè"),
                            ("Terre Roveresche", "nelle Terre Roveresche"), ("Trinita' d'Agultu", "a Trinità d'Agultu")):
