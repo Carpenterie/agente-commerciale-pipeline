@@ -100,6 +100,7 @@ _GAMMA_NOTE = {"persiane", "grate", "cancelli", "recinzioni", "porte blindate", 
 PRODOTTI_MAX = 2
 # Le aperture "Lavori come..." valgono solo per i mestieri: elenco chiuso, il resto va al testo base.
 _MESTIERE = re.compile(r"fabbr[oi]|serrament|carpent|costrutt|artigian|montator|posator|installator|lattonier|saldator", re.I)
+_EDILIZIA = re.compile(r"impresa[_ ]edil|costruttor", re.I)
 _ARTICOLI = {"la": "alla", "il": "al", "lo": "allo", "le": "alle", "i": "ai", "gli": "agli"}
 _LUOGHI_SPECIALI = {"Terre Roveresche": "nelle Terre Roveresche"}
 _REGIONI_PREP = {"Lazio": "nel Lazio", "Molise": "nel Molise", "Marche": "nelle Marche"}
@@ -243,10 +244,18 @@ def _maiuscola_lecita(base: str) -> bool:
     return any(p == parole[0] for f in re.split(r"(?<=[.!?])\s+", base.strip()) for p in _parole(f)[1:])
 
 
-def testo_con_gamma(prodotti: list[str], base: str, az: dict) -> str:
+def apertura_edilizia(az: dict) -> str:
+    return f"Per chi lavora nell'edilizia {luogo(az)},"
+
+
+def testo_con_apertura(apertura: str, base: str) -> str:
     originale = base.strip()
     iniziale = originale[0] if _maiuscola_lecita(base) else originale[0].lower()
-    return f"{apertura_gamma(prodotti, az)} {iniziale}{originale[1:]}"
+    return f"{apertura} {iniziale}{originale[1:]}"
+
+
+def e_edilizia(az: dict) -> bool:
+    return bool(_EDILIZIA.search(_stringa(az.get("categoria"))))
 
 
 def dati_insufficienti(az: dict) -> str | None:
@@ -254,7 +263,7 @@ def dati_insufficienti(az: dict) -> str | None:
         return "dati insufficienti: attività non nota"
     if not zona(az):
         return "dati insufficienti: zona non nota"
-    if not prodotti_scheda(az, "") and not _MESTIERE.search(_stringa(az.get("categoria"))):
+    if not prodotti_scheda(az, "") and not _MESTIERE.search(_stringa(az.get("categoria"))) and not e_edilizia(az):
         return "dati insufficienti: categoria non di mestiere"
     return None
 
@@ -369,6 +378,9 @@ def controlla(testo: str, base: str, az: dict) -> str | None:
             return "aggiunge una promessa o una qualità non presente nel testo base"
     if apertura.lower().startswith("per chi lavora con") and apertura != apertura_gamma(prodotti_scheda(az, base), az):
         return "apertura di forma non prevista"
+    if apertura.lower().startswith("per chi lavora nell'edilizia") and (
+            apertura != apertura_edilizia(az) or not e_edilizia(az) or prodotti_scheda(az, base)):
+        return "apertura di forma non prevista"
     if luogo(az) not in apertura:
         return "non cita la zona"
     return None
@@ -403,7 +415,12 @@ def genera(base: str, az: dict | None, chiama=chiama_modello) -> dict:
     if motivo:
         return {"testo": None, "stato": "scartato", "motivo": motivo, "costo": 0.0}
     prodotti = prodotti_scheda(az, base)
-    testo, costo = (testo_con_gamma(prodotti, base, az), 0.0) if prodotti else chiama(base, az)
+    if prodotti:
+        testo, costo = testo_con_apertura(apertura_gamma(prodotti, az), base), 0.0
+    elif e_edilizia(az):
+        testo, costo = testo_con_apertura(apertura_edilizia(az), base), 0.0
+    else:
+        testo, costo = chiama(base, az)
     motivo = controlla(testo, base, az)
     if motivo:
         return {"testo": None, "stato": "scartato", "motivo": motivo, "costo": costo}
@@ -649,7 +666,22 @@ def _test() -> None:
     es = genera(tu2, opera, non_chiamare)
     assert es["stato"] == "scartato" and "dati insufficienti" in es["motivo"]
     # solo i mestieri con le aperture di oggi; negozi al testo base, salvo la gamma
-    for categoria in ("ferramenta", "showroom", "rivenditore", "negozio", "impresa_edile"):
+    # edilizia: apertura fissa, senza modello; con la gamma resta "lavora con"
+    for categoria in ("impresa_edile", "costruttore"):
+        for comune, attesa in (("VITERBO", "a Viterbo"), ("Anzio", "ad Anzio"), ("Itri", "a Itri"), ("L'aquila", "all'Aquila")):
+            es = genera(tu2, {**az, "categoria": categoria, "comune": comune}, non_chiamare)
+            assert es["stato"] == "pronto" and es["costo"] == 0.0, (categoria, es)
+            assert es["testo"].startswith(f"Per chi lavora nell'edilizia {attesa}, più scelta"), es["testo"]
+        es = genera(tu2, {**gam, "categoria": categoria}, non_chiamare)
+        assert es["testo"].startswith("Per chi lavora con cancelli e ringhiere a Viterbo,"), es["testo"]
+    es = genera(base, {**az, "categoria": "costruttore"}, non_chiamare)
+    assert es["testo"].startswith("Per chi lavora nell'edilizia a Viterbo, Le presentiamo")
+    ed = {**az, "categoria": "costruttore"}
+    assert "forma" in controlla("Per chi lavora nell'edilizia a Viterbo, più" + tu2[3:], tu2, az)     # serramentista
+    assert "forma" in controlla("Per chi lavora nell'edilizia a Roma e dintorni, più" + tu2[3:], tu2, ed)
+    assert "forma" in controlla("Per chi lavora nell'edilizia a Viterbo, più" + tu2[3:], tu2, {**ed, "gamma": ["cancelli"]})
+    assert "non di mestiere" in dati_insufficienti({**az, "categoria": "ferramenta"})
+    for categoria in ("ferramenta", "showroom", "rivenditore", "negozio"):
         assert dati_insufficienti({**az, "categoria": categoria}), categoria     # negozio: categoria vaga, stesso esito
         assert not dati_insufficienti({**az, "categoria": categoria, "gamma": ["cancelli"]}), categoria
     es = genera(tu2, {**az, "categoria": "ferramenta"}, non_chiamare)
