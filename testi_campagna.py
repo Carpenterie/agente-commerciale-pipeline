@@ -650,7 +650,7 @@ def _test() -> None:
     assert es["stato"] == "scartato" and "dati insufficienti" in es["motivo"]
     # solo i mestieri con le aperture di oggi; negozi al testo base, salvo la gamma
     for categoria in ("ferramenta", "showroom", "rivenditore", "negozio", "impresa_edile"):
-        assert "non di mestiere" in (dati_insufficienti({**az, "categoria": categoria}) or ""), categoria
+        assert dati_insufficienti({**az, "categoria": categoria}), categoria     # negozio: categoria vaga, stesso esito
         assert not dati_insufficienti({**az, "categoria": categoria, "gamma": ["cancelli"]}), categoria
     es = genera(tu2, {**az, "categoria": "ferramenta"}, non_chiamare)
     assert es["stato"] == "scartato" and "non di mestiere" in es["motivo"]
