@@ -931,6 +931,17 @@ if __name__ == "__main__":
         assert conflitto_da_concorrenti(nc, "passato")["conflitto_stato"] == "da_verificare"
         assert conflitto_da_concorrenti(pas, "attuale") == {} and conflitto_da_concorrenti(no) == {}
         assert conflitto_da_concorrenti(att, "attuale") == {}
+        # AM Porte e ISOLA PVC non sono concorrenti (10/11): nessun conflitto per
+        # quel mandato; quello con un altro concorrente resta
+        for non_conc in ("AM Porte", "ISOLA PVC"):
+            assert conflitto_da_concorrenti([{"marchio": non_conc, "stato": "attuale"}], "nessuno") == {}
+            assert "CONCORRENTE" not in _descrizione([non_conc])
+            misto = conflitto_da_concorrenti([{"marchio": non_conc, "stato": "attuale"},
+                                              {"marchio": "Gruben Italia Security", "stato": "passato"}], "nessuno")
+            assert misto == {"conflitto_stato": "passato",
+                             "conflitto_dettaglio": "mandato passato con concorrente: Gruben Italia Security"}
+        assert conflitto_da_concorrenti([{"marchio": "Gruben Italia Security", "stato": "attuale"}],
+                                        "nessuno")["agente_di_concorrente"] is True
         assert "CONCORRENTE" in _descrizione(["Xecur"]) and "ECCEZIONE" in _descrizione(["Xecur"])
         assert "CONCORRENTE" not in _descrizione(["Oknoplast"])
         c0 = correggi_conflitto({"agente_di_concorrente": True,

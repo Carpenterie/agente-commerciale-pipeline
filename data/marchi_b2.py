@@ -1,6 +1,6 @@
 """B2 della ricerca agenti (preventivo PREV-2026-06, confermato da Claudia): le
 321 aziende del perimetro della filiera del serramento fuori dal pilota B1,
-27 concorrenti compresi (data/concorrenti_filiera.py). Elenco del committente
+25 concorrenti compresi (data/concorrenti_filiera.py). Elenco del committente
 fuori dal repo: qui solo nomi e domini.
 
 Le 5 ragioni sociali con il nome di una persona non stanno qui: sul server,
@@ -52,7 +52,7 @@ B2 = {
     "ALUK": _m(r"\baluk\b", "aluk.it", grande=True),
     "ALUMIL ITALIA": _m(r"\balumil\s+italia\b|\balumil\b", "alumil-italia.com"),
     "Alusystem": _m(r"\balusystem\b", "alsistem.com"),
-    "AM Porte": _m(r"\bam\s+porte\b", "amporte.com", concorrente=True),
+    "AM Porte": _m(r"\bam\s+porte\b", "amporte.com"),
     "AMPLAST & Co.": _m(r"\bamplast\s+\&\s+co\.\b", "amplast.it"),
     "ARTE VETRO CASALI": _m(r"\barte\s+vetro\s+casali\b", "casali.info"),
     "ASTEC": _m(r"\bastec\b", "astec.it"),
@@ -205,7 +205,7 @@ B2 = {
     "IRS": _m(r"\birs\s+(?:zanzariere|s\.?r\.?l)\b|zanzariereirs", "zanzariereirs.com", nome_ricerca="IRS zanzariere"),
     "ISA": _m(r"\bisa\s+(?:s\.?p\.?a|serramenti|infissi|finestre)\b|isaspa", "isaspa.eu", nome_ricerca="ISA serramenti"),
     "ISEO": _m(r"\biseo\b", "iseo.com", grande=True),
-    "ISOLA PVC": _m(r"\bisola\s+pvc\b", "isolapvc.it", concorrente=True),
+    "ISOLA PVC": _m(r"\bisola\s+pvc\b", "isolapvc.it"),
     "ISOMAX": _m(r"\bisomax\b", "isomax.it"),
     "ISOTEK": _m(r"\bisotek\b", "isotek-srl.com"),
     "ITAL JOLLY": _m(r"\bital\s+jolly\b", "italjolly.it"),
@@ -359,7 +359,9 @@ def riservate() -> dict:
 
 if __name__ == "__main__":
     import re
-    assert len(B2) == 316 and sum(d["concorrente"] for d in B2.values()) == 26
+    assert len(B2) == 316 and sum(d["concorrente"] for d in B2.values()) == 24      # il 25esimo e' fra le riservate
+    assert not B2["AM Porte"]["concorrente"] and not B2["ISOLA PVC"]["concorrente"]
+    assert B2["Gruben Italia Security"]["concorrente"]
     assert sum(d["grande"] for d in B2.values()) == 19
     for d in B2.values():
         re.compile(d["regex"])

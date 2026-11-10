@@ -14,15 +14,17 @@ NON CONCORRENTI:
 - chi fa accessori o materiali, anche in acciaio o "di sicurezza"
   (serrature, maniglie, tasselli, profili, ferramenta).
 
+Il 10/11/2026 la committente ha verificato AM Porte e ISOLA PVC: non sono
+concorrenti (in fondo, in NON_CONCORRENTI_ALTRI). I concorrenti sono 25.
+
 Nel repo solo nomi di aziende: le ragioni sociali che contengono un nome di
 persona sono indicate col codice della riga nel file del committente.
 """
 
-# 27, con il motivo in una riga
+# 25, con il motivo in una riga
 CONCORRENTI = {
     "Agnelli Metalli": "grate, persiane e blindati in metallo",
     "AGRITAL": "cancelli e cancelletti di sicurezza; carpenteria",
-    "AM Porte": "porte blindate e corazzate, grate e persiane",
     "Blindato Effepi": "porte blindate e grate di sicurezza",
     "IT-0069": "inferriate, cancelli e lavorazioni metalliche (ragione sociale con nome di persona)",
     "CONEGLIANO SERRAMENTI": "grate",
@@ -37,7 +39,6 @@ CONCORRENTI = {
     "Gruben Italia Security": "grate e persiane; il sito parla di ferro",
     "INFERRIATE.IT": "inferriate",
     "INVICTA": "grate",
-    "ISOLA PVC": "grate e persiane",
     "LUXURY WINDOWS": "porte blindate e grate di sicurezza",
     "MITO": "grate",
     "NUOVA SIME": "porte blindate, inferriate e persiane di sicurezza",
@@ -107,11 +108,15 @@ NON_CONCORRENTI_ALTRI = {
     "Allfix Italia": "materiali: tasselli",
     "EDILFERRO": "materiali: profili per intonaco",
     "TECNOSICUREZZA": "accessori: ferramenta e serrature",
+    # verificate dalla committente il 10/11: erano fra i concorrenti
+    "AM Porte": "showroom",
+    "ISOLA PVC": "infissi in PVC e rivendita di altri materiali",
 }
 
 if __name__ == "__main__":
-    assert len(CONCORRENTI) == 27 and len(NON_CONCORRENTI_PERSIANE) == 41
+    assert len(CONCORRENTI) == 25 and len(NON_CONCORRENTI_PERSIANE) == 41
     assert not set(CONCORRENTI) & (set(NON_CONCORRENTI_PERSIANE) | set(NON_CONCORRENTI_ALTRI))
     from data.marchi_pilota import PILOTA
+    assert {"AM Porte", "ISOLA PVC"} <= set(NON_CONCORRENTI_ALTRI) and "Gruben Italia Security" in CONCORRENTI
     assert not {m.casefold() for m in PILOTA} & {c.casefold() for c in CONCORRENTI}
     print("ok")
