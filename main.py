@@ -559,7 +559,9 @@ async def esegui(args) -> int:
                   for _, r in [dedup.cerca_riferimento(s, gia_in_archivio)] if r}
         for s in chiuse:
             criterio, r = dedup.cerca_riferimento(s, gia_in_archivio)
-            if r and r["id"] not in attive:
+            # il dominio dell'email basta a non riscrivere un'azienda, non a
+            # dichiararla chiusa: li' servono i criteri di prima
+            if r and r["id"] not in attive and criterio != dedup.CRITERIO_DOMINIO_EMAIL:
                 aziende_chiuse.segna(sb, r["id"], aziende_chiuse.segnale(
                     "maps", f"ripasso: scheda Google '{s.get('nome')}' chiusa "
                             f"definitivamente (abbinata per {criterio})"))
@@ -620,7 +622,8 @@ async def esegui(args) -> int:
             "saliti_ad_A": 0, "scesi_per_organico": 0, "arricchite": 0,
             # la marcatura ex cliente e' una richiesta esplicita del
             # committente: va vista in archivio, non solo nei log
-            "ex_in_riga": 0, "ex_scritti": 0, "doppioni_exa": 0}
+            "ex_in_riga": 0, "ex_scritti": 0, "doppioni_exa": 0,
+            "gia_per_email": 0}
     ex_marcati = sum(1 for s in schede if s.get("ex_cliente"))
 
     async with AsyncWebCrawler(verbose=False) as crawler:
@@ -648,6 +651,14 @@ async def esegui(args) -> int:
                     anagrafica=anagrafica, segnali=segnali, classe=esito["classe"],
                     esito_fetch=esito["esito_fetch"], ciclo_id=ciclo_id,
                     pagine=esito["pagine"], costo=esito["costo"])
+                # l'email trovata sul sito e' l'email commerciale di una scheda
+                # gia' in archivio (i clienti del gestionale hanno solo quella)
+                gia_cliente = (dedup.email_commerciale_in_archivio(riga, gia_in_archivio)
+                               if gia_in_archivio else None)
+                if gia_cliente:
+                    print(f"  già in archivio, non scritta: {gia_cliente}")
+                    stat["gia_per_email"] += 1
+                    continue
                 if azienda.get("fonte") == "exa":
                     gia_vista = dedup.recapito_gia_visto(riga, tel_maps, email_viste)
                     if gia_vista:
@@ -704,6 +715,9 @@ async def esegui(args) -> int:
     if stat["doppioni_exa"]:
         print(f"\nDOPPIONI EXA non scritti (stessa email o telefono di una scheda Maps "
               f"o in archivio): {stat['doppioni_exa']}")
+    if stat["gia_per_email"]:
+        print(f"\nGIA' IN ARCHIVIO per l'email commerciale, non riscritte: "
+              f"{stat['gia_per_email']}")
     print(f"\nSEGNALI DI LAVORO: {stat['con_segnale']} aziende con almeno un annuncio")
     for ruolo, n in stat["ruoli"].most_common():
         print(f"  {ruolo:<16} {n}")

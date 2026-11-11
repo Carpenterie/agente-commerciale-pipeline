@@ -51,6 +51,9 @@ SPESA = CARTELLA / "spesa.json"
 COMUNI_ISTAT = pathlib.Path(__file__).resolve().parent / "data" / "comuni_istat.txt"
 # La riga di stato_sistema di questo job; 'sotto_soglia' e' l'avviso giallo dell'app.
 SERVIZIO, STATO_AVVISO = "testi_campagna", "sotto_soglia"
+# stato_sistema.fonte_lettura e' obbligatoria e accetta solo i valori di crediti.py
+# (vincolo della tabella, visto l'11/11): si usa quello dei controlli fatti a ogni giro.
+FONTE_LETTURA = "controllo_pre_giro"
 MINUTI_SENZA_RIGHE = 20      # l'app crea le righe qualche secondo dopo aver chiesto i testi
 
 TETTO_EUR = 5.0
@@ -555,7 +558,7 @@ class Archivio:
         """Aggiorna la riga sul posto; la crea solo la prima volta. Mai cancellata."""
         riga = {"servizio": SERVIZIO, "stato": stato, "messaggio": messaggio,
                 "letto_il": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
-                "fonte_lettura": "testi_campagna"}
+                "fonte_lettura": FONTE_LETTURA}
         if not self.c.table("stato_sistema").update(riga).eq("servizio", SERVIZIO).execute().data:
             self.c.table("stato_sistema").insert(riga).execute()
 

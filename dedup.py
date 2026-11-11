@@ -17,6 +17,7 @@ import re
 from urllib.parse import urlparse
 
 import config
+import fetch
 
 # forme societarie della nucleo() validata nel test di sourcing
 _FORME = (" S.R.L.S", " S.R.L.", " SRLS", " SRL", " S.A.S", " SAS",
@@ -73,6 +74,38 @@ def dominio_azienda(sito: str) -> str:
     "facebook.com" (che in `aziende` è un indice unico)."""
     d = norm_dominio(sito)
     return "" if e_portale(d) else d
+
+
+# Caselle di un gestore di posta: il dominio e' suo, non dell'azienda, quindi
+# due schede con lo stesso dominio qui NON sono la stessa azienda.
+DOMINI_EMAIL_GENERICI = frozenset("""
+    gmail.com googlemail.com gmail.it libero.it virgilio.it hotmail.it hotmail.com
+    live.it live.com outlook.it outlook.com msn.com yahoo.it yahoo.com ymail.com
+    rocketmail.com tiscali.it tiscalinet.it alice.it tin.it tim.it inwind.it iol.it
+    blu.it icloud.com me.com mac.com interfree.it fastwebnet.it email.it cheapnet.it
+    katamail.com kataweb.it teletu.it vodafone.it poste.it aruba.it supereva.it
+    jumpy.it lycos.it aol.com gmx.com gmx.it protonmail.com proton.me yandex.com
+    """.split())
+
+
+def norm_email(email: str | None) -> str:
+    e = (email or "").strip().lower()
+    return e if e.count("@") == 1 else ""
+
+
+def dominio_email(email: str | None) -> str:
+    """Il dominio di un indirizzo SOLO se e' dell'azienda. Gestori di posta
+    (gmail, libero...), PEC e portali valgono "": li' si confronta soltanto
+    l'indirizzo intero. Nel dubbio sulla PEC (dominio che finisce in "pec")
+    vale "", senza interrogare la rete."""
+    e = norm_email(email)
+    if not e:
+        return ""
+    d = e.rsplit("@", 1)[1].strip().rstrip(".").removeprefix("www.")
+    if "." not in d or d in DOMINI_EMAIL_GENERICI or e_portale(d) \
+            or fetch.e_pec(e, mx=lambda _d: True):
+        return ""
+    return d
 
 
 def _norm_comune(comune: str) -> str:
@@ -150,12 +183,33 @@ def nomi_ambigui(righe: list[dict]) -> list[dict]:
     return fuori
 
 
+CRITERIO_DOMINIO_EMAIL = "dominio dell'email commerciale"
+
+
+def email_commerciale_in_archivio(riga: dict, rif: dict) -> str | None:
+    """Per una riga GIA' analizzata, di qualsiasi fonte: l'email trovata sul
+    sito e' l'email commerciale di una scheda in archivio, o sta sullo stesso
+    dominio aziendale -> e' la stessa azienda e non si riscrive. Serve dove
+    `cerca_riferimento` non arriva: il sito ha un dominio diverso da quello
+    dell'email, o la casella e' di un gestore (gmail) e conta solo intera.
+    -> il motivo per il log (con l'id della scheda, mai l'indirizzo) o None."""
+    e = norm_email(riga.get("email_aziendale"))
+    if not e:
+        return None
+    if e in rif["email"]:
+        return f"stessa email commerciale della scheda {rif['email'][e].get('id', '?')}"
+    d = dominio_email(e)
+    if d and d in rif["domini_email"]:
+        return f"email sul dominio dell'email commerciale della scheda {rif['domini_email'][d].get('id', '?')}"
+    return None
+
+
 def riferimenti(righe: list[dict]) -> dict:
     """Indici di confronto da righe di `esclusioni` o di `aziende` (valori
     grezzi: si normalizza qui). Ogni chiave punta alla riga sorgente, che
     serve a marcare l'azienda con il suo stato commerciale."""
     rif = {"pive": {}, "domini": {}, "ragioni_comune": {},
-           "ragioni_senza_comune": {}}
+           "ragioni_senza_comune": {}, "email": {}, "domini_email": {}}
     for r in righe:
         p = norm_piva(r.get("piva") or r.get("partita_iva") or "")
         d = dominio_azienda(r.get("dominio") or r.get("sito") or "")
@@ -165,6 +219,14 @@ def riferimenti(righe: list[dict]) -> dict:
             rif["pive"].setdefault(p, r)
         if d:
             rif["domini"].setdefault(d, r)
+        # L'email commerciale: i clienti importati dal gestionale hanno solo
+        # quella (niente dominio, P.IVA, telefono) e senza questi due indici
+        # un ciclo li ritroverebbe come aziende nuove.
+        e = norm_email(r.get("email_commerciale"))
+        if e:
+            rif["email"].setdefault(e, r)
+            if dominio_email(e):
+                rif["domini_email"].setdefault(dominio_email(e), r)
         if rag and com:
             rif["ragioni_comune"].setdefault((rag, com), r)
         elif rag:
@@ -197,6 +259,8 @@ def cerca_riferimento(s: dict, rif: dict,
     d = dominio_azienda(s.get("sito") or s.get("dominio") or "")
     if d and d in rif["domini"]:
         return "dominio", rif["domini"][d]
+    if d and d in rif["domini_email"]:
+        return CRITERIO_DOMINIO_EMAIL, rif["domini_email"][d]
     rag = norm_ragione(s.get("nome") or "")
     if not rag:
         return None, None
@@ -426,4 +490,35 @@ if __name__ == "__main__":
                   rif_db, "già in aziende", zitto) == []
     assert len(filtra([{"nome": "Officina Y", "comune": "Pomezia"}],
                       rif_db, "già in aziende", zitto)) == 1  # altro comune: passa
+
+    # clienti importati dal gestionale: in archivio hanno SOLO l'email commerciale
+    # (ragione sociale = l'indirizzo o il dominio). Dati finti.
+    assert dominio_email("Vendite@Ferri-Finti.it ") == "ferri-finti.it"
+    for generica in ("tizio@gmail.com", "x@libero.it", "a@pec.it", "a@legalmail.it", "a@studiopec.it",
+                     "a@facebook.com", "senza-chiocciola", "a@b@c.it", "a@localhost", "", None):
+        assert dominio_email(generica) == "", generica
+    rif_op = riferimenti([
+        {"id": "op-1", "ragione_sociale": "vendite@ferri-finti.it", "email_commerciale": "vendite@ferri-finti.it"},
+        {"id": "op-2", "ragione_sociale": "officinafinta@gmail.com", "email_commerciale": "OfficinaFinta@gmail.com"},
+        {"id": "az-3", "ragione_sociale": "Infissi Finti Srl", "dominio": "infissifinti.it", "comune": "Rieti",
+         "email_commerciale": "info@infissifinti.it"}])
+    # prima dell'analisi: il sito della scheda e' sul dominio dell'email del cliente
+    assert cerca_riferimento({"nome": "Ferri Finti di Tizio", "sito": "https://www.ferri-finti.it/chi-siamo",
+                              "comune": "Latina"}, rif_op) == (CRITERIO_DOMINIO_EMAIL, rif_op["email"]["vendite@ferri-finti.it"])
+    assert filtra([{"nome": "Ferri Finti", "sito": "ferri-finti.it"}], rif_op, "già in aziende", zitto) == []
+    # il dominio vero della scheda vince sul dominio dell'email; gmail non aggancia nessun sito
+    assert _criterio({"nome": "Infissi Finti", "sito": "infissifinti.it"}, rif_op) == "dominio"
+    assert _criterio({"nome": "Altra Officina", "sito": "https://gmail.com", "comune": "Roma"}, rif_op) is None
+    assert _criterio({"nome": "Altra Officina", "sito": "https://altra-officina.it", "comune": "Roma"}, rif_op) is None
+    # dopo l'analisi: stessa casella (anche gmail), o casella sullo stesso dominio aziendale
+    gia = email_commerciale_in_archivio
+    assert gia({"email_aziendale": "officinafinta@GMAIL.com"}, rif_op) == "stessa email commerciale della scheda op-2"
+    assert gia({"email_aziendale": "amministrazione@ferri-finti.it"}, rif_op) == \
+        "email sul dominio dell'email commerciale della scheda op-1"
+    assert gia({"email_aziendale": "altra@gmail.com"}, rif_op) is None       # stesso gestore, altra casella
+    assert gia({"email_aziendale": "info@altra-officina.it"}, rif_op) is None
+    assert gia({"email_aziendale": None}, rif_op) is None and gia({}, rif_op) is None
+    assert "@" not in gia({"email_aziendale": "vendite@ferri-finti.it"}, rif_op)   # nel log l'id, mai l'indirizzo
+    # gli elenchi senza email (esclusioni) restano come prima
+    assert riferimenti([{"ragione_sociale": "Officina Y", "comune": "Tivoli"}])["email"] == {}
     print("ok")

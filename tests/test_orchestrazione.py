@@ -422,3 +422,54 @@ assert _json.loads(f_le.read_text())["exa_fatto"] is True
 sourcing_maps.cerca, sourcing_exa.cerca = _maps, _exa
 segnali_lavoro.ESAURITO = False
 print("ok (Exa esaurito: solo Maps, raccolta Maps salvata e riusata)")
+
+
+# --- clienti del gestionale: in archivio hanno SOLO l'email commerciale -----
+# Senza dominio ne' P.IVA il controllo doppioni non li vedeva, e un ciclo li
+# avrebbe riscritti come aziende nuove da contattare. Dati finti.
+_schede, _contenuti, _classifica = list(SCHEDE), dict(CONTENUTI), classify.classifica
+SCHEDE[:] = [
+    {"fonte": "maps", "nome": "Officina Rossi", "sito": "https://rossi.it",           # sito sul dominio dell'email
+     "telefono": "06 111", "comune": "Tivoli", "cap": "00019", "provincia": "RM"},
+    {"fonte": "maps", "nome": "Ferri Finti", "sito": "https://ferrifinti.it",         # sul sito la casella gmail del cliente
+     "telefono": "06 222", "comune": "Tivoli", "cap": "00019", "provincia": "RM"},
+    {"fonte": "maps", "nome": "Nuova Officina", "sito": "https://nuova.it",           # mai vista: si scrive
+     "telefono": "06 333", "comune": "Tivoli", "cap": "00019", "provincia": "RM"},
+]
+CONTENUTI["https://ferrifinti.it"] = "# PAGINA: https://ferrifinti.it/contatti\n\n00019 Tivoli FERRIFINTI"
+CONTENUTI["https://nuova.it"] = "# PAGINA: https://nuova.it/contatti\n\n00019 Tivoli NUOVA"
+classify.classifica = lambda client, contenuto: {
+    **_classifica_finta(client, contenuto),
+    "email_aziendale": ("FerriFinti@gmail.com" if "FERRIFINTI" in contenuto
+                        else "info@nuova.it" if "NUOVA" in contenuto else None)}
+scritte_op = []
+# le fonti di nuovo simulate: i blocchi sopra le hanno cambiate o ricaricate
+sourcing_maps.cerca = lambda comuni, log=print, tetto_usd=None, **k: (list(SCHEDE), 0.0045)
+sourcing_maps.ricerche_dense = lambda schede, provincia: []
+sourcing_exa.cerca = lambda provincia, log=print: []
+segnali_lavoro.cerca = lambda nome, log=print, **k: []
+db.client, db.esclusioni = lambda: object(), lambda sb: []
+db.riferimenti_aziende = lambda sb: [
+    {"id": "op-1", "ragione_sociale": "vendite@rossi.it", "email_commerciale": "vendite@rossi.it"},
+    {"id": "op-2", "ragione_sociale": "ferrifinti@gmail.com", "email_commerciale": "ferrifinti@gmail.com"},
+    {"id": "op-3", "ragione_sociale": "altro@gmail.com", "email_commerciale": "altro@gmail.com"}]
+db.avvia_ciclo = lambda sb, regione, note="": "ciclo-opera"
+db.chiudi_ciclo = lambda *a, **k: None
+db.scrivi_azienda = lambda sb, riga, log=print: (scritte_op.append(riga), "inserita")[1]
+main.MAX_ERRORI_SCRITTURA = 20
+buf_op = io.StringIO()
+with contextlib.redirect_stdout(buf_op):
+    asyncio.run(main.esegui(types.SimpleNamespace(
+        provincia="RM", limite=None, dry_run=False, comuni=None,
+        sourcing_fresco=True, riusa_sourcing=False, gratuite_openapi=30)))
+uscita_op = buf_op.getvalue()
+# la prima esce PRIMA dell'analisi (niente spesa), la seconda dopo, la terza si scrive
+assert "già in aziende / dominio dell'email commerciale" in uscita_op, uscita_op
+assert "già in archivio, non scritta: stessa email commerciale della scheda op-2" in uscita_op, uscita_op
+assert "GIA' IN ARCHIVIO per l'email commerciale, non riscritte: 1" in uscita_op, uscita_op
+assert [r["ragione_sociale"] for r in scritte_op] == ["Nuova Officina"], scritte_op
+assert "2 aziende da lavorare" in uscita_op, uscita_op
+assert "ferrifinti@gmail.com" not in uscita_op.lower()        # nel log l'id, mai l'indirizzo
+SCHEDE[:], classify.classifica = _schede, _classifica
+CONTENUTI.clear(); CONTENUTI.update(_contenuti)
+print("ok (clienti del gestionale riconosciuti dall'email commerciale)")

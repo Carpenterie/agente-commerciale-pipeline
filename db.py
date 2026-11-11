@@ -348,13 +348,14 @@ def scrivi_azienda(sb, riga: dict, log=print) -> str:
 def riferimenti_aziende(sb) -> list[dict]:
     """Righe già in `aziende` per il dedup (§4): servono dominio, P.IVA e
     ragione+comune — le senza-sito non hanno né dominio né P.IVA e solo
-    ragione+comune le protegge dai duplicati."""
+    ragione+comune le protegge dai duplicati. E l'email commerciale: i
+    clienti importati dal gestionale hanno solo quella."""
     # a pagine: una select sola restituisce al massimo 1000 righe, e fino
     # al 7/10 il dedup vedeva 1000 aziende su 4185
     righe, da = [], 0
     while True:
         b = (sb.table("aziende").select("id,ragione_sociale,partita_iva,dominio,comune,"
-                                        "email_aziendale")
+                                        "email_aziendale,email_commerciale")
              .range(da, da + 999).execute().data or [])
         righe += b
         if len(b) < 1000:
