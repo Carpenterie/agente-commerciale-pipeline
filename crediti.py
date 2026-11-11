@@ -451,6 +451,9 @@ def letture(serve_apify_usd: float = 0, serve_anthropic: bool = False,
     return righe, problemi
 
 
+SERVIZI_CREDITO = ("apify", "anthropic", "openapi", "exa")
+
+
 def allarmi(sb=None, log=print) -> list[dict]:
     """Rilegge SOLO i servizi attualmente in allarme (sotto_soglia/esaurito):
     se Claudia ha ricaricato oggi, il banner si spegne domani invece che al
@@ -466,8 +469,11 @@ def allarmi(sb=None, log=print) -> list[dict]:
     except Exception as e:  # noqa: BLE001
         log(f"stato_sistema non leggibile ({type(e).__name__})")
         return []
+    # Solo i crediti: in stato_sistema scrivono anche testi_campagna.py e
+    # sentinella.py, e le loro righe non sono saldi da rileggere.
     rossi = {r["servizio"] for r in stato
-             if r["stato"] in ("sotto_soglia", "esaurito")}
+             if r["stato"] in ("sotto_soglia", "esaurito")
+             and r["servizio"] in SERVIZI_CREDITO}
     if not rossi:
         log("nessun servizio in allarme: niente da rileggere")
         return []
@@ -550,6 +556,16 @@ if __name__ == "__main__":
         assert letture(serve_openapi_eur=8, log=lambda *a: None)[1] == []
         globals()["token_openapi_ok"] = lambda log=print: False
         assert "token Openapi rifiutato" in letture(serve_openapi_eur=8, log=lambda *a: None)[1][0]
+        # ricontrollo degli allarmi: le righe degli altri job non sono crediti da rileggere
+        class _Stato:
+            def __init__(self, righe): self.data = righe
+            def table(self, nome): return self
+            def select(self, colonne): return self
+            def execute(self): return self
+        detto = []
+        altri = [{"servizio": "testi_campagna", "stato": "sotto_soglia"},
+                 {"servizio": "sentinella_invii", "stato": "esaurito"}, {"servizio": "apify", "stato": "ok"}]
+        assert allarmi(_Stato(altri), detto.append) == [] and "nessun servizio in allarme" in detto[0]
         print("ok")
     elif "--allarmi" in sys.argv:
         from dotenv import load_dotenv

@@ -10,14 +10,20 @@ restano. Ogni testo passa da `controlla`: se non rispetta le regole, o la
 scheda ha troppi pochi dati, stato='scartato' con il motivo e l'app usa il
 testo base. Il motivo non contiene mai il nome trovato.
 
-Scrive SOLO su testi_campagna e su campagne.testi_stato, quindi ha un lucchetto
-suo e non quello dell'archivio (lucchetto.py lo ignora fra gli altri lavori).
+Scrive SOLO su testi_campagna, su campagne.testi_stato e sulla propria riga di
+stato_sistema, quindi ha un lucchetto suo e non quello dell'archivio
+(lucchetto.py lo ignora fra gli altri lavori).
 Alla scheda si legge solo attivita' e zona: niente motivazione ne' segnali
 (gli annunci di lavoro non si citano mai, vedi bozze_email.py).
 
 Tetto per campagna raggiunto, credito finito o errore API: il giro si ferma, le
 righe restano 'da_generare' e la campagna 'da_preparare'. Niente righe scartate
 per colpa nostra: il tetto va visto e deciso da una persona.
+
+Una campagna ferma (tetto raggiunto, nessuna riga, testo base assente) non
+riempie il log ogni 10 minuti: l'avviso va UNA volta nella riga
+'testi_campagna' di stato_sistema, che l'app mostra in alto, e una riga di log
+segna quando compare e quando si chiude. La riga non si cancella mai.
 """
 
 from __future__ import annotations
@@ -26,11 +32,13 @@ import argparse
 import concurrent.futures as cf
 import datetime as dt
 import fcntl
+import functools
 import json
 import pathlib
 import random
 import re
 import sys
+import unicodedata
 import zlib
 
 import config
@@ -39,6 +47,11 @@ import costi
 CARTELLA = pathlib.Path(__file__).resolve().parent / "cache" / "testi_campagna"
 LUCCHETTO = pathlib.Path(__file__).resolve().parent / "cache" / ".lucchetto_testi_campagna"
 SPESA = CARTELLA / "spesa.json"
+# Elenco ISTAT dei comuni (sigla<TAB>nome), per sciogliere le abbreviazioni: vedi _sciogli_comune.
+COMUNI_ISTAT = pathlib.Path(__file__).resolve().parent / "data" / "comuni_istat.txt"
+# La riga di stato_sistema di questo job; 'sotto_soglia' e' l'avviso giallo dell'app.
+SERVIZIO, STATO_AVVISO = "testi_campagna", "sotto_soglia"
+MINUTI_SENZA_RIGHE = 20      # l'app crea le righe qualche secondo dopo aver chiesto i testi
 
 TETTO_EUR = 5.0
 BLOCCO = 30
@@ -62,6 +75,7 @@ _INIZI_APERTURA = {
 
 CAMPI_SCHEDA = ("id, ragione_sociale, referente_nome, categoria, gamma, materiali, "
                 "officina_propria, comune, provincia, regione")
+_SANTI = "(?:san|santa|santo|sant|santi|santissima|santissimo)"
 
 SISTEMA = """Adatti l'inizio di un'email commerciale all'azienda che la riceve.
 Scrivi una sola apertura breve, al massimo 12 parole, e subito dopo il testo base copiato parola per parola, senza togliere, spostare o cambiare nulla.
@@ -190,9 +204,63 @@ def _nome_luogo(valore) -> str:
     return _con_accento(testo)
 
 
+def _chiave_comune(testo: str) -> str:
+    """Per i confronti: minuscole, senza accenti, un solo apostrofo, trattini come spazi."""
+    testo = unicodedata.normalize("NFD", testo.lower())
+    testo = "".join(c for c in testo if unicodedata.category(c) != "Mn")
+    return " ".join(re.sub(r"[’`´]", "'", testo).replace("-", " ").split())
+
+
+@functools.lru_cache(maxsize=1)
+def _comuni_ufficiali() -> dict[str, list[tuple[str, str]]]:
+    """sigla della provincia -> [(chiave, nome ufficiale)]. Elenco assente: nessuno."""
+    per_sigla: dict[str, list[tuple[str, str]]] = {}
+    try:
+        righe = COMUNI_ISTAT.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return per_sigla
+    for riga in righe:
+        sigla, _, nome = riga.partition("\t")
+        if nome:
+            per_sigla.setdefault(sigla, []).append((_chiave_comune(nome), nome))
+    return per_sigla
+
+
+def _sciogli_comune(comune: str, provincia) -> str:
+    """S.Egidio Alla Vibrata (TE) -> Sant'Egidio alla Vibrata. Solo se fra i comuni
+    ISTAT della provincia (di tutta Italia se la scheda non ha la provincia) ce n'e'
+    uno, e uno solo, che combacia parola per parola; altrimenti il comune resta
+    com'e'. Frazioni e zone industriali (S. Pietro a Vico, P.I.P.) non combaciano."""
+    if "." not in comune:
+        return comune
+    pezzi = re.findall(r"[^\s.]+\.?", _chiave_comune(comune))
+    if not any(len(p) >= 4 and not p.endswith(".") for p in pezzi):
+        return comune     # solo sigle: non e' un comune abbreviato
+    modello = ""
+    for i, p in enumerate(pezzi):
+        ultimo = i == len(pezzi) - 1
+        if p.endswith("."):
+            radice = p[:-1]
+            modello += (_SANTI if radice in ("s", "ss") else re.escape(radice) + "[a-z]*") + ("" if ultimo else "(?:'| )")
+        else:
+            modello += re.escape(p) + ("" if ultimo else " ")
+    ufficiali = _comuni_ufficiali()
+    sigla = _stringa(provincia).strip().upper()
+    if sigla:
+        candidati = ufficiali.get(sigla, [])
+    else:
+        candidati = [c for lista in ufficiali.values() for c in lista]
+    trovati = {nome for chiave, nome in candidati if re.fullmatch(modello, chiave)}
+    return trovati.pop() if len(trovati) == 1 else comune
+
+
+def _comune(az: dict) -> str:
+    return _sciogli_comune(_nome_luogo(az.get("comune")), az.get("provincia"))
+
+
 def zona(az: dict) -> str:
     """Il comune; la regione solo se il comune manca."""
-    return _nome_luogo(az.get("comune")) or _nome_luogo(az.get("regione"))
+    return _comune(az) or _nome_luogo(az.get("regione"))
 
 
 def _a_comune(comune: str) -> str:
@@ -209,7 +277,7 @@ def _a_comune(comune: str) -> str:
 
 def luogo(az: dict) -> str:
     """Il luogo come va scritto nel testo, con la preposizione."""
-    comune = _nome_luogo(az.get("comune"))
+    comune = _comune(az)
     if comune:
         return _a_comune(comune)
     regione = _nome_luogo(az.get("regione"))
@@ -275,9 +343,19 @@ def scheda(az: dict) -> str:
     return "\n".join(righe)
 
 
+def _voci_gamma(az: dict) -> set[str]:
+    """Le parole delle voci note della gamma di questa scheda."""
+    gamma = az.get("gamma")
+    if not isinstance(gamma, list):
+        return set()
+    return {p for v in gamma if str(v).strip().lower() in _GAMMA_NOTE for p in str(v).strip().lower().split()}
+
+
 def _token_nome(az: dict, base: str) -> set[str]:
-    """Le parole del nome che in un testo possono solo venire dal nome."""
-    consentite = _insieme(base, zona(az), attivita(az)) | _FORME | _GENERICHE
+    """Le parole del nome che in un testo possono solo venire dal nome. Una voce
+    della gamma resta un prodotto anche se compare nella ragione sociale
+    ("Zanzariere Tal dei Tali"): citarla non e' citare l'azienda."""
+    consentite = _insieme(base, zona(az), attivita(az)) | _FORME | _GENERICHE | _voci_gamma(az)
     azienda = {p.lower() for p in _parole(_stringa(az.get("ragione_sociale"))) if len(p) >= 3}
     return (azienda - consentite) | {p.lower() for p in _parole(_stringa(az.get("referente_nome")))
                                      if len(p) >= 3}
@@ -428,14 +506,16 @@ def genera(base: str, az: dict | None, chiama=chiama_modello) -> dict:
 
 
 class Archivio:
-    """Tutte le letture e le scritture del job: solo testi_campagna e testi_stato."""
+    """Tutte le letture e le scritture del job: solo testi_campagna, testi_stato
+    e la riga 'testi_campagna' di stato_sistema."""
 
     def __init__(self, cliente=None):
         import db
         self.c = cliente or db.client()
 
     def campagne(self) -> list[dict]:
-        return self.c.table("campagne").select("id, testo").eq("testi_stato", "da_preparare").execute().data
+        return (self.c.table("campagne").select("id, nome, testo, aggiornato_il")
+                .eq("testi_stato", "da_preparare").execute().data)
 
     def testo_base(self, campagna: str) -> str | None:
         r = self.c.table("campagne").select("testo").eq("id", campagna).limit(1).execute().data
@@ -466,6 +546,19 @@ class Archivio:
         (self.c.table("campagne").update({"testi_stato": "pronti"})
          .eq("id", campagna).eq("testi_stato", "da_preparare").execute())
 
+    def avviso(self) -> dict | None:
+        r = (self.c.table("stato_sistema").select("stato, messaggio").eq("servizio", SERVIZIO)
+             .limit(1).execute().data)
+        return r[0] if r else None
+
+    def scrivi_avviso(self, stato: str, messaggio: str) -> None:
+        """Aggiorna la riga sul posto; la crea solo la prima volta. Mai cancellata."""
+        riga = {"servizio": SERVIZIO, "stato": stato, "messaggio": messaggio,
+                "letto_il": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+                "fonte_lettura": "testi_campagna"}
+        if not self.c.table("stato_sistema").update(riga).eq("servizio", SERVIZIO).execute().data:
+            self.c.table("stato_sistema").insert(riga).execute()
+
 
 def _leggi_spesa(file: pathlib.Path) -> dict:
     return json.loads(file.read_text()) if file.exists() else {}
@@ -478,14 +571,29 @@ def _salva_spesa(file: pathlib.Path, spesa: dict) -> None:
     temporaneo.replace(file)
 
 
+def _da_poco(quando: str | None, minuti: int) -> bool:
+    """True se la data ISO e' piu' recente di `minuti`. Data assente o illeggibile: False."""
+    try:
+        t = dt.datetime.fromisoformat(str(quando).replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=dt.timezone.utc)
+    return dt.datetime.now(dt.timezone.utc) - t < dt.timedelta(minutes=minuti)
+
+
 def lavora_campagna(arc, camp: dict, spesa: dict, file_spesa: pathlib.Path, chiama, log,
-                    tetto: float = TETTO_EUR) -> bool:
-    """-> False se il giro va fermato (errore API: inutile provare le altre)."""
+                    tetto: float = TETTO_EUR, avvisi: list | None = None) -> bool:
+    """-> False se il giro va fermato (errore API: inutile provare le altre).
+    Una campagna ferma aggiunge una frase ad `avvisi` (per stato_sistema) e non scrive nel log."""
     import anthropic
+    avvisi = avvisi if avvisi is not None else []
     cid, letto = camp["id"], camp.get("testo")
+    nome = _stringa(camp.get("nome")).strip() or cid
     base = (letto or "").strip()
     if not base:
-        log(f"ESITO: campagna {cid} senza testo base, non la tocco")
+        avvisi.append(f"Testi della campagna «{nome}»: manca il testo base, quindi non si può preparare "
+                      f"nessun testo personalizzato. Scrivere il testo nella campagna e salvare.")
         return True
     fatte = scartate = 0
     cambiato = False
@@ -494,8 +602,9 @@ def lavora_campagna(arc, camp: dict, spesa: dict, file_spesa: pathlib.Path, chia
         if not ids:
             break
         if spesa.get(cid, 0.0) >= tetto:
-            log(f"ESITO: TETTO di {tetto:.2f} EUR raggiunto sulla campagna {cid}: fermata, "
-                f"{arc.conta(cid, 'da_generare')} righe restano da generare")
+            avvisi.append(f"Testi della campagna «{nome}»: preparazione ferma, raggiunto il tetto di spesa di "
+                          f"{tetto:.2f} EUR. Restano {arc.conta(cid, 'da_generare')} testi da preparare: chi "
+                          f"non ha un testo pronto riceve il testo base. Avvisare chi gestisce il sistema.")
             return True
         aziende = arc.aziende(ids)
         errore = None
@@ -526,7 +635,11 @@ def lavora_campagna(arc, camp: dict, spesa: dict, file_spesa: pathlib.Path, chia
             return True
     totale = arc.conta(cid)
     if totale == 0:
-        log(f"ESITO: campagna {cid} senza righe, resta da preparare")
+        # L'app chiede i testi e crea le righe pochi secondi dopo: appena chiesti non e' un guasto.
+        if not _da_poco(camp.get("aggiornato_il"), MINUTI_SENZA_RIGHE):
+            avvisi.append(f"Testi della campagna «{nome}»: la preparazione è stata chiesta ma l'elenco delle "
+                          f"aziende è vuoto, quindi non c'è niente da preparare. Controllare il gruppo della "
+                          f"campagna e premere «Riprepara i testi».")
         return True
     arc.segna_pronti(cid)
     log(f"ESITO: campagna {cid} pronta: {fatte} in questo giro, {scartate} scartate, "
@@ -534,12 +647,38 @@ def lavora_campagna(arc, camp: dict, spesa: dict, file_spesa: pathlib.Path, chia
     return True
 
 
+def aggiorna_avviso(arc, avvisi: list[str], completo: bool, log) -> None:
+    """La riga di stato_sistema segue gli avvisi del giro: si scrive solo quando
+    cambia (una volta, non ogni 10 minuti) e torna 'ok' quando non ce ne sono piu'.
+    Un giro interrotto non chiude niente: non ha visto tutte le campagne.
+    Se stato_sistema non risponde il job va avanti lo stesso."""
+    try:
+        riga = arc.avviso()
+        if avvisi:
+            messaggio = " ".join(avvisi)
+            if riga and riga.get("stato") == STATO_AVVISO and riga.get("messaggio") == messaggio:
+                return
+            arc.scrivi_avviso(STATO_AVVISO, messaggio)
+            log(f"ESITO: avviso scritto in stato_sistema: {messaggio}")
+        elif completo and (riga is None or riga.get("stato") != "ok"):
+            arc.scrivi_avviso("ok", "Testi delle campagne: nessuna campagna ferma")
+            if riga is not None:
+                log("ESITO: avviso sui testi chiuso in stato_sistema")
+    except Exception as e:  # noqa: BLE001
+        log(f"ESITO: stato_sistema non aggiornato ({type(e).__name__}); "
+            f"avvisi di questo giro: {' '.join(avvisi) or 'nessuno'}")
+
+
 def giro(arc, chiama=chiama_modello, file_spesa: pathlib.Path = SPESA, log=print) -> int:
     spesa = _leggi_spesa(file_spesa)
+    avvisi: list[str] = []
+    esito = 0
     for camp in arc.campagne():
-        if not lavora_campagna(arc, camp, spesa, file_spesa, chiama, log):
-            return 1
-    return 0
+        if not lavora_campagna(arc, camp, spesa, file_spesa, chiama, log, avvisi=avvisi):
+            esito = 1
+            break
+    aggiorna_avviso(arc, avvisi, esito == 0, log)
+    return esito
 
 
 def prova(n: int, base: str) -> None:
@@ -688,6 +827,17 @@ def _test() -> None:
     assert es["stato"] == "scartato" and "non di mestiere" in es["motivo"]
     es = genera(tu2, {**gam, "categoria": "ferramenta"}, non_chiamare)
     assert es["stato"] == "pronto" and es["testo"].startswith("Per chi lavora con cancelli e ringhiere")
+    # una voce della gamma che compare anche nella ragione sociale resta un prodotto
+    znome = {**az, "ragione_sociale": "Zorbo Zanzariere e Ringhiere Srl", "gamma": ["zanzariere", "ringhiere", "scale"]}
+    es = genera(tu2, znome, non_chiamare)
+    assert es["stato"] == "pronto" and es["testo"].startswith("Per chi lavora con zanzariere e ringhiere a Viterbo,"), es
+    blind = {**az, "ragione_sociale": "Blindate Zorbo Snc", "gamma": ["porte blindate"]}
+    assert genera(tu2, blind, non_chiamare)["testo"].startswith("Per chi lavora con porte blindate a Viterbo,")
+    # ...ma solo se e' nella gamma di quella scheda, e il resto del nome resta vietato
+    assert "nome" in controlla("Per chi lavora con zanzariere e ringhiere a Viterbo, come Zorbo, più" + tu2[3:], tu2, znome)
+    assert "zanzariere" in _token_nome({**az, "ragione_sociale": "Zorbo Zanzariere Srl"}, tu2)
+    assert "zanzariere" not in _token_nome(znome, tu2) and "zorbo" in _token_nome(znome, tu2)
+    assert "scale" in _token_nome({**znome, "referente_nome": "Xanto Scale"}, tu2)      # il referente non si tocca
     for categoria in ("fabbro", "serramentista", "Carpenteria metallica", "costruttore", "artigiano", "montatore"):
         assert not dati_insufficienti({**az, "categoria": categoria}), categoria
     # luoghi
@@ -697,6 +847,29 @@ def _test() -> None:
                            ("Terre Roveresche", "nelle Terre Roveresche"), ("Trinita' d'Agultu", "a Trinità d'Agultu")):
         assert luogo({"comune": comune}) == atteso, (comune, luogo({"comune": comune}))
     assert luogo({"regione": "Lazio"}) == "nel Lazio" and luogo({"regione": "Toscana"}) == "in Toscana"
+
+    # comuni abbreviati: si sciolgono solo con un comune ISTAT, e uno solo, nella provincia
+    assert len(_comuni_ufficiali()) == 107 and sum(len(v) for v in _comuni_ufficiali().values()) > 7800
+    for comune, prov, atteso in (("S.Egidio Alla Vibrata", "TE", "Sant'Egidio alla Vibrata"),
+                                 ("S. EGIDIO ALLA VIBRATA", "te", "Sant'Egidio alla Vibrata"),
+                                 ("Monte S. Giovanni Campano", "FR", "Monte San Giovanni Campano"),
+                                 ("S. Maria C. V.", "CE", "Santa Maria Capua Vetere"),
+                                 ("SS. Cosma e Damiano", "LT", "Santi Cosma e Damiano"),
+                                 ("S. Pietro in C.", "VR", "San Pietro in Cariano"),
+                                 ("S. Pietro in C.", None, "S. Pietro in C."),          # tre comuni diversi: resta
+                                 ("S. Teodoro", None, "San Teodoro"),                   # due comuni, stesso nome
+                                 ("S. Pietro a Vico", "LU", "S. Pietro a Vico"),        # frazione
+                                 ("S. Marco", "CH", "S. Marco"),
+                                 ("S.Egidio Alla Vibrata", "RM", "S.Egidio Alla Vibrata"),     # provincia diversa
+                                 ("S.Egidio Alla Vibrata", "Teramo", "S.Egidio Alla Vibrata"),  # provincia non in sigla
+                                 ("P.i.p.", "AV", "P.i.p."), ("Zona Ind.le", "CB", "Zona Ind.le"),
+                                 ("Z.I. Modugno (Ba)", "BA", "Z.I. Modugno (Ba)"),
+                                 ("Viterbo", "VT", "Viterbo"), ("L'aquila", "AQ", "L'Aquila")):
+        assert zona({"comune": comune, "provincia": prov}) == atteso, (comune, prov, zona({"comune": comune, "provincia": prov}))
+    abbr = {**az, "comune": "S.Egidio Alla Vibrata", "provincia": "TE", "gamma": ["cancelli"]}
+    assert luogo(abbr) == "a Sant'Egidio alla Vibrata"
+    es = genera(tu, abbr, lambda b, a: 1 / 0)
+    assert es["testo"].startswith("Per chi lavora con cancelli a Sant'Egidio alla Vibrata, più scelta"), es
 
     # comuni con l'apostrofo finale: solo nel testo generato
     for grezzo, atteso in (("Scorze'", "Scorzè"), ("CEFALU'", "Cefalù"), ("FORLI' DEL SANNIO", "Forlì del Sannio"),
@@ -717,11 +890,20 @@ def _test() -> None:
     assert "Zorbo" not in scheda(az) and "Xanto" not in scheda(az)
 
     class Finto:
-        def __init__(self, righe):
+        def __init__(self, righe, testo=base, chiesta_da_minuti=60):
             self.r, self.pronte, self.scritte = dict(righe), [], []
+            self.testo, self.riga_stato, self.avvisi = testo, None, []
+            self.chiesta = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=chiesta_da_minuti)).isoformat()
 
         def campagne(self):
-            return [{"id": "c1", "testo": base}]
+            return [{"id": "c1", "nome": "1 · Prova", "testo": self.testo, "aggiornato_il": self.chiesta}]
+
+        def avviso(self):
+            return self.riga_stato
+
+        def scrivi_avviso(self, stato, messaggio):
+            self.riga_stato = {"stato": stato, "messaggio": messaggio}
+            self.avvisi.append((stato, messaggio))
 
         def testo_base(self, cid):
             return base
@@ -750,6 +932,11 @@ def _test() -> None:
         assert arc.pronte == ["c1"] and arc.r["b"] == "pronto" and arc.r["manca"] == "scartato"
         assert abs(json.loads(f.read_text())["c1"] - 0.070) < 1e-6
         assert sum(e["stato"] == "pronto" for _, e in arc.scritte) == 70
+        # nessuna campagna ferma: la riga di stato_sistema nasce 'ok', una volta sola e senza log
+        assert [s for s, _ in arc.avvisi] == ["ok"]
+        zitto = []
+        giro(arc, lambda b, a: (buono, 0.001), f, zitto.append)
+        assert len(arc.avvisi) == 1 and not any("avviso" in m for m in zitto)
 
         scarti = Finto({"x": "da_generare"})
         giro(scarti, lambda b, a: ("Zorbo", 0.001), pathlib.Path(t) / "s2.json", lambda m: None)
@@ -761,10 +948,29 @@ def _test() -> None:
         cara = Finto({f"a{i}": "da_generare" for i in range(40)})
         msg = []
         giro(cara, lambda b, a: (buono, 1.0), ftetto, msg.append)
-        assert cara.conta("c1", "da_generare") == 10 and not cara.pronte and "TETTO" in msg[0]
+        assert cara.conta("c1", "da_generare") == 10 and not cara.pronte
+        # l'avviso va in stato_sistema UNA volta, con una sola riga di log; ai giri dopo niente
+        assert len(msg) == 1 and "avviso scritto" in msg[0]
+        assert len(cara.avvisi) == 1 and cara.avvisi[0][0] == "sotto_soglia"
+        assert "tetto di spesa di 5.00 EUR" in cara.avvisi[0][1] and "«1 · Prova»" in cara.avvisi[0][1]
+        assert "Restano 10 testi" in cara.avvisi[0][1] and "c1" not in cara.avvisi[0][1]
         chiamate = []
-        giro(cara, lambda b, a: chiamate.append(1) or (buono, 1.0), ftetto, msg.append)
-        assert not chiamate and not cara.pronte
+        for _ in range(3):
+            giro(cara, lambda b, a: chiamate.append(1) or (buono, 1.0), ftetto, msg.append)
+        assert not chiamate and not cara.pronte and len(msg) == 1 and len(cara.avvisi) == 1
+        # il tetto viene alzato (o la spesa azzerata): la campagna si chiude e l'avviso torna ok, non sparisce
+        ftetto.write_text("{}")
+        giro(cara, lambda b, a: (buono, 0.0), ftetto, msg.append)
+        assert cara.pronte == ["c1"] and cara.riga_stato["stato"] == "ok" and len(cara.avvisi) == 2
+        assert "pronta" in msg[-2] and "chiuso" in msg[-1]
+        # stato_sistema che non risponde non ferma il job
+        class SenzaStato(Finto):
+            def avviso(self):
+                raise RuntimeError("tabella assente")
+        rotta = SenzaStato({"x": "da_generare"})
+        msg = []
+        assert giro(rotta, lambda b, a: (buono, 0.0), pathlib.Path(t) / "s7.json", msg.append) == 0
+        assert rotta.pronte == ["c1"] and "stato_sistema non aggiornato (RuntimeError)" in msg[-1]
 
         # errore API: la riga resta da generare, il giro esce con 1
         import anthropic
@@ -772,8 +978,10 @@ def _test() -> None:
         def rotto(b, a):
             raise anthropic.APIConnectionError(request=httpx.Request("POST", "http://x"))
         ko = Finto({"x": "da_generare"})
+        ko.riga_stato = {"stato": "sotto_soglia", "messaggio": "un avviso di prima"}
         assert giro(ko, rotto, pathlib.Path(t) / "s4.json", lambda m: None) == 1
         assert ko.r["x"] == "da_generare" and not ko.pronte
+        assert not ko.avvisi      # giro interrotto: non ha visto tutto, l'avviso di prima resta
 
         # testo base cambiato durante il giro: nessuna scrittura, niente pronti, niente ciclo infinito
         class Cambiato(Finto):
@@ -785,10 +993,29 @@ def _test() -> None:
         assert not mosso.scritte and mosso.conta("c1", "da_generare") == 2 and not mosso.pronte
         assert "cambiato" in msg[0]
 
-        # nessuna riga ancora creata dall'app: non si dichiara pronta
+        # nessuna riga ancora creata dall'app: non si dichiara pronta. Appena chiesti i
+        # testi e' normale (nessun avviso); dopo 20 minuti e' una campagna ferma: avviso, una volta.
+        fresca = Finto({}, chiesta_da_minuti=3)
+        msg = []
+        giro(fresca, lambda b, a: (buono, 0), pathlib.Path(t) / "s5.json", msg.append)
+        assert not fresca.pronte and [s for s, _ in fresca.avvisi] == ["ok"] and not msg
         vuota = Finto({})
-        giro(vuota, lambda b, a: (buono, 0), pathlib.Path(t) / "s5.json", lambda m: None)
-        assert not vuota.pronte
+        for _ in range(3):
+            giro(vuota, lambda b, a: (buono, 0), pathlib.Path(t) / "s5.json", msg.append)
+        assert not vuota.pronte and len(vuota.avvisi) == 1 and len(msg) == 1
+        assert vuota.avvisi[0][0] == "sotto_soglia" and "elenco delle aziende è vuoto" in vuota.avvisi[0][1]
+        vuota.r["x"] = "da_generare"                    # le righe arrivano: si lavora e l'avviso si chiude
+        giro(vuota, lambda b, a: (buono, 0), pathlib.Path(t) / "s5.json", msg.append)
+        assert vuota.pronte == ["c1"] and vuota.riga_stato["stato"] == "ok"
+        # senza testo base: stesso avviso unico, niente righe toccate
+        muta = Finto({"x": "da_generare"}, testo="  ")
+        msg = []
+        for _ in range(2):
+            giro(muta, lambda b, a: (buono, 0), pathlib.Path(t) / "s8.json", msg.append)
+        assert muta.r["x"] == "da_generare" and len(muta.avvisi) == 1 and "manca il testo base" in muta.avvisi[0][1]
+        assert len(msg) == 1
+        assert _da_poco(dt.datetime.now(dt.timezone.utc).isoformat(), 20) and not _da_poco(None, 20)
+        assert not _da_poco("2026-01-01T00:00:00+00:00", 20) and not _da_poco("non una data", 20)
 
     print("ok")
 
