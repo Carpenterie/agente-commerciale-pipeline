@@ -50,7 +50,7 @@ LINGUA_MAPS = "it"
 PAESE_MAPS = "it"   # senza, l'attore geolocalizza dagli USA (Rome, NY)
 
 # --- Regioni attive (§1): il Lazio dal primo ciclo, le altre cinque dal
-# 2026-10-07 (costi approvati dal committente). Fuori dal Lazio Claudia
+# 2026-10-07 (costi approvati dal committente). Fuori dal Lazio la cliente
 # vende sia prodotto finito sia kit: la distanza non penalizza nessuno, e
 # il territorio e' "dentro" in TUTTE le regioni attive, qualunque sia la
 # provincia del ciclo. Per ogni regione: province (sigla -> nome per Exa),
@@ -487,7 +487,7 @@ LINK_PRENOTAZIONE = ""    # es. "cal.com/carpenterielaziali/10min"
 # Categorie Google palesemente fuori settore: la voce del sourcing che ne
 # porta una NON entra in archivio (main la esclude come le chiuse, con
 # conteggio nel log). Conservativo per costruzione: si confronta la
-# CATEGORIA dichiarata da Google, non il nome — "Fabbro Barbieri Andrea"
+# CATEGORIA dichiarata da Google, non il nome — "Fabbro Tizio Caio"
 # ha categoria "Fabbro" e passa; un salone si chiama come vuole ma la
 # categoria dice "Parrucchiere". I dubbi restano dentro: qui solo
 # l'inequivocabile.
@@ -748,6 +748,28 @@ VIETATE_EMAIL = ("saldator", "annuncio", "assunzione", "cercate", "offerta di la
                  "48 ore", "consegna rapida", "prezzi imbattibili",
                  "immediata", "in tempi brevi", "subito disponibile")
 
+
+# Il campione dei 26 (CSV validato, pagine in cache, prototipo) sta FUORI dal
+# repo dall'11/11: contiene ragioni sociali di ditte individuali e pagine con
+# nomi di persone. Il percorso della cartella e' in CAMPIONE_26 nel .env.
+CAMPIONE_ASSENTE = ("SALTATO: campione dei 26 non trovato. Sta fuori dal repo: "
+                    "indicare la cartella in CAMPIONE_26 nel .env")
+
+
+def cartella_campione():
+    """-> la cartella del campione (pathlib.Path), o None se CAMPIONE_26 manca
+    o non indica una cartella con risultati.csv: chi lo usa si salta dicendolo."""
+    import pathlib
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(pathlib.Path(__file__).resolve().parent / ".env")
+    except ImportError:
+        pass
+    percorso = _os.environ.get("CAMPIONE_26", "").strip()
+    if not percorso:
+        return None
+    cartella = pathlib.Path(percorso).expanduser()
+    return cartella if (cartella / "risultati.csv").is_file() else None
 
 if __name__ == "__main__":
     # revisione dell'8/11

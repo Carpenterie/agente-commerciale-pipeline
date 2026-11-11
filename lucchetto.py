@@ -2,8 +2,13 @@
 
 Stesso file di giro_regione.py e indirizzi_maps.py (cache/.lucchetto_giro_regione):
 chi lo tiene esclude gli altri. In piu' si controlla che non giri un'altra
-pipeline senza lucchetto (i cicli del cron lanciano main.py direttamente).
+pipeline senza lucchetto.
 flock si rilascia da solo alla morte del processo: niente lucchetti stantii.
+
+Dall'11/11 lo prende anche main.py quando parte da solo (i cicli del cron).
+Chi lo lancia tenendo gia' il lucchetto (giro_regione.py) lo dichiara al figlio
+con la variabile d'ambiente LUCCHETTO_ARCHIVIO=tenuto: il figlio non lo riprende,
+altrimenti lo troverebbe occupato dal padre e non partirebbe mai.
 """
 
 from __future__ import annotations
@@ -15,8 +20,19 @@ import pathlib
 import subprocess
 
 FILE = pathlib.Path(__file__).resolve().parent / "cache" / ".lucchetto_giro_regione"
-# Job con un lucchetto proprio che non scrivono sull'archivio: non occupano.
-ESENTI = ("testi_campagna.py",)
+# Job che non scrivono sull'archivio (lucchetto proprio, o sola lettura): non occupano.
+ESENTI = ("testi_campagna.py", "sentinella.py")
+VARIABILE, TENUTO = "LUCCHETTO_ARCHIVIO", "tenuto"
+
+
+def tenuto_dal_padre() -> bool:
+    """True se chi ha lanciato questo processo tiene gia' il lucchetto."""
+    return os.environ.get(VARIABILE) == TENUTO
+
+
+def ambiente_figlio() -> dict:
+    """L'ambiente per un sottoprocesso lanciato da chi tiene il lucchetto."""
+    return {**os.environ, VARIABILE: TENUTO}
 
 
 def altri_lavori(mio: str) -> list[str]:
@@ -64,4 +80,31 @@ if __name__ == "__main__":
     assert not scaduto(None) and not scaduto("2999-01-01T00:00+00:00")
     assert scaduto("2000-01-01T00:00") and scaduto("2000-01-01T00:00+00:00")
     assert "indirizzi_maps.py" not in "".join(altri_lavori("indirizzi_maps.py"))
+    # il figlio di chi tiene il lucchetto lo sa dall'ambiente, e solo da li'
+    assert ambiente_figlio()[VARIABILE] == TENUTO and "PATH" in ambiente_figlio()
+    _prima = os.environ.pop(VARIABILE, None)
+    assert not tenuto_dal_padre()
+    os.environ[VARIABILE] = TENUTO
+    assert tenuto_dal_padre()
+    os.environ[VARIABILE] = "altro"
+    assert not tenuto_dal_padre()
+    os.environ.pop(VARIABILE)
+    if _prima is not None:
+        os.environ[VARIABILE] = _prima
+    # il lucchetto vero: finche' un handle lo tiene, un secondo non lo ottiene
+    import tempfile
+    with tempfile.TemporaryDirectory() as _t:
+        _f = pathlib.Path(_t) / "l"
+        _a, _b = _f.open("w"), _f.open("w")
+        fcntl.flock(_a, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        try:
+            fcntl.flock(_b, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            raise AssertionError("due lucchetti insieme")
+        except OSError:
+            pass
+        _a.close()
+        fcntl.flock(_b, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        _b.close()
+    for _e in ESENTI:
+        assert (pathlib.Path(__file__).resolve().parent / _e).exists(), f"{_e}: script esente che non esiste"
     print("ok")

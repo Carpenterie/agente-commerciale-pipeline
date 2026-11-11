@@ -107,7 +107,7 @@ sourcing_maps.cerca = lambda comuni, log=print, tetto_usd=None: (
 sourcing_exa.cerca = lambda provincia, log=print: [s for s in SCHEDE if s["fonte"] == "exa"]
 fetch.fetch_azienda = _fetch_finto
 classify.classifica = _classifica_finta
-def _arricchisci_finto(nome, piva="", provincia="", comuni_noti=(), log=print):
+def _arricchisci_finto(nome, piva="", provincia="", comuni_noti=(), log=print, rif=""):
     if "Boom" in nome:
         raise RuntimeError("crash simulato nell'arricchimento")
     return _ANAGRAFICA
@@ -150,14 +150,24 @@ assert "escluse 1 chiuse definitivamente" in uscita, uscita
 assert "1 temporaneamente chiuse" in uscita, uscita
 assert "dedup interno: 8 -> 7" in uscita, uscita
 # tutte e 5 le aziende sono state lavorate, nessuna ha fermato il ciclo
+# Nel log ogni azienda e' indicata dal riferimento (dominio; senza sito, fonte
+# e comune), MAI dalla ragione sociale: le ditte individuali portano nome e
+# cognome del titolare (11/11).
+avanzamento = [x for x in uscita.splitlines() if x.startswith("[")]
+for rif in ("rossi.it", "maps senza sito, Guidonia", "como.it", "rotto.it",
+            "boom.it", "boom2.it"):
+    assert any(x.endswith("] " + rif) for x in avanzamento), (rif, avanzamento)
+# le ragioni sociali restano solo nelle righe complete stampate dal dry-run
+# ("ragione_sociale   ..."), che in un ciclo vero non esistono
 for nome in ("Officina Rossi", "Fabbro Bianchi", "Fabbro Como", "Sito Rotto",
-             "Esplosivo", "Boom Arricchimento"):
-    assert nome in uscita, nome
+             "Esplosivo", "Boom Arricchimento", "Chiusa Definitivamente"):
+    con_nome = [x for x in uscita.splitlines() if nome in x]
+    assert all(x.strip().startswith("ragione_sociale") for x in con_nome), (nome, con_nome)
 # un crash nel fetch non perde l'azienda: diventa FETCH_FALLITO e viene registrata
-assert "fetch KO Esplosivo" in uscita, uscita
+assert "fetch KO boom.it" in uscita, uscita
 # un crash fuori dal fetch salta la singola azienda ma non ferma il ciclo
-assert "SALTATA Boom Arricchimento" in uscita, uscita
-assert uscita.index("SALTATA Boom") < uscita.index("Aziende analizzate"), "ciclo fermato"
+assert "SALTATA boom2.it" in uscita, uscita
+assert uscita.index("SALTATA boom2") < uscita.index("Aziende analizzate"), "ciclo fermato"
 # senza sito e fuori territorio non pagano la classificazione: 2 sole analisi
 assert "Aziende analizzate: 2" in uscita, uscita
 # il fuori territorio è stato contato nel riepilogo del filtro geografico
@@ -286,7 +296,12 @@ uscita4 = buffer4.getvalue()
 
 # il cliente attivo esclude, l'ex cliente marca e resta nei risultati
 assert "1 attivi (escludono), 1 ex clienti (marcano)" in uscita4, uscita4
-assert "ex cliente [ragione+comune]: Officina Rossi" in uscita4, uscita4
+assert "ex cliente [ragione+comune]: rossi.it" in uscita4, uscita4
+# in un ciclo VERO il log non contiene ragioni sociali ne' la riga scritta
+# (fino all'11/11 la stampava per intero: referente, email, telefono)
+assert "riga che verrebbe scritta" not in uscita4 and "ragione_sociale" not in uscita4, uscita4
+for _nome in [s_["nome"] for s_ in SCHEDE]:
+    assert _nome not in uscita4, f"una ragione sociale nel log di un ciclo vero: {_nome}"
 assert "Officina Rossi" in [r["ragione_sociale"] for r in scritte], scritte
 
 # il segnale è nella riga scritta, in prima posizione
@@ -409,8 +424,11 @@ assert dati_le["exa_fatto"] is False and dati_le["schede_maps"] == 1 and dati_le
 importlib.reload(segnali_lavoro)
 segnali_lavoro.ESAURITO = True
 righe_log = []
+assert segnali_lavoro.cerca("Officina X", log=righe_log.append, rif="scheda 7") == []
+assert segnali_lavoro.cerca("Officina X", log=righe_log.append, dominio="officinax.it") == []
 assert segnali_lavoro.cerca("Officina X", log=righe_log.append) == []
-assert righe_log == [f"{segnali_lavoro.NON_CERCATI}: Officina X"], righe_log
+assert righe_log == [f"{segnali_lavoro.NON_CERCATI}: {chi}"
+                     for chi in ("scheda 7", "officinax.it", "azienda")], righe_log   # mai il nome
 # giorni dopo, Exa ricaricato: Maps NON si ripaga (anche oltre le 24 ore), Exa si fa
 _os.utime(f_le, (0, 0))
 sourcing_exa.cerca = lambda provincia, log=print: (
@@ -470,6 +488,62 @@ assert "GIA' IN ARCHIVIO per l'email commerciale, non riscritte: 1" in uscita_op
 assert [r["ragione_sociale"] for r in scritte_op] == ["Nuova Officina"], scritte_op
 assert "2 aziende da lavorare" in uscita_op, uscita_op
 assert "ferrifinti@gmail.com" not in uscita_op.lower()        # nel log l'id, mai l'indirizzo
+for _nome in ("Officina Rossi", "Ferri Finti", "Nuova Officina"):
+    assert _nome not in uscita_op, f"una ragione sociale nel log di un ciclo vero: {_nome}"
 SCHEDE[:], classify.classifica = _schede, _classifica
 CONTENUTI.clear(); CONTENUTI.update(_contenuti)
 print("ok (clienti del gestionale riconosciuti dall'email commerciale)")
+
+
+# --- il ciclo prende il lucchetto dell'archivio (11/11) ----------------------
+# Lanciato dal cron lo prende lui; lanciato da giro_regione (che lo tiene gia')
+# o in dry-run no; se e' occupato non parte e lo dice nell'ultima riga del log.
+import os  # noqa: E402
+
+import lucchetto  # noqa: E402
+
+_argomenti, _esegui, _prendi = main._argomenti, main.esegui, lucchetto.prendi
+partiti, chiesti = [], []
+
+
+async def _esegui_finto(a):
+    partiti.append(a.provincia)
+    return 0
+
+
+class _Handle:
+    chiuso = False
+
+    def close(self):
+        self.chiuso = True
+
+
+def _ciclo(dry_run, libero=True, dal_padre=False):
+    partiti.clear(); chiesti.clear()
+    handle = _Handle()
+    main._argomenti = lambda: types.SimpleNamespace(provincia="RM", dry_run=dry_run)
+    lucchetto.prendi = lambda mio, log=print: (chiesti.append(mio), handle if libero else None)[1]
+    os.environ.pop(lucchetto.VARIABILE, None)
+    if dal_padre:
+        os.environ[lucchetto.VARIABILE] = lucchetto.TENUTO
+    b = io.StringIO()
+    with contextlib.redirect_stdout(b):
+        codice = main.main()
+    os.environ.pop(lucchetto.VARIABILE, None)
+    return codice, b.getvalue(), handle
+
+
+main.esegui = _esegui_finto
+codice, _, h = _ciclo(dry_run=False)
+assert codice == 0 and chiesti == ["main.py"] and partiti == ["RM"] and h.chiuso   # preso, tenuto, rilasciato
+codice, u, h = _ciclo(dry_run=False, libero=False)
+assert codice == 1 and not partiti and "ESITO: ciclo FALLITO" in u and "NON partito" in u
+codice, _, _ = _ciclo(dry_run=False, dal_padre=True)
+assert codice == 0 and not chiesti and partiti == ["RM"]       # lo tiene giro_regione: non lo riprende
+codice, _, _ = _ciclo(dry_run=True, libero=False)
+assert codice == 0 and not chiesti and partiti == ["RM"]       # non scrive: non serve
+main._argomenti, main.esegui, lucchetto.prendi = _argomenti, _esegui, _prendi
+import giro_regione  # noqa: E402
+import inspect  # noqa: E402
+assert "ambiente_figlio()" in inspect.getsource(giro_regione._gira)
+print("ok (il ciclo prende il lucchetto dell'archivio, i figli di giro_regione no)")

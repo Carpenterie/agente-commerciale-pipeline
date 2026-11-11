@@ -343,7 +343,7 @@ def letture(serve_apify_usd: float = 0, serve_anthropic: bool = False,
                                 f"{serve_apify_usd:.2f}")
             # STATO per il banner: guarda avanti. Un banner e' una richiesta
             # di AZIONE — se il credito si rinnova (il 7) prima del prossimo
-            # giro in calendario, non c'e' niente da chiedere a Claudia
+            # giro in calendario, non c'e' niente da chiedere alla cliente
             effettivo = tetto if rinnova_prima else residuo
             if effettivo >= serve_apify_usd:
                 if residuo < serve_apify_usd:
@@ -456,7 +456,7 @@ SERVIZI_CREDITO = ("apify", "anthropic", "openapi", "exa")
 
 def allarmi(sb=None, log=print) -> list[dict]:
     """Rilegge SOLO i servizi attualmente in allarme (sotto_soglia/esaurito):
-    se Claudia ha ricaricato oggi, il banner si spegne domani invece che al
+    se la cliente ha ricaricato oggi, il banner si spegne domani invece che al
     1° del mese. Gratis per Apify e per Openapi a wallet vuoto (la 402); il
     pedaggio di 0,10 su Openapi si paga solo alla lettura che TROVA credito
     e scrive ok. I servizi gia' ok restano alla lettura mensile."""

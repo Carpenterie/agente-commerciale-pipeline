@@ -27,6 +27,7 @@ import crediti
 import db
 import dedup
 import fetch
+import lucchetto
 import segnali_lavoro
 import sourcing_exa
 import sourcing_maps
@@ -196,7 +197,7 @@ async def analizza(azienda: dict, crawler, client, totali: dict) -> dict:
         stato, contenuto, pagine = await fetch.fetch_azienda(
             crawler, azienda["sito"])
     except Exception as e:  # noqa: BLE001
-        print(f"  fetch KO {azienda.get('nome')}: {type(e).__name__}: {e}")
+        print(f"  fetch KO {dedup.riferimento(azienda)}: {type(e).__name__}: {e}")
         esito["esito_fetch"] = "FETCH_FALLITO"
         return esito
 
@@ -212,7 +213,7 @@ async def analizza(azienda: dict, crawler, client, totali: dict) -> dict:
     try:
         dati = classify.classifica(client, contenuto)
     except Exception as e:  # noqa: BLE001
-        print(f"  analisi KO {azienda.get('nome')}: {type(e).__name__}: {e}")
+        print(f"  analisi KO {dedup.riferimento(azienda)}: {type(e).__name__}: {e}")
         esito["esito_fetch"] = "ERRORE_ANALISI"
         # la firma dell'errore serve al salvavita del chiamante: dieci
         # UGUALI di fila non sono dieci aziende sfortunate, sono una causa
@@ -277,7 +278,8 @@ def arricchisci_ab(azienda: dict, esito: dict, totali: dict,
     preliminare = esito["classe"]
     nome = azienda.get("nome", "")
     segnali = segnali_lavoro.cerca(
-        nome, dominio=urlparse(azienda.get("sito") or "").netloc, provincia=provincia)
+        nome, dominio=urlparse(azienda.get("sito") or "").netloc, provincia=provincia,
+        rif=dedup.riferimento(azienda))
     costi.registra_exa(totali, ricerche=1, risultati=len(segnali))
 
     # classe definitiva: ora i segnali sono noti
@@ -366,7 +368,7 @@ def applica_visura(azienda: dict, dati: dict, esito: dict, totali: dict,
         comune_sito = (dati.get("sede_comune") or "").strip()
         comune_openapi = anagrafica.get("sede_comune", "")
         stat.setdefault("dettaglio", []).append({
-            "nome": nome, "piva": anagrafica.get("piva", ""),
+            "rif": dedup.riferimento(azienda), "piva": anagrafica.get("piva", ""),
             "dipendenti": anagrafica.get("dipendenti"),
             "anno": anagrafica.get("anno_bilancio"),
             "sede": f"{comune_openapi} ({anagrafica.get('sede_provincia','')})",
@@ -412,7 +414,7 @@ def applica_visura(azienda: dict, dati: dict, esito: dict, totali: dict,
         if esito["classe"] != prima:
             stat["scesi_per_organico"] += 1
             stat.setdefault("declassate", []).append(
-                (nome, dati.get("categoria", ""), anagrafica["dipendenti"],
+                (dedup.riferimento(azienda), dati.get("categoria", ""), anagrafica["dipendenti"],
                  prima, esito["classe"]))
             print(f"  organico {anagrafica['dipendenti']} dipendenti: "
                   f"{prima} -> {esito['classe']}")
@@ -432,7 +434,8 @@ def arricchimento_sicuro(azienda: dict, nome: str, totali: dict,
     sottostimato."""
     piva = (piva or azienda.get("piva") or "").strip()
     dati = arricchimento.arricchisci(
-        nome, piva=piva, provincia=provincia, comuni_noti=comuni_noti) or {}
+        nome, piva=piva, provincia=provincia, comuni_noti=comuni_noti,
+        rif=dedup.riferimento(azienda)) or {}
     costi.registra_openapi(totali, dati.get("chiamate", 1) if dati else 1)
     return dati
 
@@ -541,13 +544,13 @@ async def esegui(args) -> int:
     # telefoni di TUTTE le schede Maps del sourcing, anche di quelle che i
     # filtri qui sotto tolgono: una pagina Exa della stessa azienda va
     # riconosciuta anche se la sua scheda Maps era gia' in archivio
-    tel_maps = {dedup.tel9(s.get("telefono")): s.get("nome") for s in schede
+    tel_maps = {dedup.tel9(s.get("telefono")): dedup.riferimento(s) for s in schede
                 if s.get("fonte") == "maps" and dedup.tel9(s.get("telefono"))}
 
     # 2. dedup interno, poi esclusioni e già-visti (§4: dedup PRIMA, non dopo)
     righe_archivio = db.riferimenti_aziende(sb) if sb else []
     gia_in_archivio = dedup.riferimenti(righe_archivio) if sb else None
-    email_viste = {(r.get("email_aziendale") or "").strip().lower(): r.get("ragione_sociale")
+    email_viste = {(r.get("email_aziendale") or "").strip().lower(): dedup.riferimento(r)
                    for r in righe_archivio if (r.get("email_aziendale") or "").strip()}
     chiuse = [s for s in schede if s.get("chiusa_definitivamente")]
     if chiuse and gia_in_archivio and not args.dry_run:
@@ -568,14 +571,14 @@ async def esegui(args) -> int:
     if chiuse:
         schede = [s for s in schede if not s.get("chiusa_definitivamente")]
         print(f"escluse {len(chiuse)} chiuse definitivamente (Google): "
-              + ", ".join(s.get("nome", "?")[:28] for s in chiuse[:5])
+              + ", ".join(dedup.riferimento(s)[:40] for s in chiuse[:5])
               + (" …" if len(chiuse) > 5 else ""))
     # categoria Google; Exa non ce l'ha e decide il mestiere nel nome (8/11)
     estranee = [s for s in schede if config.fuori_settore_scheda(s)]
     if estranee:
         schede = [s for s in schede if not config.fuori_settore_scheda(s)]
         print(f"escluse {len(estranee)} fuori settore (categoria Google o nome): "
-              + ", ".join(f"{s.get('nome', '?')[:24]} [{s.get('categoria_maps')}]"
+              + ", ".join(f"{dedup.riferimento(s)[:40]} [{s.get('categoria_maps')}]"
                           for s in estranee[:4])
               + (" …" if len(estranee) > 4 else ""))
     temporanee = sum(1 for s in schede if s.get("chiusa_temporaneamente"))
@@ -628,7 +631,8 @@ async def esegui(args) -> int:
 
     async with AsyncWebCrawler(verbose=False) as crawler:
         for i, azienda in enumerate(schede, 1):
-            print(f"[{i}/{len(schede)}] {azienda.get('nome', '?')[:60]}")
+            # nel log il riferimento della scheda (dominio, P.IVA...), mai la ragione sociale
+            print(f"[{i}/{len(schede)}] {dedup.riferimento(azienda)[:60]}")
             try:
                 esito = await analizza(azienda, crawler, client, totali)
                 serie_analisi = aggiorna_serie(serie_analisi,
@@ -667,7 +671,7 @@ async def esegui(args) -> int:
                         continue
                 elif (riga.get("email_aziendale") or "").strip():
                     email_viste.setdefault(riga["email_aziendale"].strip().lower(),
-                                           riga.get("ragione_sociale"))
+                                           dedup.riferimento(azienda))
                 esiti_righe.append(riga)
                 if any(s.get("tipo") == "ex_cliente"
                        for s in (riga["segnali"] or [])):
@@ -689,14 +693,11 @@ async def esegui(args) -> int:
                         print(f"  STOP: {interrotto}. Le {i} aziende gia' "
                               f"lavorate restano, le altre no.")
                         break
-                if serie_analisi[1] >= MAX_ERRORI_ANALISI:
-                    interrotto = (f"{serie_analisi[1]} analisi fallite di fila "
-                                  f"con lo stesso errore ({serie_analisi[0]}): "
-                                  f"probabile causa esterna — credito API o rete")
-                    print(f"  STOP: {interrotto}. Le {i} aziende gia' "
-                          f"lavorate restano, le altre no.")
-                    break
                 else:
+                    # SOLO in prova (dry-run o senza database). Fino all'11/11
+                    # questo ramo era agganciato per errore al controllo qui
+                    # sotto, e ogni ciclo vero stampava nel log la riga intera:
+                    # referente, email e telefono compresi.
                     print("  --- riga che verrebbe scritta:")
                     for campo, valore in riga.items():
                         if valore in (None, "", 0, []):
@@ -704,8 +705,15 @@ async def esegui(args) -> int:
                         testo = str(valore)
                         print(f"      {campo:<20} "
                               f"{testo[:110] + ' …' if len(testo) > 110 else testo}")
+                if serie_analisi[1] >= MAX_ERRORI_ANALISI:
+                    interrotto = (f"{serie_analisi[1]} analisi fallite di fila "
+                                  f"con lo stesso errore ({serie_analisi[0]}): "
+                                  f"probabile causa esterna — credito API o rete")
+                    print(f"  STOP: {interrotto}. Le {i} aziende gia' "
+                          f"lavorate restano, le altre no.")
+                    break
             except Exception as e:  # noqa: BLE001 - il ciclo non si ferma mai
-                print(f"  SALTATA {azienda.get('nome')}: {type(e).__name__}: {e}")
+                print(f"  SALTATA {dedup.riferimento(azienda)}: {type(e).__name__}: {e}")
 
     # 4. riepiloghi
     print("\n" + "=" * 52)
@@ -740,15 +748,15 @@ async def esegui(args) -> int:
         print(f"  {'azienda':<34}{'P.IVA':<13}{'dip.':<6}{'sede':<24}categoria")
         for d in dettaglio:
             dip = f"{d['dipendenti']} ({d['anno']})" if d["dipendenti"] is not None else "-"
-            print(f"  {d['nome'][:32]:<34}{d['piva'] or '-':<13}{dip:<6}"
+            print(f"  {d['rif'][:32]:<34}{d['piva'] or '-':<13}{dip:<6}"
                   f"{d['sede'][:22]:<24}{d['categoria']}")
         corrette = [d for d in dettaglio if d["corretto"]]
         print(f"\n  sedi corrette da Openapi rispetto al sito: {len(corrette)}")
         for d in corrette:
-            print(f"    {d['nome'][:34]}: sito diceva '{d['comune_sito']}' "
+            print(f"    {d['rif'][:34]}: sito diceva '{d['comune_sito']}' "
                   f"-> anagrafica '{d['sede']}'")
-    for nome, cat, dip, prima, dopo in stat.get("declassate", []):
-        print(f"  DECLASSATA {nome[:34]}: {cat}, {dip} dipendenti, {prima} -> {dopo}")
+    for rif_d, cat, dip, prima, dopo in stat.get("declassate", []):
+        print(f"  DECLASSATA {rif_d[:34]}: {cat}, {dip} dipendenti, {prima} -> {dopo}")
     if stat["arricchite"] < arricchibili:
         print(f"  {arricchibili - stat['arricchite']} aziende A/B NON arricchite: "
               f"sarebbero costate {(arricchibili - stat['arricchite']) * config.COSTO_OPENAPI_EUR:.2f} EUR "
@@ -812,7 +820,21 @@ async def esegui(args) -> int:
 
 
 def main() -> int:
-    return asyncio.run(esegui(_argomenti()))
+    """Un solo lavoro alla volta sull'archivio: il ciclo prende il lucchetto di
+    lucchetto.py e lo tiene fino alla fine. Non lo prende se non scrive
+    (--dry-run) o se lo tiene gia' chi lo ha lanciato (giro_regione.py)."""
+    args = _argomenti()
+    tenuto = None
+    if not args.dry_run and not lucchetto.tenuto_dal_padre():
+        tenuto = lucchetto.prendi("main.py")
+        if tenuto is None:
+            return _verdetto(False, "archivio occupato da un altro lavoro: ciclo NON partito, "
+                                    "niente sourcing e nessuna spesa. Va rilanciato a mano")
+    try:
+        return asyncio.run(esegui(args))
+    finally:
+        if tenuto is not None:
+            tenuto.close()
 
 
 if __name__ == "__main__":

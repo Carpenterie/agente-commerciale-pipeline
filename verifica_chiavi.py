@@ -26,7 +26,18 @@ import config      # importa per primo: imposta SSL_CERT_FILE
 import classify
 import sourcing_maps
 
-CACHE_CAMPIONE = pathlib.Path(__file__).resolve().parent / "tests/campione_26/cache"
+# Pagina inventata per la prova di Anthropic: non serve una pagina vera (il
+# campione dei 26 sta fuori dal repo e sul server non c'e').
+PAGINA_DI_PROVA = """# PAGINA: https://www.officina-di-prova.example/chi-siamo
+
+Officina di Prova Srl - carpenteria metallica e serramenti in ferro a Tivoli (RM).
+Dal 1998 produciamo nella nostra officina cancelli, ringhiere, grate di sicurezza
+e persiane blindate in acciaio, su misura, con posa in opera per privati e imprese.
+
+# PAGINA: https://www.officina-di-prova.example/contatti
+
+Via di Prova 1, 00019 Tivoli (RM) - Tel. 0774 000000
+"""
 
 
 def impronta(nome: str) -> str:
@@ -38,14 +49,12 @@ def impronta(nome: str) -> str:
 
 
 def prova_anthropic(log) -> bool:
-    """Una classificazione vera su una pagina gia' in cache: verifica la
+    """Una classificazione vera su una pagina inventata: verifica la
     chiave E che il modello risponda ancora nel formato atteso."""
     try:
         import anthropic
 
-        pagina = json.loads(sorted(CACHE_CAMPIONE.glob("*.json"))[0]
-                            .read_text(encoding="utf-8"))
-        d = classify.classifica(anthropic.Anthropic(), pagina["markdown"][:6000])
+        d = classify.classifica(anthropic.Anthropic(), PAGINA_DI_PROVA)
         log(f"  OK — {d['classificazione']} / confidenza {d['confidenza']}"
             f" / categoria {d['categoria']}")
         log(f"  {d['token_input']} token in + {d['token_output']} out"
@@ -135,7 +144,7 @@ if __name__ == "__main__":
         assert "supersegretissima" not in riga and "1234567890" not in riga, riga
         assert f"{len(os.environ["_FINTA"])} caratteri" in riga, riga
         assert "ASSENTE" in impronta("_NON_ESISTE_")
-        assert CACHE_CAMPIONE.is_dir(), "manca la cache del campione"
+        assert "Tivoli" in PAGINA_DI_PROVA and "@" not in PAGINA_DI_PROVA
         print("ok")
     else:
         sys.exit(main())

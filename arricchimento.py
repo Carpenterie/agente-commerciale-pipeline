@@ -81,7 +81,7 @@ def _chiama(percorso: str, token: str, log) -> dict | list | None:
     return corpo.get("data")
 
 
-def cerca_omonimi(nome: str, provincia: str, token: str, log) -> list[str]:
+def cerca_omonimi(nome: str, provincia: str, token: str, log, rif: str = "") -> list[str]:
     """IT-search per denominazione: TUTTI gli id, non il primo. "Prendo il
     primo" ha scritto in archivio la visura di un'AC Infissi CESSATA di
     Colleferro al posto di quella di Anzio (2026-09-19): l'ordine dei
@@ -93,7 +93,7 @@ def cerca_omonimi(nome: str, provincia: str, token: str, log) -> list[str]:
     if not isinstance(dati, list):
         return []
     if len(dati) > 1:
-        log(f"openapi: {len(dati)} omonimi per '{nome}'")
+        log(f"openapi: {len(dati)} omonimi per {rif or 'la ricerca per nome'}")
     return [d.get("id") for d in dati if d.get("id")]
 
 
@@ -144,7 +144,7 @@ def _advanced(chiave: str, token: str, log) -> dict | None:
 
 
 def arricchisci(nome: str, piva: str = "", provincia: str = "",
-                comuni_noti=(), log=print) -> dict | None:
+                comuni_noti=(), log=print, rif: str = "") -> dict | None:
     """-> visura agganciata, oppure {"chiamate", "non_agganciata": motivo}
     quando la visura c'e' ma non e' affidabile, oppure None (token assente,
     nessun risultato, errore rete — non e' fatale, la scheda resta senza).
@@ -157,6 +157,8 @@ def arricchisci(nome: str, piva: str = "", provincia: str = "",
       sono i comuni di Maps e della sede letta dal sito: la visura che li
       contraddice non scrive niente.
     """
+    # nel log l'azienda si indica con `rif` (id, dominio) o con la P.IVA: mai col nome
+    chi = rif or (f"P.IVA {piva.strip()}" if piva.strip() else "la ricerca per nome")
     token = os.environ.get("OPENAPI_TOKEN", "").strip()
     if not token:
         log("openapi: OPENAPI_TOKEN non configurato, arricchimento saltato")
@@ -165,15 +167,15 @@ def arricchisci(nome: str, piva: str = "", provincia: str = "",
     if piva.strip():
         dati = _advanced(piva.strip(), token, log)
         if not dati:
-            log(f"openapi: nessun dato per '{nome}'")
+            log(f"openapi: nessun dato per {chi}")
             return None
         esito = _normalizza(dati)
         esito["chiamate"], esito["aggancio"] = 1, "piva"
         return esito
 
-    ids = cerca_omonimi(nome, provincia, token, log)
+    ids = cerca_omonimi(nome, provincia, token, log, rif=chi)
     if not ids:
-        log(f"openapi: nessuna corrispondenza per '{nome}'"
+        log(f"openapi: nessuna corrispondenza per {chi}"
             + (f" in provincia {provincia}" if provincia else ""))
         return None
     if len(ids) > MAX_OMONIMI:
@@ -186,11 +188,11 @@ def arricchisci(nome: str, piva: str = "", provincia: str = "",
         if d:
             candidati.append(_normalizza(d))
     if not candidati:
-        log(f"openapi: nessun dato per '{nome}'")
+        log(f"openapi: nessun dato per {chi}")
         return None
     scelto, motivo = decidi(candidati, comuni_noti)
     if not scelto:
-        log(f"openapi: visura non agganciata per '{nome}' — {motivo}")
+        log(f"openapi: visura non agganciata per {chi} — {motivo}")
         return {"chiamate": chiamate, "non_agganciata": motivo}
     scelto["chiamate"], scelto["aggancio"] = chiamate, "nome"
     return scelto

@@ -33,10 +33,12 @@ TIPO = "chiusa_definitivamente"
 TETTO_USD = 5.0
 MINIMO_RUN_USD = 0.5    # Apify rifiuta un tetto per run sotto questa soglia
 # le tre abbinate per telefono a una scheda Google chiusa (7/10): un
-# telefono condiviso con una vecchia scheda non basta, si riverificano
-VERIFICARE = ("ART METAL di Polimadei Paolo",
-              "BPE SERRAMENTI S.N.C. DI PASQUALE CICCHINELLI E EMANUELE BONIFAZI",
-              "Infissi F.Lli Muggia Soc.Coop.")
+# telefono condiviso con una vecchia scheda non basta, si riverificano.
+# Per id della scheda e non per ragione sociale (11/11): due sono ditte
+# individuali, e nel repo non entrano nomi di persone.
+VERIFICARE = ("8ebf3639-9335-4dbd-89ab-1b16ae2a009f",
+              "9f5d5f3e-e42b-4632-b5b5-7f71f173650e",
+              "6c8f5b94-4167-4eaf-a772-81cd7aa3ea96")
 
 
 def segnale(fonte: str, dettaglio: str) -> dict:
@@ -59,7 +61,7 @@ def segna(sb, id_: str, s: dict, log=print) -> bool:
         return False
     sb.table("aziende").update({"segnali": (r[0].get("segnali") or []) + [s]}
                                ).eq("id", id_).execute()
-    log(f"  segnata chiusa: {r[0]['ragione_sociale']} ({s['fonte']})")
+    log(f"  segnata chiusa: scheda {id_} ({s['fonte']})")
     return True
 
 
@@ -117,6 +119,12 @@ def _cerca(ricerche: list[str], per_ricerca: int, tetto: float, log=print) -> tu
     return trovate, costo
 
 
+def da_verificare(righe: list[dict]) -> list[dict]:
+    """La lista del direttore e le tre schede di VERIFICARE, se non sono gia' segnate chiuse."""
+    return [r for r in righe if (r.get("fonte") == "lista_commerciale"
+                                 or r.get("id") in VERIFICARE) and not chiusa(r)]
+
+
 def verifica(scrivi: bool, log=print) -> None:
     import db
     sb = db.client()
@@ -128,8 +136,7 @@ def verifica(scrivi: bool, log=print) -> None:
         if len(b) < 1000:
             break
         da += 1000
-    righe = [r for r in righe if (r.get("fonte") == "lista_commerciale"
-                                  or r["ragione_sociale"] in VERIFICARE) and not chiusa(r)]
+    righe = da_verificare(righe)
     q = {r["id"]: f"{r['ragione_sociale']} {r.get('comune') or ''}".strip() for r in righe}
     log(f"da verificare: {len(righe)} righe")
 
@@ -185,6 +192,17 @@ if __name__ == "__main__":
                                      "sito": "http://ferrorossi.it/"}) == "certa"
         s = segnale("rimbalzo", "prova")
         assert s["tipo"] == TIPO and s["fonte"] == "rimbalzo" and chiusa({"segnali": [s]})
+        # chi si riverifica: la lista del direttore e le tre schede indicate per id,
+        # qualunque nome abbiano; mai quelle gia' segnate chiuse
+        import uuid
+        assert len(VERIFICARE) == len(set(VERIFICARE)) == 3 and all(str(uuid.UUID(i)) == i for i in VERIFICARE)
+        finte = [{"id": VERIFICARE[0], "fonte": "maps", "ragione_sociale": "Nome Qualsiasi"},
+                 {"id": VERIFICARE[1], "fonte": "lista_commerciale", "ragione_sociale": "Altro Nome"},
+                 {"id": VERIFICARE[2], "fonte": "maps", "ragione_sociale": "Terza", "segnali": [s]},
+                 {"id": "x1", "fonte": "lista_commerciale", "ragione_sociale": "Dalla Lista"},
+                 {"id": "x2", "fonte": "maps", "ragione_sociale": "Mai Vista"},
+                 {"id": "x3", "fonte": "lista_commerciale", "ragione_sociale": "Lista Chiusa", "segnali": [s]}]
+        assert [r["id"] for r in da_verificare(finte)] == [VERIFICARE[0], VERIFICARE[1], "x1"]
         print("ok")
         sys.exit(0)
 

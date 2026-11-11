@@ -363,15 +363,26 @@ if __name__ == "__main__":
     assert verifica_sede({}) is None
 
     # --- casi reali dalla cache del campione ---
+    # Il campione sta fuori dal repo (config.cartella_campione): senza, questa
+    # parte si salta e lo si dice. Le aziende si indicano per DOMINIO del sito,
+    # non per ragione sociale: alcune sono ditte individuali.
+    import config
+    campione = config.cartella_campione()
+    if campione is None:
+        print(config.CAMPIONE_ASSENTE)
+        print("ok")
+        raise SystemExit(0)
     import csv
     import sys
-    from pathlib import Path
+    from urllib.parse import urlparse
 
-    campione = Path(__file__).parent / "tests" / "campione_26"
     sys.path.insert(0, str(campione))
     import asyncio
 
-    import fetch as fetch_campione  # il fetch del campione: cache piatta, offline
+    # il fetch del campione (cache piatta, offline): va importato PRIMA di ogni
+    # modulo che importa il fetch di produzione, che ha lo stesso nome
+    import fetch as fetch_campione
+    assert fetch_campione.CACHE.parent == campione, fetch_campione.__file__
 
     esiti = {}
     with (campione / "risultati.csv").open(encoding="utf-8", newline="") as f:
@@ -379,38 +390,36 @@ if __name__ == "__main__":
             if r["esito_fetch"] != "OK":
                 continue
             ok, contenuto, _ = asyncio.run(fetch_campione.fetch_azienda(None, r["url"]))
-            assert ok == "OK", r["nome"]
+            dominio = urlparse(r["url"]).netloc.lower().removeprefix("www.")
+            assert ok == "OK", dominio
             v = valuta(contenuto)
-            esiti[r["nome"]] = v
-            print(f"{v['esito']:<8} {r['nome'][:45]:<45} {v['segnale'][:60]}")
+            esiti[dominio] = v
+            print(f"{v['esito']:<8} {dominio[:45]:<45} {v['segnale'][:60]}")
 
     # tutte le aziende note come laziali, comprese quelle senza segnali in cache
-    LAZIALI = ["Serramenti Lazio", "Lema Infissi 85 srl", "Infissi Torelli",
-               "ROMANA FINESTRE", "GE.MAT. INFISSI SRL", "Fabbro Vita Antonio",
-               "Il Fabbro Roma", "Centro Infissi G.A. di Pizzo Giampietro",
-               "La Porta Srl", "Paterno Serramenti",
-               "Serramenti E Infissi Faler Snc Di Vitale Enzo E Pisanu Riccardo",
-               "Loi Carpenterie Generali Verniciatura industriale", "Iron & Steel Srl"]
-    # fuori regione con recapiti veri in cache (Forza Infissi: Calusco d'Adda BG).
-    # Brianza Serramenti non c'è: nelle sue pagine in cache non ci sono recapiti,
+    LAZIALI = ["infissieserramentilazio.com", "lemainfissi.it", "infissitorelli.com",
+               "romanafinestre.it", "gematinfissi.it", "fabbroantoniovita.it",
+               "ilfabbroroma.it", "centroinfissi-morlupo.it", "laportasrl.com",
+               "paternoserramenti.com", "serramentifaler.it", "loicarpenterie.it",
+               "ironesteel.it"]
+    # fuori regione con recapiti veri in cache (una e' a Calusco d'Adda, BG).
+    # Una brianzola non c'è: nelle sue pagine in cache non ci sono recapiti,
     # solo una quantità ("oltre 15000 finestre") che ora è filtrata -> incerto
-    FUORI = ["Forza Infissi | Serramenti in Alluminio", "Gruppo Serramenti",
-             "Fabbro Como", "Fabbro Monza Urgente",
-             "Fabbro Lissone - sostituzione, riparazione e pronto intervento",
-             "Carpenterie Lombarde S.r.l.", "Carpenteria Bonatese",
-             "CMA srl Carpenteria metallica Milano Fabbro Bergamo Pronto Intervento"
-             " Monza Lodi e provincia Crema"]
+    FUORI = ["forzainfissi.it", "grupposerramenti.it", "fabbro-como.it",
+             "fabbromonza24.it", "fabbrolissone.netlify.app", "carpenterielombarde.it",
+             "carpenteriabonatese.it", "carpenteriacma.com"]
+    SENZA_RECAPITI = "ilfabbroroma.it"     # laziale, in cache solo cellulari
 
     # la regola d'oro: nessuna laziale deve MAI finire fuori
     finite_fuori = [n for n in LAZIALI if esiti[n]["esito"] == "fuori"]
     assert not finite_fuori, finite_fuori
-    # le laziali con recapiti in cache danno dentro (Il Fabbro Roma non li ha:
-    # solo cellulari, che giustamente non sono un segnale geografico)
-    non_lazio = [n for n in LAZIALI if n != "Il Fabbro Roma"
+    # le laziali con recapiti in cache danno dentro (una non li ha: solo
+    # cellulari, che giustamente non sono un segnale geografico)
+    non_lazio = [n for n in LAZIALI if n != SENZA_RECAPITI
                  and esiti[n]["esito"] != "dentro"]
     assert not non_lazio, non_lazio
     # il caso senza segnali nei contatti resta incerto: si classifica comunque
-    assert esiti["Il Fabbro Roma"]["esito"] == "incerto", esiti["Il Fabbro Roma"]
+    assert esiti[SENZA_RECAPITI]["esito"] == "incerto", esiti[SENZA_RECAPITI]
     # le fuori regione con recapiti in cache danno fuori
     non_fuori = [n for n in FUORI if esiti[n]["esito"] != "fuori"]
     assert not non_fuori, non_fuori

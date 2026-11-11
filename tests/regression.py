@@ -2,10 +2,14 @@
 
 Rilancia le 26 aziende del campione dalla cache (zero fetch) con il
 classify.py e il prompts.py DI PRODUZIONE — il guardiano protegge il file
-che gira davvero — e confronta con le classificazioni validate in
-tests/campione_26/risultati.csv. Una classificazione validata che cambia =
+che gira davvero — e confronta con le classificazioni validate nel
+risultati.csv del campione. Una classificazione validata che cambia =
 ci si ferma e si capisce perché. Si esegue prima di ogni commit che tocca
 prompts.py.
+
+Il campione sta FUORI dal repo (contiene ragioni sociali di ditte individuali
+e pagine con nomi di persone): la cartella e' indicata da CAMPIONE_26 nel
+.env. Se manca, il test si salta dicendolo ed esce 0.
 """
 
 from __future__ import annotations
@@ -18,11 +22,15 @@ from pathlib import Path
 # classify (e il suo `import prompts`) DEVE risolversi sulla radice del repo
 # PRIMA di mettere il campione nel path: anche il campione ha un prompts.py
 import classify  # noqa: E402  (produzione)
+import config  # noqa: E402
 
-CAMPIONE = Path(__file__).parent / "campione_26"
+CAMPIONE = config.cartella_campione()
+if CAMPIONE is None:
+    print(config.CAMPIONE_ASSENTE)
+    raise SystemExit(0)
 sys.path.insert(0, str(CAMPIONE))
 
-import fetch  # noqa: E402  (dal campione: cache piatta in tests/campione_26/cache)
+import fetch  # noqa: E402  (dal campione: cache piatta nella sua cartella cache/)
 import main as _main_campione  # noqa: E402  (COLONNE del CSV di baseline)
 
 COLONNE_BASELINE = _main_campione.COLONNE

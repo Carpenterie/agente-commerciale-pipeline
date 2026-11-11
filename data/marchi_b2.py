@@ -1,4 +1,4 @@
-"""B2 della ricerca agenti (preventivo PREV-2026-06, confermato da Claudia): le
+"""B2 della ricerca agenti (preventivo PREV-2026-06, confermato dalla cliente): le
 321 aziende del perimetro della filiera del serramento fuori dal pilota B1,
 25 concorrenti compresi (data/concorrenti_filiera.py). Elenco del committente
 fuori dal repo: qui solo nomi e domini.

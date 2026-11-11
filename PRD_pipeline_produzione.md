@@ -45,7 +45,7 @@ agente-commerciale-pipeline/
 ├── db.py                    # Supabase service_role: cicli, aziende, attivita
 ├── costi.py                 # contatore token/€ per azienda e per ciclo
 ├── data/comuni_lazio.py     # comuni per provincia (primi ~20 per popolazione)
-├── tests/campione_26/       # il regression test (CSV + cache già esistenti)
+├── tests/regression.py      # il regression test (campione dei 26 fuori dal repo: CAMPIONE_26 nel .env)
 ├── .env.example  .gitignore # .env MAI committato
 └── README.md
 ```
@@ -75,7 +75,7 @@ crawl4ai; cache su disco per dominio (`cache/<dominio>/`), riuso totale tra esec
 
 Modello: `claude-sonnet-4-6`, chiave da `.env` (`ANTHROPIC_API_KEY` — sviluppo sulla TUA chiave, produzione su quella del cliente "agenti commerciali": si cambia solo il .env). Risposta SOLO JSON. Registrare token in/out per azienda.
 
-Base: il prompt del test (già in `tests/campione_26/`) con QUESTE integrazioni obbligatorie:
+Base: il prompt del test (nel campione dei 26, fuori dal repo) con QUESTE integrazioni obbligatorie:
 
 ```
 DEFINIZIONI DEL CLIENTE (vincolanti):
@@ -120,7 +120,7 @@ Mappatura classi → DB: TARGET+alta→`A`, TARGET+media→`B`, dubbi fondati→
 
 **Annunci di lavoro (solo classe A e B):** una query Exa per azienda: `"<ragione sociale>" (assunzione OR cercasi OR "offerta di lavoro") (saldatore OR operaio OR carpentiere OR magazziniere)`. Risultato positivo (domini indeed/infojobs/subito/bakeca o pagina lavora-con-noi) → voce nel campo `segnali`: `{"tipo":"annuncio_lavoro","ruolo":"saldatore","fonte":"<url>"}`. Il saldatore pesa più di tutti: è l'argomento di vendita del prodotto.
 
-**Costi:** ogni azienda scrive `costo_analisi_eur` (token × prezzi correnti del modello, letti dalla documentazione, non inventati). Il ciclo aggiorna `cicli_ricerca` con totali e costo. **Prima del ciclo pieno: esecuzione su 30 aziende → report per Claudia** (costo medio, proiezione su 300, proiezione mensile) → si prosegue solo dopo il suo ok. Obbligo contrattuale, art. 6.5/12.
+**Costi:** ogni azienda scrive `costo_analisi_eur` (token × prezzi correnti del modello, letti dalla documentazione, non inventati). Il ciclo aggiorna `cicli_ricerca` con totali e costo. **Prima del ciclo pieno: esecuzione su 30 aziende → report per la cliente** (costo medio, proiezione su 300, proiezione mensile) → si prosegue solo dopo il suo ok. Obbligo contrattuale, art. 6.5/12.
 
 ## 10. Scrittura su Supabase
 
@@ -128,10 +128,10 @@ Mappatura classi → DB: TARGET+alta→`A`, TARGET+media→`B`, dubbi fondati→
 
 ## 11. Sequenza di esecuzione (nell'ordine, senza saltare)
 
-1. `esclusioni`: caricare l'elenco clienti di Claudia appena arriva (script `carica_esclusioni.py` da un Excel/CSV: ragione sociale, P.IVA se c'è, dominio se c'è)
+1. `esclusioni`: caricare l'elenco clienti della cliente appena arriva (script `carica_esclusioni.py` da un Excel/CSV: ragione sociale, P.IVA se c'è, dominio se c'è)
 2. `--provincia RM --limite 30 --dry-run` → controllo manuale dell'output
 3. Stessa cosa senza dry-run → 30 aziende vere in Supabase → **aprire l'app Lovable e verificare che si vedano** (primo collaudo dell'integrazione)
-4. Report costi → invio a Claudia → attesa ok
+4. Report costi → invio alla cliente → attesa ok
 5. Ciclo pieno provincia di Roma
 6. Verifica manuale di 10 schede a caso
 7. **Email di consegna formale del primo elenco** (attiva i termini contrattuali)

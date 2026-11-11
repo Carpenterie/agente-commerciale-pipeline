@@ -128,12 +128,14 @@ NON_CERCATI = "segnali non cercati (Exa esaurito)"
 
 
 def cerca(ragione_sociale: str, log=print, dominio: str = "",
-          provincia: str = "") -> list[dict]:
+          provincia: str = "", rif: str = "") -> list[dict]:
     """Una query Exa per azienda. Lista vuota se non trova nulla o su errore
-    (un fallimento qui non ferma il ciclo)."""
+    (un fallimento qui non ferma il ciclo). `rif` e' come nominare l'azienda
+    nel log (id della scheda, dominio): mai la ragione sociale."""
     global ESAURITO
+    chi = rif or dominio or "azienda"
     if ESAURITO:
-        log(f"{NON_CERCATI}: {ragione_sociale}")
+        log(f"{NON_CERCATI}: {chi}")
         return []
     chiave = os.environ["EXA_API_KEY"]
     query = SAGOMA_QUERY.format(nome=ragione_sociale)
@@ -147,16 +149,16 @@ def cerca(ragione_sociale: str, log=print, dominio: str = "",
         with urllib.request.urlopen(req, timeout=120) as r:
             risultati = json.load(r).get("results", [])
     except Exception as e:  # noqa: BLE001 - un fallimento non ferma il ciclo
-        log(f"segnali: errore per {ragione_sociale}: {type(e).__name__}: {e}")
+        log(f"segnali: errore per {chi}: {type(e).__name__}: {e}")
         if getattr(e, "code", None) == 402 or isinstance(e, TimeoutError) \
                 or isinstance(getattr(e, "reason", None), TimeoutError):
             ESAURITO = True
-            log(f"{NON_CERCATI}: {ragione_sociale}")
+            log(f"{NON_CERCATI}: {chi}")
         return []
 
     segnali = _segnali_da_risultati(risultati, ragione_sociale, dominio, provincia)
     if segnali:
-        log(f"segnali: {ragione_sociale} -> "
+        log(f"segnali: {chi} -> "
             + ", ".join(s["ruolo"] for s in segnali))
     return segnali
 

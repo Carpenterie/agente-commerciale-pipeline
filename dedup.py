@@ -3,7 +3,7 @@
 Ordine del dedup: dominio normalizzato -> P.IVA quando nota -> ragione
 sociale normalizzata + comune. Poi filtro `esclusioni` (clienti attuali)
 e filtro "già in aziende". Il confronto è sempre su valori normalizzati:
-l'elenco di Claudia è compilato a mano e arriva con IT davanti alle P.IVA,
+l'elenco della cliente è compilato a mano e arriva con IT davanti alle P.IVA,
 www davanti ai domini, maiuscole a caso.
 
 Il matching per ragione sociale è prudente in una direzione sola: meglio
@@ -135,6 +135,24 @@ def dedup_interno(schede: list[dict], log=print) -> list[dict]:
     return tenute
 
 
+def riferimento(s: dict | None) -> str:
+    """Come si indica un'azienda in un LOG, senza la ragione sociale: una
+    ditta individuale si chiama come il titolare, e nei log non entrano nomi
+    di persone (11/11). L'id della scheda se e' gia' in archivio; altrimenti
+    il dominio del sito, la P.IVA, o la fonte con il comune."""
+    s = s or {}
+    if s.get("id"):
+        return f"scheda {s['id']}"
+    d = dominio_azienda(s.get("sito") or s.get("dominio") or "")
+    if d:
+        return d
+    p = norm_piva(s.get("piva") or s.get("partita_iva") or "")
+    if p:
+        return f"P.IVA {p}"
+    return (f"{s.get('fonte') or 'azienda'} senza sito, "
+            f"{(s.get('comune') or '').strip() or 'comune non noto'}")
+
+
 def tel9(telefono: str | None) -> str:
     """Le ultime 9 cifre (prefisso +39 e spazi via); vuoto se troppo corto."""
     t = re.sub(r"\D", "", telefono or "")[-9:]
@@ -146,13 +164,15 @@ def recapito_gia_visto(riga: dict, tel_maps: dict, email_viste: dict) -> str | N
     in archivio o gia' scritta nel ciclo, o stesso telefono di una scheda
     Maps del sourcing -> e' la stessa azienda (7/10: i doppioni Maps/Exa
     del 7/9, CSM infissi e simili). Il telefono di Exa si conosce solo dopo
-    l'analisi del sito: il confronto sta qui e non in dedup_interno."""
+    l'analisi del sito: il confronto sta qui e non in dedup_interno.
+    I valori dei due dizionari sono `riferimento()` dell'altra scheda: nel
+    motivo, che finisce nel log, niente indirizzi ne' ragioni sociali."""
     e = (riga.get("email_aziendale") or "").strip().lower()
     if e and e in email_viste:
-        return f"email {e} come '{email_viste[e]}'"
+        return f"stessa email di {email_viste[e]}"
     t = tel9(riga.get("telefono"))
     if t and t in tel_maps:
-        return f"telefono come la scheda Maps '{tel_maps[t]}'"
+        return f"stesso telefono della scheda Maps {tel_maps[t]}"
     return None
 
 
@@ -277,8 +297,8 @@ def cerca_riferimento(s: dict, rif: dict,
     # Ultimo criterio, PERMISSIVO: sottostringa nei due versi. Serve perche'
     # l'insegna di Google Maps non coincide con la ragione sociale
     # dell'elenco clienti — "Show Room Comerci Serramenti" contro "COMERCI
-    # SERRAMENTI", "Messina Serramenti di Messina Sergio" contro "MESSINA
-    # SERGIO". Il match esatto ne agganciava 9 su 113 clienti attivi.
+    # SERRAMENTI", "Tizio Serramenti di Tizio Caio" contro "TIZIO
+    # CAIO". Il match esatto ne agganciava 9 su 113 clienti attivi.
     # Il comune CONFERMA ma non vincola: comune diverso non esclude il
     # match, lo segnala incerto. E nel dubbio si esclude comunque — perdere
     # un prospect e' un'occasione mancata, consegnare un cliente attivo e'
@@ -314,8 +334,8 @@ def filtra(schede: list[dict], rif: dict, etichetta: str, log=print,
     for s in schede:
         criterio = _criterio(s, rif, permissivo)
         if criterio:
-            log(f"escluso [{etichetta} / {criterio}]: {s.get('nome', '?')}"
-                f" ({s.get('comune') or s.get('sito') or '-'})")
+            log(f"escluso [{etichetta} / {criterio}]: {riferimento(s)}"
+                f" ({s.get('comune') or '-'})")
         else:
             tenute.append(s)
     log(f"filtro {etichetta}: {len(schede)} -> {len(tenute)}")
@@ -344,7 +364,7 @@ def marca(schede: list[dict], rif: dict, log=print,
             # un'indicazione al commerciale no (regola del 2026-09-21)
             s["ex_cliente"]["nota"] = "possibile ex cliente (da verificare)"
         marcate += 1
-        log(f"ex cliente [{criterio}]: {s.get('nome', '?')} "
+        log(f"ex cliente [{criterio}]: {riferimento(s)} "
             f"({s['ex_cliente']['motivo']})")
     log(f"marcati come ex clienti: {marcate}/{len(schede)}")
     return schede
@@ -352,15 +372,29 @@ def marca(schede: list[dict], rif: dict, log=print,
 
 if __name__ == "__main__":
     assert tel9("+39 06 123 4567") == tel9("061234567") == "061234567"[-9:] and tel9("12") == ""
-    _maps = {tel9("0774 555666"): "Ferri Rossi"}
+    _maps = {tel9("0774 555666"): "ferrirossi.it"}
     assert recapito_gia_visto({"telefono": "+39 0774 555666"}, _maps, {}) == \
-        "telefono come la scheda Maps 'Ferri Rossi'"
-    assert recapito_gia_visto({"email_aziendale": "Info@X.it"}, {}, {"info@x.it": "X"}).startswith("email")
+        "stesso telefono della scheda Maps ferrirossi.it"
+    # nei log un'azienda si indica senza ragione sociale
+    assert riferimento({"id": "abc", "nome": "Tizio Caio Infissi", "sito": "https://x.it"}) == "scheda abc"
+    assert riferimento({"nome": "Tizio Caio Infissi", "sito": "https://www.x.it/contatti"}) == "x.it"
+    assert riferimento({"ragione_sociale": "Tizio Caio", "dominio": "x.it"}) == "x.it"
+    assert riferimento({"nome": "Tizio Caio", "sito": "https://facebook.com/tizio.caio", "piva": "IT01234567890"}) == \
+        "P.IVA 01234567890"
+    assert riferimento({"nome": "Tizio Caio", "partita_iva": "01234567890"}) == "P.IVA 01234567890"
+    assert riferimento({"nome": "Tizio Caio", "fonte": "maps", "comune": "Tivoli ", "telefono": "06 1"}) == \
+        "maps senza sito, Tivoli"
+    assert riferimento({}) == riferimento(None) == "azienda senza sito, comune non noto"
+    for _s in ({"nome": "Tizio Caio", "sito": "https://facebook.com/tizio.caio", "comune": "Roma"},
+               {"nome": "Tizio Caio", "id": 7}, {"nome": "Tizio Caio", "sito": "tizio-infissi.it"}):
+        assert "Tizio" not in riferimento(_s) and "Caio" not in riferimento(_s)
+    assert recapito_gia_visto({"email_aziendale": "Info@X.it"}, {}, {"info@x.it": "scheda 9"}) == \
+        "stessa email di scheda 9"
     assert recapito_gia_visto({"email_aziendale": "a@b.it", "telefono": "06 1"}, _maps, {}) is None
     zitto = lambda *a: None  # noqa: E731
 
     assert norm_ragione("F.LLI ROSSI S.R.L.") == "f lli rossi"
-    assert norm_ragione("LM DI ROSSI FERNANDO") == "lm rossi fernando"
+    assert norm_ragione("LM DI TIZIO CAIO") == "lm tizio caio"
     assert norm_ragione("Carpenteria Bianchi & C. SNC") == "carpenteria bianchi"
     assert norm_piva("IT 01234567890") == "01234567890"
     assert norm_piva("1234567890") == "01234567890"  # zero iniziale mangiato da Excel
@@ -436,7 +470,7 @@ if __name__ == "__main__":
     # --- confronto permissivo: i casi veri del ciclo Roma
     rif_p = riferimenti([
         {"ragione_sociale": "COMERCI SERRAMENTI", "comune": "Roma"},
-        {"ragione_sociale": "MESSINA SERGIO", "comune": "Guidonia"},
+        {"ragione_sociale": "TIZIO CAIO", "comune": "Guidonia"},
         {"ragione_sociale": "AF Srl", "comune": "Latina"},        # nome corto
     ])
     # l'insegna di Maps e' un sovrainsieme della ragione sociale
@@ -445,7 +479,7 @@ if __name__ == "__main__":
     # senza permissivo l'insegna di Maps non aggancia: e' il bug del 2026-09-08
     assert _criterio({"nome": "Show Room Comerci Serramenti", "comune": "Roma"},
                      rif_p) is None
-    assert _criterio({"nome": "Messina Serramenti di Messina Sergio",
+    assert _criterio({"nome": "Tizio Serramenti di Tizio Caio",
                       "comune": "Guidonia"}, rif_p, True) == \
         "nome contenuto (stesso comune)"
     # comune diverso: incerto, ma esce lo stesso

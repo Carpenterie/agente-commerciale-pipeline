@@ -130,7 +130,7 @@ def normalizza_linkedin(url: str | None) -> str | None:
                   "https://linkedin.com", u, flags=re.I)
 
 
-# Nome e cognome separati (richiesta di Claudia, 30/9: ordine per cognome,
+# Nome e cognome separati (richiesta della cliente, 30/9: ordine per cognome,
 # «Cognome Nome»). La regola chiude solo i casi certi; completa_nomi() passa
 # gli altri al modello. nome_completo non si tocca mai.
 PARTICELLE = {"de", "di", "del", "della", "dello", "delle", "dei", "degli",
@@ -309,8 +309,8 @@ def completa_nomi(log=print) -> None:
                 nome, cognome = (x.get("nome") or "").strip() or None, x["cognome"].strip()
                 if not parole_in_originale(originali[id_], nome, cognome):
                     # scartata; e la proposta, se c'era, non vale piu' come confermata
-                    log(f"  SCARTATA, parole non nell'originale: {originali[id_]!r} -> "
-                        f"nome={nome!r} cognome={cognome!r}")
+                    # nel log l'id dell'agente, mai il nome (11/11)
+                    log(f"  SCARTATA, parole non nell'originale: agente {id_}")
                     falliti.add(id_)
                     continue
                 certi[id_] = (nome, cognome)

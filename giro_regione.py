@@ -30,6 +30,7 @@ import sys
 import time
 
 import config
+import lucchetto as lucchetto_archivio
 from data.comuni import COMUNI
 
 QUI = pathlib.Path(__file__).parent
@@ -89,8 +90,10 @@ BLOCCATO = 124
 def _gira(argv: list[str], log: pathlib.Path, silenzio_s: int = SILENZIO_S,
           interprete: str | None = None) -> int:
     with log.open("a") as f:
+        # il lucchetto dell'archivio lo tiene questo processo: i figli non lo riprendono
         proc = subprocess.Popen([interprete or str(QUI / ".venv/bin/python"), "-u", *argv], cwd=QUI,
-                                stdout=f, stderr=subprocess.STDOUT, start_new_session=True)
+                                stdout=f, stderr=subprocess.STDOUT, start_new_session=True,
+                                env=lucchetto_archivio.ambiente_figlio())
     dim, ultimo = log.stat().st_size, time.time()
     while proc.poll() is None:
         time.sleep(min(30, max(1, silenzio_s // 4)))

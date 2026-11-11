@@ -328,20 +328,27 @@ def riga_azienda(scheda: dict, dati: dict | None = None,
 def scrivi_azienda(sb, riga: dict, log=print) -> str:
     """-> "inserita" | "duplicata" | "errore". Non solleva mai: un
     fallimento su una singola azienda non ferma il ciclo."""
-    nome = riga.get("ragione_sociale", "?")
+    # Nel log l'id della scheda appena scritta, mai la ragione sociale (11/11):
+    # le ditte individuali portano nome e cognome. Senza id (duplicata, errore)
+    # il dominio o la P.IVA.
+    import dedup
     try:
-        sb.table("aziende").insert(riga).execute()
-        log(f"  scritta: {nome} | {riga['fonte']} | {riga['esito_fetch']} | "
+        fatto = sb.table("aziende").insert(riga).execute()
+        dati = getattr(fatto, "data", None)
+        id_ = dati[0].get("id") if isinstance(dati, list) and dati and isinstance(dati[0], dict) else None
+        log(f"  scritta: {f'scheda {id_}' if id_ else dedup.riferimento(riga)} | "
+            f"{riga['fonte']} | {riga['esito_fetch']} | "
             f"{riga['esito_analisi'] or '-'} | {riga['classe']} | "
             f"{riga['confidenza']} | {riga['costo_analisi_eur']} EUR")
         return "inserita"
     except Exception as e:  # noqa: BLE001
         testo = str(e)
         if CODICE_DUPLICATO in testo or "duplicate key" in testo:
-            log(f"  già presente (dedup): {nome} "
-                f"[{riga.get('partita_iva') or riga.get('dominio') or '-'}]")
+            log(f"  già presente (dedup): {dedup.riferimento(riga)}")
             return "duplicata"
-        log(f"  ERRORE su {nome}: {type(e).__name__}: {testo[:200]}")
+        # il messaggio del database puo' riportare la riga intera: solo il tipo e il codice
+        log(f"  ERRORE su {dedup.riferimento(riga)}: {type(e).__name__} "
+            f"{getattr(e, 'code', '') or ''}".rstrip())
         return "errore"
 
 

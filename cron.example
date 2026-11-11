@@ -84,7 +84,7 @@
 0 2 1 * * cd /opt/agente-commerciale-pipeline && .venv/bin/python crediti.py >> /var/log/pipeline-crediti.log 2>&1
 #
 # Ricontrollo giornaliero dei SOLI servizi in allarme (crediti.py --allarmi):
-# se Claudia ricarica oggi, il banner rosso sparisce domani invece che al
+# se la cliente ricarica oggi, il banner rosso sparisce domani invece che al
 # 1° del mese. Gratis per Apify e per Openapi a wallet vuoto; il pedaggio
 # di 0,10 su Openapi si paga solo alla lettura che trova credito. I servizi
 # ok restano alla riga mensile. Alle 6:00, dopo eventuali giri notturni.
@@ -100,5 +100,16 @@
 30 4 * * * cd /opt/agente-commerciale-pipeline && .venv/bin/python candidati_ricerca.py --conservazione >> /var/log/candidati-conservazione.log 2>&1
 #
 # Testi personalizzati delle campagne: ogni 10 minuti, esce subito se non ci sono
-# campagne da preparare. Lucchetto proprio, scrive solo testi_campagna e testi_stato.
+# campagne da preparare. Lucchetto proprio, scrive solo testi_campagna, testi_stato
+# e la sua riga di stato_sistema (una campagna ferma si segnala li', una volta).
 */10 * * * * cd /opt/agente-commerciale-pipeline && .venv/bin/python testi_campagna.py >> /var/log/pipeline-testi-campagna.log 2>&1
+#
+# Sentinella: ogni 30 minuti, a tutte le ore. Legge soltanto e tiene tre righe sue
+# in stato_sistema (l'avviso che l'app mostra in alto); con HEARTBEAT_URL nel .env
+# manda anche il segnale esterno. Esente dal lucchetto dell'archivio.
+*/30 * * * * cd /opt/agente-commerciale-pipeline && .venv/bin/python sentinella.py >> /var/log/pipeline-sentinella.log 2>&1
+#
+# Log conservati 30 giorni. logrotate li rinomina ogni giorno con la data
+# (strumenti/logrotate-pipeline.conf, che deploy.sh copia in /etc/logrotate.d/pipeline);
+# questa riga toglie le copie ferme da piu' di 30 giorni, mai i log in uso.
+20 4 * * * find /var/log -maxdepth 1 -type f \( -name 'pipeline*.log-*' -o -name 'candidati*.log-*' \) -mtime +30 -delete

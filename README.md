@@ -32,15 +32,28 @@ Ogni modulo ha il suo check: `python <modulo>.py` stampa `ok`.
 Il regression si esegue prima di ogni commit che tocca `prompts.py`. Una
 classificazione validata che cambia = ci si ferma e si capisce perché.
 
-## Perché la cache del campione sta in git
+## Il campione dei 26 sta fuori dal repo
 
-`tests/campione_26/cache/` contiene ~110 file JSON: sono le pagine dei 26
-siti del campione, scaricate una volta e congelate. **Non sono spazzatura e
-non vanno cancellate.** Il regression test (`python -m tests.regression`)
-riclassifica quelle 26 aziende partendo da quelle pagine: senza, dovrebbe
-riscaricare i siti — che nel frattempo cambiano — e non confronterebbe più
-mele con mele. Con la cache in git il guardiano gira offline, su qualsiasi
-macchina, a costo zero di rete e con un risultato riproducibile.
+Il campione (il CSV validato, il prototipo e la cartella `cache/` con ~110
+file JSON: le pagine dei 26 siti, scaricate una volta e congelate) **non è
+spazzatura e non va cancellato.** Il regression test
+(`python -m tests.regression`) riclassifica quelle 26 aziende partendo da
+quelle pagine: senza, dovrebbe riscaricare i siti — che nel frattempo
+cambiano — e non confronterebbe più mele con mele.
+
+Dall'11/11/2026 non sta più in git: contiene ragioni sociali di ditte
+individuali e pagine con nomi di persone. Sta nella cartella dei materiali
+del committente, sul Mac, e il percorso si indica nel `.env`:
+
+```
+CAMPIONE_26="/percorso/della/cartella/campione_26"
+```
+
+Lo leggono `tests/regression.py` e il check di `territorio.py`
+(`config.cartella_campione`). Se la variabile manca o la cartella non c'è —
+sul server è così — quei test **si saltano** stampando una riga che comincia
+per `SALTATO`, e il resto dei check gira lo stesso. Nella storia di git
+precedente all'11/11 il campione resta.
 
 La cache di produzione (`/cache/` alla radice) è invece esclusa da git: è
 volatile, cresce a ogni ciclo e il server ha la sua.
@@ -207,7 +220,7 @@ Openapi — e soprattutto senza più omonimi.
 
 Il caso che ha fatto cambiare la regola: il cliente apre la prima scheda
 dell'elenco, **A.C. Infissi**, e la trova a Colleferro quando Maps e sito
-dicono Anzio. La visura era di *"AC Infissi di Ciamberlano Antonio"*,
+dicono Anzio. La visura era di una ditta individuale omonima,
 Colleferro, **CESSATA**: tre omonimi in camera di commercio, la pipeline
 prendeva il primo, e l'ordine dei risultati non è nemmeno stabile fra due
 chiamate. Nessuno dei tre era l'azienda di Anzio — probabilmente è
@@ -235,8 +248,10 @@ self-check):
 ./deploy.sh utente@indirizzo-server            # dal Mac, non dal server
 ```
 
-`deploy.sh` lancia gitleaks, poi rsync **escludendo `.env`, `/cache/` e
-`.venv/`** (la cache del campione invece viaggia: serve al regression), e sul server crea il venv e installa chromium. Il `.env` sul
+`deploy.sh` lancia gitleaks, poi rsync **escludendo `.env`, `/cache/`,
+`.venv/`, la storia di git (`.git/`) e i file con i dati del committente**
+(gli stessi nomi di `.gitignore`): sul server va solo il codice. Poi crea il
+venv, installa chromium e copia la regola di rotazione dei log. Il `.env` sul
 server si crea **a mano una volta sola** e non viaggia mai — né in git né
 in rsync:
 
@@ -256,6 +271,37 @@ residuo.
 Cron: si installa con `crontab cron.example`, **non** ricopiando a mano le
 righe in `crontab -e` — così l'ordine delle province è sempre quello del
 file versionato.
+
+**Un solo lavoro alla volta sull'archivio.** Dall'11/11/2026 anche `main.py`
+prende il lucchetto di `lucchetto.py` (i cicli del cron compresi): se
+l'archivio è occupato da un altro lavoro il ciclo **non parte**, non spende
+niente e lo scrive nell'ultima riga del log (`ESITO: ciclo FALLITO —
+archivio occupato...`); va rilanciato a mano. `giro_regione.py`, che il
+lucchetto lo tiene già, lo dichiara ai suoi `main.py` con la variabile
+`LUCCHETTO_ARCHIVIO=tenuto`. `--dry-run` non lo prende: non scrive.
+
+**Sentinella** (`sentinella.py`, ogni 30 minuti, sempre). Legge soltanto e
+tiene tre righe in `stato_sistema` — `sentinella_invii`,
+`sentinella_campagne`, `sentinella_testi` — che l'app mostra in alto come gli
+allarmi dei crediti: database che non risponde, invii automatici fermi con
+email pronte in coda, email rimaste «in invio», campagna ferma in
+preparazione o non partita alle 10:00, testi fermi o non pronti alla vigilia.
+Le regole, e perché non danno falsi allarmi, sono in cima al file. Quando il
+problema finisce la riga torna `ok`: non si cancella. Con `HEARTBEAT_URL` nel
+`.env` del server chiama quell'indirizzo quando è tutto a posto e lo stesso
+con `/fail` quando c'è un problema: chi lo riceve avvisa per email anche
+quando il segnale smette di arrivare, cioè a server spento.
+`python sentinella.py --secco` stampa il verdetto senza scrivere né chiamare.
+
+**Log**: in `/var/log/pipeline*.log` e `candidati*.log`, **conservati 30
+giorni**. `logrotate` li rinomina ogni giorno con la data
+(`strumenti/logrotate-pipeline.conf`, che `deploy.sh` copia in
+`/etc/logrotate.d/pipeline`; mai mentre un lavoro tiene il lucchetto) e una
+riga del crontab toglie le copie ferme da più di 30 giorni. Nei log le
+aziende sono indicate dall'**id della scheda** o, prima che la scheda esista,
+dal dominio del sito o dalla P.IVA (`dedup.riferimento`): mai dalla ragione
+sociale, che per una ditta individuale è il nome del titolare. La riga
+completa di un'azienda si stampa solo in `--dry-run`.
 Il server è su `Etc/UTC`: `0 3` sono le **5:00 italiane** con l'ora legale
 e le 4:00 con quella solare; per averle davvero alle 3 italiane basta
 `CRON_TZ=Europe/Rome` come prima riga. È **trimestrale** dal 2026-09-23
@@ -639,8 +685,8 @@ nell'elenco**. Il confronto per ragione sociale normalizzata + comune esatto
 non la mantiene: **le insegne di Google Maps non coincidono con le ragioni
 sociali** dell'elenco clienti. Misurato sul primo ciclo Roma, su 113 clienti
 attivi ne riconosceva **9**; nell'archivio consegnabile erano rimasti
-"Show Room Comerci Serramenti" (per "COMERCI SERRAMENTI") e "Messina
-Serramenti di Messina Sergio" (per "MESSINA SERGIO"), entrambi in classe A o
+"Show Room Comerci Serramenti" (per "COMERCI SERRAMENTI") e "Tizio
+Serramenti di Tizio Caio" (per "TIZIO CAIO"), entrambi in classe A o
 B. È la stessa radice del 31% di aggancio di Openapi.
 
 Dal 2026-09-08 `dedup.cerca_riferimento(..., permissivo=True)` aggiunge un
@@ -775,7 +821,7 @@ i confini attuali**, cioè le distinzioni su cui il perimetro può sbagliare:
 - produttore concorrente strutturato contro potenziale cliente (regola 3
   applicata a chi produce già in proprio — è il caso Finstral).
 
-Le pagine si scaricano una volta e restano in `tests/campione_26/cache/`:
+Le pagine si scaricano una volta e restano nella cartella `cache/` del campione:
 il costo di ogni rilancio del regression **non cambia**, restano ~1,7 EUR
 per run indipendentemente da quante aziende contiene il campione.
 

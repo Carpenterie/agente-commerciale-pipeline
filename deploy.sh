@@ -59,12 +59,20 @@ fi
     exit 1; }
 
 echo "==> rsync verso $SERVER:$REMOTA"
+# Sul server va solo il codice. Restano sul Mac la storia di git e i file
+# con i dati del committente (gli stessi nomi di .gitignore): se uno di
+# questi finisse per sbaglio nella cartella del repo, non deve partire.
 rsync -az --delete \
     --exclude '.env' \
     --exclude '.venv/' \
     --exclude '/cache/' \
     --exclude '__pycache__/' \
     --exclude '.DS_Store' \
+    --exclude '/.git/' \
+    --exclude 'clienti_da_verificare.csv' \
+    --exclude 'casi_limite_da_validare.csv' \
+    --exclude 'clienti*.xlsx' \
+    --exclude 'revisione*.csv' \
     ./ "$SERVER:$REMOTA/"
 
 echo "==> prerequisiti di sistema sul server"
@@ -78,6 +86,12 @@ echo "==> setup remoto (venv e dipendenze)"
 ssh "$SERVER" "cd $REMOTA && python3 -m venv .venv 2>/dev/null || true; \
     .venv/bin/pip install -q -r requirements.txt && \
     .venv/bin/python -m playwright install --with-deps chromium"
+
+echo "==> rotazione dei log (30 giorni)"
+# la regola sta nel repo e si copia a ogni deploy; -d la prova senza toccare niente
+ssh "$SERVER" "install -m 644 $REMOTA/strumenti/logrotate-pipeline.conf /etc/logrotate.d/pipeline && \
+    logrotate -d /etc/logrotate.d/pipeline >/dev/null 2>&1 && echo '   regola installata e valida' || \
+    echo '   !! regola di logrotate NON valida: controllare /etc/logrotate.d/pipeline'"
 
 echo "==> verifica: il .env deve esistere sul server ed essere solo tuo"
 ssh "$SERVER" "cd $REMOTA && \

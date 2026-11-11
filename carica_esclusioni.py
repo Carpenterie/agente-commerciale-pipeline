@@ -1,4 +1,4 @@
-"""Carica l'elenco clienti di Claudia nella tabella `esclusioni` (PRD §11).
+"""Carica l'elenco clienti della cliente nella tabella `esclusioni` (PRD §11).
 
     python carica_esclusioni.py elenco.xlsx [--dry-run]
 
