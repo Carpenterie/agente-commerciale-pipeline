@@ -279,13 +279,24 @@ niente e lo scrive nell'ultima riga del log (`ESITO: ciclo FALLITO —
 archivio occupato...`); va rilanciato a mano. `giro_regione.py`, che il
 lucchetto lo tiene già, lo dichiara ai suoi `main.py` con la variabile
 `LUCCHETTO_ARCHIVIO=tenuto`. `--dry-run` non lo prende: non scrive.
+Il lucchetto è un `flock`: lo tiene il processo, non il file. Se il processo
+muore (errore, `kill`, riavvio del server) si libera da solo; resta occupato
+solo finché il processo è vivo, anche se bloccato.
+
+**Un ciclo che non parte o finisce male lascia un avviso** nella riga
+`cicli_ricerca` di `stato_sistema` (giallo nell'app, come gli allarmi dei
+crediti): provincia, giorno e motivo, per gli ultimi sei cicli non riusciti.
+Il primo ciclo riuscito la riporta a `ok`; non si cancella. Un processo
+ucciso dall'esterno (`kill -9`, server spento) non fa in tempo a scriverlo.
 
 **Sentinella** (`sentinella.py`, ogni 30 minuti, sempre). Legge soltanto e
 tiene tre righe in `stato_sistema` — `sentinella_invii`,
 `sentinella_campagne`, `sentinella_testi` — che l'app mostra in alto come gli
 allarmi dei crediti: database che non risponde, invii automatici fermi con
-email pronte in coda, email rimaste «in invio», campagna ferma in
-preparazione o non partita alle 10:00, testi fermi o non pronti alla vigilia.
+email pronte in coda, invii che falliscono uno dopo l'altro (3 o più righe
+chiuse per un errore nell'ultima ora: il motore non si ferma da solo), email
+rimaste «in invio», campagna ferma in preparazione o non partita alle 10:00,
+testi fermi o non pronti alla vigilia.
 Le regole, e perché non danno falsi allarmi, sono in cima al file. Quando il
 problema finisce la riga torna `ok`: non si cancella. Con `HEARTBEAT_URL` nel
 `.env` del server chiama quell'indirizzo quando è tutto a posto e lo stesso

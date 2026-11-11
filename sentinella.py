@@ -21,6 +21,12 @@ e orario_fine_locale della configurazione, ora di Roma) e con gli invii accesi:
       minuti dall'apertura ne' nei 20 minuti dopo un salvataggio della
       configurazione (invii appena riaccesi);
     * righe rimaste 'in_invio' da piu' di 10 minuti (esito sconosciuto);
+    * invii che falliscono: nell'ultima ora 3 o piu' righe chiuse 'fallita' per
+      un errore (Outlook che rifiuta, messaggio troppo pesante, storico non
+      scritto...). Il motore non si ferma da solo: dopo un errore prende la
+      riga successiva, una al minuto, e le righe fallite non contano nel tetto.
+      NON contano le righe saltate per regola: sono 'fallita' anche quelle, e
+      si riconoscono dal motivo (MOTIVI_DI_REGOLA, presi dal codice dell'app);
 - sentinella_campagne
     * campagna 'in_preparazione' ferma da piu' di 20 minuti;
     * campagna 'programmata' con la data di partenza arrivata e non partita
@@ -69,6 +75,16 @@ A_POSTO = {INVII: "Invii automatici: nessun problema rilevato",
 SOSPESI = "controlli sospesi, invii automatici spenti"
 
 MIN_FERMI = 20            # il motore non tocca la coda da cosi' tanti minuti
+FALLITE_MAX, MIN_FALLITE = 3, 60     # tante righe fallite per errore in tanti minuti = allarme
+# Come cominciano i motivi con cui l'app chiude 'fallita' una riga SALTATA PER REGOLA
+# (motore.server.ts: verificaPrimaDiInviare e gestione dei rimbalzi; coda.ts;
+# email-unica-campagna.ts; revisione.ts; aziende-esclusione.ts). Tutto il resto
+# di cio' che e' 'fallita' e' un errore: "Outlook [401]: ...", "messaggio troppo
+# pesante", "storico non scritto: ...", "controllo esclusione non riuscito" e,
+# nel motore di prima dell'11/11, il testo di qualunque eccezione.
+MOTIVI_DI_REGOLA = ("indirizzo già previsto", "destinatario non più valido", "scheda non trovata",
+                    "sequenza seguita da un'altra scheda", "scheda opera", "esclusa", "azienda esclusa",
+                    "azienda non disponibile", "non più da ricontattare", "già contattata")
 MIN_IN_INVIO = 10
 MIN_PREPARAZIONE = 20
 ORA_PARTENZA = 10 * 60    # minuti dalla mezzanotte: alle 10:00 una campagna di oggi deve essere partita
@@ -153,6 +169,19 @@ def _giorno(data_iso: str) -> str:
     return f"{data_iso[8:10]}/{data_iso[5:7]}"
 
 
+def errore_di_invio(motivo: str | None) -> str | None:
+    """Per una riga 'fallita': None se e' stata saltata per regola; altrimenti
+    che errore e', in poche parole e senza il testo originale (puo' contenere
+    indirizzi): "Outlook 401", oppure "errore tecnico"."""
+    testo = " ".join(str(motivo or "").split()).lower()
+    if testo.startswith(MOTIVI_DI_REGOLA):
+        return None
+    if testo.startswith("outlook ["):
+        codice = testo[len("outlook ["):].split("]", 1)[0]
+        return f"Outlook {codice}" if codice.isdigit() else "Outlook"
+    return "errore tecnico"
+
+
 # --------------------------------------------------------------- verdetto ---
 
 def valuta(dati: dict, adesso: dt.datetime) -> dict | None:
@@ -183,6 +212,13 @@ def valuta(dati: dict, adesso: dt.datetime) -> dict | None:
         invii.append(f"Invii automatici fermi: in coda ci sono email pronte a partire e il tetto di oggi non è "
                      f"raggiunto ({dati.get('inviate_oggi', 0)} su {limite}), ma {da}. Controllare in Automazioni "
                      f"il collegamento a Outlook; se è in ordine, avvisare chi gestisce il sistema.")
+        grave = True
+    errori = [e for e in (errore_di_invio(m) for m in dati.get("fallite", [])) if e]
+    if len(errori) >= FALLITE_MAX:
+        tipi = sorted(set(errori), key=lambda e: (-errori.count(e), e))
+        invii.append(f"Gli invii automatici stanno fallendo: {len(errori)} email nell'ultima ora non sono partite "
+                     f"per un errore ({', '.join(tipi[:3])}). Ogni tentativo consuma una riga della coda: spegnere "
+                     f"gli invii automatici in Automazioni e avvisare chi gestisce il sistema.")
         grave = True
     ferme = sorted(t for t in (_quando(x) for x in dati.get("in_invio", []))
                    if t and eta(t) > MIN_IN_INVIO)
@@ -309,6 +345,12 @@ class Archivio:
                 visti.append(r[0][campo])
         return max(visti, key=_quando) if visti else None
 
+    def fallite(self, adesso: dt.datetime) -> list:
+        """I motivi delle righe chiuse 'fallita' dal motore nell'ultima ora."""
+        da = (adesso - dt.timedelta(minutes=MIN_FALLITE)).isoformat()
+        return [r["errore_dettaglio"] for r in self.c.table("coda_invii_automatici").select("errore_dettaglio")
+                .eq("stato", "fallita").gte("ultimo_tentativo", da).limit(500).execute().data]
+
     def in_invio(self) -> list:
         return [r["ultimo_tentativo"] for r in self.c.table("coda_invii_automatici").select("ultimo_tentativo")
                 .eq("stato", "in_invio").execute().data]
@@ -348,7 +390,8 @@ def leggi(arc, adesso: dt.datetime) -> dict:
         return dati
     campagne = arc.campagne()
     dati.update(inviate_oggi=arc.inviate_oggi(adesso), dovuta=arc.dovuta(adesso),
-                ultimo_movimento=arc.ultimo_movimento(), in_invio=arc.in_invio(), campagne=campagne,
+                ultimo_movimento=arc.ultimo_movimento(), in_invio=arc.in_invio(),
+                fallite=arc.fallite(adesso), campagne=campagne,
                 testi={c["id"]: arc.testi(c["id"]) for c in campagne if c.get("testi_stato") == "da_preparare"})
     return dati
 
@@ -442,7 +485,7 @@ def _test() -> None:
 
     def foto(**k):
         return {"cfg": cfg, "inviate_oggi": 50, "dovuta": True, "ultimo_movimento": fa(2), "in_invio": [],
-                "campagne": [], "testi": {}, "avviso_testi": False, "righe": {}, **k}
+                "fallite": [], "campagne": [], "testi": {}, "avviso_testi": False, "righe": {}, **k}
 
     def stati(v):
         return {s: v[s][0] for s in SERVIZI}
@@ -483,6 +526,30 @@ def _test() -> None:
     assert valuta(foto(in_invio=[fa(9)]), mer)[INVII][0] == OK
     v = valuta(foto(in_invio=[fa(40)], ultimo_movimento=fa(40)), mer)
     assert v[INVII][0] == ROSSO and "fermi" in v[INVII][1] and "in invio" in v[INVII][1]
+
+    # --- invii che falliscono: 3 errori nell'ultima ora = rosso. Le righe saltate per regola non contano
+    regola = ["non più da ricontattare (stato cambiato o nuova attività)", "già contattata",
+              "indirizzo già previsto o inviato su un'altra scheda della stessa campagna",
+              "sequenza seguita da un'altra scheda con lo stesso indirizzo", "scheda Opera: solo campagne",
+              "esclusa: non contattare", "destinatario non più valido",
+              "destinatario non più valido (mancato recapito rilevato)", "scheda non trovata",
+              "Azienda esclusa: fuori contesto. Invio bloccato.", "Azienda non disponibile: invio bloccato."]
+    assert all(errore_di_invio(m) is None for m in regola), [m for m in regola if errore_di_invio(m)]
+    assert errore_di_invio("Outlook [401]: {\"error\":{\"code\":\"InvalidAuthenticationToken\"}}") == "Outlook 401"
+    assert errore_di_invio("Outlook [429]: troppe richieste per tizio@esempio.it") == "Outlook 429"
+    for tecnico in ("messaggio troppo pesante", "storico non scritto: timeout", "fetch failed",
+                    "controllo esclusione non riuscito", "", None):
+        assert errore_di_invio(tecnico) == "errore tecnico", tecnico
+    assert valuta(foto(fallite=regola * 3), mer)[INVII][0] == OK                 # trenta righe saltate: niente
+    assert valuta(foto(fallite=["Outlook [401]: x", "Outlook [401]: y"] + regola), mer)[INVII][0] == OK   # due errori
+    v = valuta(foto(fallite=["Outlook [401]: a@b.it", "Outlook [401]: y", "Outlook [403]: z", "già contattata"]), mer)
+    assert v[INVII][0] == ROSSO and "3 email nell'ultima ora" in v[INVII][1], v[INVII]
+    assert "(Outlook 401, Outlook 403)" in v[INVII][1] and "@" not in v[INVII][1]
+    v = valuta(foto(fallite=["messaggio troppo pesante"] * 4), mer)
+    assert v[INVII][0] == ROSSO and "4 email" in v[INVII][1] and "errore tecnico" in v[INVII][1]
+    # il motore intanto tocca la coda (una riga al minuto): "invii fermi" non scatta, questo si'
+    v = valuta(foto(fallite=["Outlook [500]: x"] * 5, ultimo_movimento=fa(1)), mer)
+    assert v[INVII][0] == ROSSO and "stanno fallendo" in v[INVII][1] and "fermi" not in v[INVII][1]
 
     # --- campagne
     camp = {"id": "c1", "nome": "1 · Prova", "stato": "programmata", "data_partenza": "2026-11-16",
@@ -554,6 +621,9 @@ def _test() -> None:
 
         def in_invio(self):
             return self.f["in_invio"]
+
+        def fallite(self, adesso):
+            return self.f["fallite"]
 
         def campagne(self):
             return self.f["campagne"]

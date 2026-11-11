@@ -542,6 +542,119 @@ codice, _, _ = _ciclo(dry_run=False, dal_padre=True)
 assert codice == 0 and not chiesti and partiti == ["RM"]       # lo tiene giro_regione: non lo riprende
 codice, _, _ = _ciclo(dry_run=True, libero=False)
 assert codice == 0 and not chiesti and partiti == ["RM"]       # non scrive: non serve
+
+# --- un ciclo non riuscito lascia un avviso in stato_sistema (11/11) ---------
+# Giallo nell'app; il primo ciclo riuscito lo riporta a 'ok'; la riga non sparisce.
+import datetime as _dt  # noqa: E402
+
+
+class _StatoSistema:
+    """La sola tabella stato_sistema, quanto basta ad avvisa_ciclo."""
+
+    def __init__(self):
+        self.righe, self.scritture, self._op = {}, [], None
+
+    def table(self, nome):
+        assert nome == "stato_sistema", nome
+        self._op = None
+        return self
+
+    def select(self, colonne):
+        self._op = ("select", None)
+        return self
+
+    def update(self, riga):
+        self._op = ("update", riga)
+        return self
+
+    def insert(self, riga):
+        self._op = ("insert", riga)
+        return self
+
+    def eq(self, campo, valore):
+        self._servizio = valore
+        return self
+
+    def limit(self, n):
+        return self
+
+    def execute(self):
+        op, riga = self._op
+        if op == "select":
+            r = self.righe.get(self._servizio)
+            return types.SimpleNamespace(data=[dict(r)] if r else [])
+        if op == "update" and self._servizio not in self.righe:
+            return types.SimpleNamespace(data=[])
+        self.righe[riga["servizio"]] = dict(riga)
+        self.scritture.append((op, riga["stato"]))
+        return types.SimpleNamespace(data=[riga])
+
+
+_st, _detto = _StatoSistema(), []
+_giorno = _dt.date(2027, 1, 7)
+# nessuna riga e ciclo riuscito: nasce 'ok' (cosi' si vede subito se la tabella la accetta)
+main.avvisa_ciclo(True, "LT", sb=_st, log=_detto.append, oggi=_giorno)
+assert _st.scritture == [("insert", "ok")] and _st.righe["cicli_ricerca"]["messaggio"] == main.CICLI_A_POSTO
+assert _st.righe["cicli_ricerca"]["fonte_lettura"] == "controllo_pre_giro"
+main.avvisa_ciclo(True, "FR", sb=_st, log=_detto.append, oggi=_giorno)
+assert len(_st.scritture) == 1 and not _detto, "gia' ok: non si riscrive"
+# due cicli falliti di fila: si vedono tutti e due, in giallo
+main.avvisa_ciclo(False, "LT", "non partito: archivio occupato da un altro lavoro", sb=_st, log=_detto.append, oggi=_giorno)
+main.avvisa_ciclo(False, "FR", "sourcing fallito (RuntimeError:  monthly usage\n hard limit exceeded)", sb=_st,
+                  log=_detto.append, oggi=_dt.date(2027, 1, 8))
+_riga = _st.righe["cicli_ricerca"]
+assert _riga["stato"] == "sotto_soglia" and _st.scritture[-2:] == [("update", "sotto_soglia")] * 2
+assert _riga["messaggio"] == ("Ricerca nuove aziende, cicli non riusciti: LT del 07/01 (non partito: archivio "
+                              "occupato da un altro lavoro) · FR del 08/01 (sourcing fallito (RuntimeError: "
+                              "monthly usage hard limit exceeded)). Vanno rilanciati a mano: avvisare chi "
+                              "gestisce il sistema."), _riga["messaggio"]
+for _i in range(8):
+    main.avvisa_ciclo(False, f"P{_i}", "errore", sb=_st, log=_detto.append, oggi=_giorno)
+assert _st.righe["cicli_ricerca"]["messaggio"].count(" del ") == 6      # solo gli ultimi sei
+# il primo ciclo riuscito: torna 'ok', la riga resta
+main.avvisa_ciclo(True, "VT", sb=_st, log=_detto.append, oggi=_giorno)
+assert _st.righe["cicli_ricerca"]["stato"] == "ok" and "chiuso" in _detto[-1]
+# il database che non risponde non cambia l'esito del ciclo
+main.avvisa_ciclo(False, "RI", "x", sb=object(), log=_detto.append)
+assert "stato_sistema non aggiornato (AttributeError)" in _detto[-1]
+
+# dentro main(): avviso sul ciclo non partito, fallito, esploso; niente in dry-run
+_avvisi = []
+_avvisa = main.avvisa_ciclo
+main.avvisa_ciclo = lambda ok, provincia, motivo="", **k: _avvisi.append((ok, provincia, motivo))
+main.esegui = _esegui_finto
+_ciclo(dry_run=False)
+assert _avvisi == [(True, "RM", "uscito con codice 0")], _avvisi
+_avvisi.clear()
+_ciclo(dry_run=False, libero=False)
+assert _avvisi == [(False, "RM", "non partito: archivio occupato da un altro lavoro")], _avvisi
+
+
+async def _esegui_fallito(a):
+    return main._verdetto(False, "crediti insufficienti, giro NON partito")
+
+
+async def _esegui_esploso(a):
+    raise RuntimeError("imprevisto")
+
+
+_avvisi.clear()
+main.esegui = _esegui_fallito
+assert _ciclo(dry_run=False)[0] == 1 and _avvisi == [(False, "RM", "crediti insufficienti, giro NON partito")], _avvisi
+_avvisi.clear()
+main.esegui = _esegui_esploso
+try:
+    _ciclo(dry_run=False)
+    raise AssertionError("l'errore imprevisto deve salire")
+except RuntimeError:
+    pass
+assert _avvisi == [(False, "RM", "interrotto da un errore imprevisto (RuntimeError)")], _avvisi
+_avvisi.clear()
+main.esegui = _esegui_fallito
+assert _ciclo(dry_run=True)[0] == 1 and not _avvisi, "una prova non scrive avvisi"
+main.avvisa_ciclo = _avvisa
+print("ok (ciclo non riuscito: avviso in stato_sistema, chiuso dal primo ciclo riuscito)")
+
 main._argomenti, main.esegui, lucchetto.prendi = _argomenti, _esegui, _prendi
 import giro_regione  # noqa: E402
 import inspect  # noqa: E402

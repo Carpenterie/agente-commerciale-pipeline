@@ -466,12 +466,59 @@ def _verdetto(ok: bool, motivo: str = "") -> int:
     Il codice di uscita non e' mai 0 quando qualcosa e' andato storto: il
     cron altrimenti registra un successo.
     """
+    ULTIMO_VERDETTO.update(ok=ok, motivo=motivo)
     print("=" * 52)
     if ok:
         print("ESITO: ciclo COMPLETATO" + (f" — {motivo}" if motivo else ""))
         return 0
     print(f"ESITO: ciclo FALLITO — {motivo}")
     return 1
+
+
+# --- avviso in stato_sistema per i cicli che non vanno a buon fine (11/11) ---
+# Un ciclo del cron che non parte o finisce male lo dice solo nel suo log, e
+# quella provincia aspetta il trimestre dopo: qui lascia una riga gialla che
+# l'app mostra in alto. Il primo ciclo riuscito la riporta a 'ok'; non si
+# cancella mai. Piu' cicli falliti di fila si elencano tutti (gli ultimi sei).
+ULTIMO_VERDETTO: dict = {"ok": None, "motivo": ""}
+SERVIZIO_CICLI = "cicli_ricerca"
+AVVISO_CICLI = ("Ricerca nuove aziende, cicli non riusciti: ",
+                ". Vanno rilanciati a mano: avvisare chi gestisce il sistema.")
+CICLI_A_POSTO = "Ricerca nuove aziende: nessun ciclo da rilanciare"
+
+
+def avvisa_ciclo(ok: bool, provincia: str, motivo: str = "", sb=None, log=print, oggi=None) -> None:
+    """Scrive o chiude l'avviso. Non solleva mai: un avviso mancato non deve
+    cambiare l'esito del ciclo (se il database non risponde resta il log)."""
+    import datetime
+    try:
+        sb = sb or db.client()
+        prima = (sb.table("stato_sistema").select("stato,messaggio")
+                 .eq("servizio", SERVIZIO_CICLI).limit(1).execute().data or [None])[0]
+        if ok:
+            if prima and prima.get("stato") == "ok":
+                return
+            stato, messaggio = "ok", CICLI_A_POSTO
+        else:
+            voci = []
+            vecchio = (prima or {}).get("messaggio") or ""
+            if prima and prima.get("stato") != "ok" and vecchio.startswith(AVVISO_CICLI[0]) \
+                    and vecchio.endswith(AVVISO_CICLI[1]):
+                voci = vecchio[len(AVVISO_CICLI[0]):-len(AVVISO_CICLI[1])].split(" · ")
+            oggi = oggi or datetime.date.today()
+            pulito = " ".join(str(motivo).replace(" · ", " ").split())[:220] or "motivo non noto"
+            voci.append(f"{provincia} del {oggi:%d/%m} ({pulito})")
+            stato, messaggio = "sotto_soglia", AVVISO_CICLI[0] + " · ".join(voci[-6:]) + AVVISO_CICLI[1]
+        # stessa strada dei crediti: aggiornamento sul posto, fonte ammessa dal vincolo della tabella
+        riga = crediti._riga(SERVIZIO_CICLI, stato, None, None, None, messaggio, "controllo_pre_giro")
+        if not sb.table("stato_sistema").update(riga).eq("servizio", SERVIZIO_CICLI).execute().data:
+            sb.table("stato_sistema").insert(riga).execute()
+        if not ok:
+            log(f"avviso scritto in stato_sistema: ciclo {provincia} non riuscito")
+        elif prima:
+            log("avviso dei cicli chiuso in stato_sistema")
+    except Exception as e:  # noqa: BLE001
+        log(f"stato_sistema non aggiornato ({type(e).__name__}): l'avviso del ciclo resta solo in questo log")
 
 
 async def esegui(args) -> int:
@@ -828,13 +875,25 @@ def main() -> int:
     if not args.dry_run and not lucchetto.tenuto_dal_padre():
         tenuto = lucchetto.prendi("main.py")
         if tenuto is None:
-            return _verdetto(False, "archivio occupato da un altro lavoro: ciclo NON partito, "
-                                    "niente sourcing e nessuna spesa. Va rilanciato a mano")
+            codice = _verdetto(False, "archivio occupato da un altro lavoro: ciclo NON partito, "
+                                      "niente sourcing e nessuna spesa. Va rilanciato a mano")
+            avvisa_ciclo(False, args.provincia, "non partito: archivio occupato da un altro lavoro")
+            return codice
+    ULTIMO_VERDETTO.update(ok=None, motivo="")
     try:
-        return asyncio.run(esegui(args))
+        codice = asyncio.run(esegui(args))
+    except BaseException as e:
+        # errore imprevisto o processo fermato: l'avviso si scrive lo stesso, poi l'errore sale
+        if not args.dry_run and not isinstance(e, KeyboardInterrupt):
+            avvisa_ciclo(False, args.provincia, f"interrotto da un errore imprevisto ({type(e).__name__})")
+        raise
     finally:
         if tenuto is not None:
             tenuto.close()
+    if not args.dry_run:       # una prova non scrive in archivio e non dice niente sui cicli veri
+        avvisa_ciclo(codice == 0, args.provincia,
+                     ULTIMO_VERDETTO["motivo"] if ULTIMO_VERDETTO["ok"] is False else f"uscito con codice {codice}")
+    return codice
 
 
 if __name__ == "__main__":
