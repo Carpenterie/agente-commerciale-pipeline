@@ -17,7 +17,9 @@ e orario_fine_locale della configurazione, ora di Roma) e con gli invii accesi:
 - sentinella_invii
     * invii fermi: il motore ha una riga che potrebbe partire adesso, il tetto
       del giorno non e' raggiunto, e da 20 minuti non prende nessuna riga dalla
-      coda (ne' per mandarla ne' per rinviarla);
+      coda (ne' per mandarla ne' per rinviarla). Non si giudica nei primi 20
+      minuti dall'apertura ne' nei 20 minuti dopo un salvataggio della
+      configurazione (invii appena riaccesi);
     * righe rimaste 'in_invio' da piu' di 10 minuti (esito sconosciuto);
 - sentinella_campagne
     * campagna 'in_preparazione' ferma da piu' di 20 minuti;
@@ -171,8 +173,11 @@ def valuta(dati: dict, adesso: dt.datetime) -> dict | None:
     aperto_da = minuti - _minuti(cfg.get("orario_inizio_locale"), 9 * 60)
     limite = cfg.get("limite_giornaliero") or 0
     mosso = _quando(dati.get("ultimo_movimento"))
+    # configurazione appena salvata (invii riaccesi, orario cambiato): al motore si da' il tempo di ripartire
+    ritoccata = _quando(cfg.get("aggiornato_il"))
+    appena_ritoccata = ritoccata is not None and eta(ritoccata) <= MIN_FERMI
     if dati.get("dovuta") is True and dati.get("inviate_oggi", 0) < limite and aperto_da >= MIN_FERMI \
-            and (mosso is None or eta(mosso) > MIN_FERMI):
+            and not appena_ritoccata and (mosso is None or eta(mosso) > MIN_FERMI):
         da = (f"l'ultima attività sulla coda è {_ora(mosso, adesso)}"
               if mosso and mosso >= mezzanotte_roma(adesso) else "oggi il motore non ha ancora toccato la coda")
         invii.append(f"Invii automatici fermi: in coda ci sono email pronte a partire e il tetto di oggi non è "
@@ -466,6 +471,10 @@ def _test() -> None:
     v = valuta(foto(ultimo_movimento=fa(900)), dt.datetime(2026, 11, 11, 8, 30, tzinfo=utc))
     assert v[INVII][0] == ROSSO and "non ha ancora toccato la coda" in v[INVII][1]
     assert valuta(foto(ultimo_movimento=None), mer)[INVII][0] == ROSSO
+    # invii riaccesi da poco dal pannello: fermi da ore, ma al motore si da' tempo
+    riaccesi = {**cfg, "aggiornato_il": fa(5)}
+    assert valuta(foto(cfg=riaccesi, ultimo_movimento=fa(200)), mer)[INVII][0] == OK
+    assert valuta(foto(cfg={**cfg, "aggiornato_il": fa(25)}, ultimo_movimento=fa(200)), mer)[INVII][0] == ROSSO
     # --- righe in invio da piu' di 10 minuti: gialle, e sommate agli invii fermi restano rosse
     v = valuta(foto(in_invio=[fa(11), fa(3)]), mer)
     assert v[INVII][0] == GIALLO and "1 email è rimasta «in invio»" in v[INVII][1] and "alle 10:19" in v[INVII][1]
