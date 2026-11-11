@@ -20,7 +20,13 @@ e orario_fine_locale della configurazione, ora di Roma) e con gli invii accesi:
       coda (ne' per mandarla ne' per rinviarla). Non si giudica nei primi 20
       minuti dall'apertura ne' nei 20 minuti dopo un salvataggio della
       configurazione (invii appena riaccesi);
-    * righe rimaste 'in_invio' da piu' di 10 minuti (esito sconosciuto);
+    * pausa Outlook attiva (motore nuovo): dopo tre errori del servizio di fila
+      il motore si ferma da solo per 30, 60, 120 o 240 minuti e lo scrive nella
+      configurazione (outlook_pausa_fino). Rosso, con il codice dell'ultimo
+      errore; finche' dura, "invii fermi" non si aggiunge: la causa e' questa;
+    * righe rimaste 'in_invio' da piu' di 10 minuti (esito sconosciuto): giallo;
+      rosso se nell'ultima ora ne sono rimaste 3 o piu' (il motore nuovo lascia
+      cosi' ogni tentativo finito con un errore non di Outlook);
     * invii che falliscono: nell'ultima ora 3 o piu' righe chiuse 'fallita' per
       un errore (Outlook che rifiuta, messaggio troppo pesante, storico non
       scritto...). Il motore non si ferma da solo: dopo un errore prende la
@@ -38,8 +44,14 @@ e orario_fine_locale della configurazione, ora di Roma) e con gli invii accesi:
 Niente falsi allarmi sugli invii. "Una riga che potrebbe partire" la decide il
 motore stesso: e' la funzione del database prossima_riga_automatica() (in
 attesa, ora arrivata, azienda non esclusa, campagna attiva, nessuna risposta da
-verificare). Finche' la funzione non esiste si applicano qui le stesse
-condizioni; se non si riesce a stabilirlo non si da' l'allarme. Le righe ferme
+verificare), che esiste dall'11/11/2026. Se un giorno mancasse si applicano qui
+le stesse condizioni; se non si riesce a stabilirlo non si da' l'allarme.
+
+Vale con il motore pubblicato fino all'11/11 e con quello nuovo. Il "salvataggio
+della configurazione" e' solo `aggiornato_il`, che scrive il pannello: il motore
+nuovo scrive sulla configurazione a ogni invio (prenotazione, pausa Outlook,
+ultimo controllo delle risposte) ma non tocca quel campo, e qui quelle scritture
+valgono come segno di vita (ultimo_avvio_automatico_il), non come salvataggio. Le righe ferme
 per le regole di distanza hanno l'ora nel futuro e non contano; quelle che il
 motore rinvia al momento dell'invio aggiornano `ultimo_tentativo`, che qui vale
 come segno di vita: il segnale e' "il motore non tocca la coda", non "non parte
@@ -59,6 +71,7 @@ from __future__ import annotations
 
 import datetime as dt
 import os
+import re
 import sys
 import urllib.request
 from zoneinfo import ZoneInfo
@@ -176,9 +189,10 @@ def errore_di_invio(motivo: str | None) -> str | None:
     testo = " ".join(str(motivo or "").split()).lower()
     if testo.startswith(MOTIVI_DI_REGOLA):
         return None
-    if testo.startswith("outlook ["):
-        codice = testo[len("outlook ["):].split("]", 1)[0]
-        return f"Outlook {codice}" if codice.isdigit() else "Outlook"
+    if testo.startswith("outlook"):
+        # "Outlook [401]: ..." (motore fino all'11/11) e "Outlook 400: errore del singolo messaggio" (nuovo)
+        codice = re.match(r"outlook \[?(\d{3})\]?", testo)
+        return f"Outlook {codice.group(1)}" if codice else "Outlook"
     return "errore tecnico"
 
 
@@ -201,12 +215,27 @@ def valuta(dati: dict, adesso: dt.datetime) -> dict | None:
     invii, grave = [], False
     aperto_da = minuti - _minuti(cfg.get("orario_inizio_locale"), 9 * 60)
     limite = cfg.get("limite_giornaliero") or 0
-    mosso = _quando(dati.get("ultimo_movimento"))
-    # configurazione appena salvata (invii riaccesi, orario cambiato): al motore si da' il tempo di ripartire
+    # segno di vita: l'ultima riga presa dalla coda o, col motore nuovo, l'ultima prenotazione di un invio
+    mosso = max((t for t in (_quando(dati.get("ultimo_movimento")), _quando(cfg.get("ultimo_avvio_automatico_il"))) if t),
+                default=None)
+    # configurazione appena salvata dal pannello (invii riaccesi, orario cambiato): al motore si da' il tempo di ripartire
     ritoccata = _quando(cfg.get("aggiornato_il"))
     appena_ritoccata = ritoccata is not None and eta(ritoccata) <= MIN_FERMI
+    # pausa Outlook del motore nuovo: e' lui a fermarsi, e lo dice. Appena finita gli si da' il tempo di riprovare.
+    pausa = _quando(cfg.get("outlook_pausa_fino"))
+    in_pausa = pausa is not None and pausa > adesso
+    pausa_recente = pausa is not None and not in_pausa and eta(pausa) <= MIN_FERMI
+    if in_pausa:
+        codice = " ".join(str(cfg.get("outlook_ultimo_codice") or "non noto").split())[:40]
+        errori = cfg.get("outlook_errori_consecutivi") or 0
+        di_fila = f", {errori} errori di fila" if errori else ""
+        invii.append(f"Invii automatici in pausa fino {_ora(pausa, adesso)}: Outlook ha rifiutato gli ultimi invii "
+                     f"(codice {codice}{di_fila}). Alla scadenza il motore riprova da solo con un invio; se fallisce "
+                     f"ancora la pausa raddoppia. Controllare in Automazioni il collegamento a Outlook.")
+        grave = True
     if dati.get("dovuta") is True and dati.get("inviate_oggi", 0) < limite and aperto_da >= MIN_FERMI \
-            and not appena_ritoccata and (mosso is None or eta(mosso) > MIN_FERMI):
+            and not appena_ritoccata and not in_pausa and not pausa_recente \
+            and (mosso is None or eta(mosso) > MIN_FERMI):
         da = (f"l'ultima attività sulla coda è {_ora(mosso, adesso)}"
               if mosso and mosso >= mezzanotte_roma(adesso) else "oggi il motore non ha ancora toccato la coda")
         invii.append(f"Invii automatici fermi: in coda ci sono email pronte a partire e il tetto di oggi non è "
@@ -229,6 +258,11 @@ def valuta(dati: dict, adesso: dt.datetime) -> dict | None:
         invii.append(f"{'1 email è rimasta' if n == 1 else f'{n} email sono rimaste'} «in invio» da più di "
                      f"{MIN_IN_INVIO} minuti{piu_vecchia}: non si sa se {'è partita' if n == 1 else 'sono partite'}. "
                      f"Verificarne l'esito in Automazioni.")
+        recenti = sum(1 for t in ferme if eta(t) <= MIN_FALLITE)
+        if recenti >= FALLITE_MAX:
+            invii.append(f"Di queste, {recenti} nell'ultima ora: gli invii stanno finendo senza esito uno dopo "
+                         f"l'altro. Spegnere gli invii automatici e avvisare chi gestisce il sistema.")
+            grave = True
 
     # --- campagne
     campagne = []
@@ -537,6 +571,11 @@ def _test() -> None:
     assert all(errore_di_invio(m) is None for m in regola), [m for m in regola if errore_di_invio(m)]
     assert errore_di_invio("Outlook [401]: {\"error\":{\"code\":\"InvalidAuthenticationToken\"}}") == "Outlook 401"
     assert errore_di_invio("Outlook [429]: troppe richieste per tizio@esempio.it") == "Outlook 429"
+    # il motore nuovo scrive il codice senza parentesi, e chiude 'fallita' solo gli errori del singolo messaggio
+    assert errore_di_invio("Outlook 400: errore del singolo messaggio") == "Outlook 400"
+    assert errore_di_invio("Outlook 413: errore del singolo messaggio") == "Outlook 413"
+    assert errore_di_invio("Outlook: risposta inattesa") == "Outlook"
+    assert errore_di_invio("esclusa: scheda Opera: Clienti Opera non abilitato") is None
     for tecnico in ("messaggio troppo pesante", "storico non scritto: timeout", "fetch failed",
                     "controllo esclusione non riuscito", "", None):
         assert errore_di_invio(tecnico) == "errore tecnico", tecnico
@@ -550,6 +589,36 @@ def _test() -> None:
     # il motore intanto tocca la coda (una riga al minuto): "invii fermi" non scatta, questo si'
     v = valuta(foto(fallite=["Outlook [500]: x"] * 5, ultimo_movimento=fa(1)), mer)
     assert v[INVII][0] == ROSSO and "stanno fallendo" in v[INVII][1] and "fermi" not in v[INVII][1]
+
+    # --- motore nuovo: pausa Outlook. Rossa col codice finche' dura, e "invii fermi" non si somma
+    fra = lambda minuti, da=mer: (da + dt.timedelta(minutes=minuti)).isoformat()      # noqa: E731
+    in_pausa = {**cfg, "outlook_pausa_fino": fra(25), "outlook_ultimo_codice": "401", "outlook_errori_consecutivi": 3,
+                "outlook_pausa_minuti": 30}
+    v = valuta(foto(cfg=in_pausa, ultimo_movimento=fa(40)), mer)
+    assert v[INVII][0] == ROSSO and "in pausa fino alle 10:55" in v[INVII][1], v[INVII]
+    assert "codice 401, 3 errori di fila" in v[INVII][1] and "fermi" not in v[INVII][1]
+    v = valuta(foto(cfg={**in_pausa, "outlook_ultimo_codice": "nessuna risposta"}, ultimo_movimento=fa(2)), mer)
+    assert v[INVII][0] == ROSSO and "codice nessuna risposta" in v[INVII][1]
+    # pausa scaduta da poco: il motore sta riprovando, niente allarme; scaduta da un pezzo e coda ferma: invii fermi
+    finita = {**in_pausa, "outlook_pausa_fino": fa(5)}
+    assert valuta(foto(cfg=finita, ultimo_movimento=fa(40)), mer)[INVII][0] == OK
+    v = valuta(foto(cfg={**in_pausa, "outlook_pausa_fino": fa(45)}, ultimo_movimento=fa(80)), mer)
+    assert v[INVII][0] == ROSSO and "fermi" in v[INVII][1] and "in pausa" not in v[INVII][1]
+    # colonne della pausa vuote (app di oggi, o nessun errore): come prima
+    vuote = {**cfg, "outlook_pausa_fino": None, "outlook_ultimo_codice": None, "outlook_errori_consecutivi": 0,
+             "ultimo_avvio_automatico_il": None, "prossimo_invio_automatico_il": None}
+    assert stati(valuta(foto(cfg=vuote), mer)) == tutto_ok
+    assert valuta(foto(cfg=vuote, ultimo_movimento=fa(25)), mer)[INVII][0] == ROSSO
+    # il motore nuovo scrive sulla configurazione a ogni invio: NON e' un salvataggio del pannello...
+    scrive = {**vuote, "aggiornato_il": fa(9000), "ultimo_avvio_automatico_il": fa(30), "prossimo_invio_automatico_il": fa(29)}
+    assert valuta(foto(cfg=scrive, ultimo_movimento=fa(30)), mer)[INVII][0] == ROSSO      # fermo da 30 minuti: allarme
+    # ...ma la prenotazione di un invio e' un segno di vita, anche se in coda non si vede ancora
+    assert valuta(foto(cfg={**scrive, "ultimo_avvio_automatico_il": fa(3)}, ultimo_movimento=fa(30)), mer)[INVII][0] == OK
+    # tre righe finite 'in invio' nell'ultima ora: rosso; tre vecchie di giorni restano gialle
+    v = valuta(foto(in_invio=[fa(15), fa(30), fa(50)]), mer)
+    assert v[INVII][0] == ROSSO and "3 nell'ultima ora" in v[INVII][1], v[INVII]
+    assert valuta(foto(in_invio=[fa(15), fa(30), fa(3000)]), mer)[INVII][0] == GIALLO
+    assert valuta(foto(in_invio=[fa(3000), fa(4000), fa(5000)]), mer)[INVII][0] == GIALLO
 
     # --- campagne
     camp = {"id": "c1", "nome": "1 · Prova", "stato": "programmata", "data_partenza": "2026-11-16",

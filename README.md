@@ -293,10 +293,13 @@ ucciso dall'esterno (`kill -9`, server spento) non fa in tempo a scriverlo.
 tiene tre righe in `stato_sistema` — `sentinella_invii`,
 `sentinella_campagne`, `sentinella_testi` — che l'app mostra in alto come gli
 allarmi dei crediti: database che non risponde, invii automatici fermi con
-email pronte in coda, invii che falliscono uno dopo l'altro (3 o più righe
-chiuse per un errore nell'ultima ora: il motore non si ferma da solo), email
-rimaste «in invio», campagna ferma in preparazione o non partita alle 10:00,
-testi fermi o non pronti alla vigilia.
+email pronte in coda, pausa Outlook del motore nuovo (dopo tre errori del
+servizio si ferma da solo e lo scrive nella configurazione: l'avviso riporta
+il codice e l'ora fino a cui dura), invii che falliscono uno dopo l'altro (3
+o più righe chiuse per un errore, o rimaste «in invio», nell'ultima ora),
+email rimaste «in invio», campagna ferma in preparazione o non partita alle
+10:00, testi fermi o non pronti alla vigilia. Funziona sia con il motore
+dell'app pubblicato fino all'11/11/2026 sia con quello nuovo.
 Le regole, e perché non danno falsi allarmi, sono in cima al file. Quando il
 problema finisce la riga torna `ok`: non si cancella. Con `HEARTBEAT_URL` nel
 `.env` del server chiama quell'indirizzo quando è tutto a posto e lo stesso
