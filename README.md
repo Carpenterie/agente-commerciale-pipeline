@@ -298,7 +298,10 @@ servizio si ferma da solo e lo scrive nella configurazione: l'avviso riporta
 il codice e l'ora fino a cui dura), invii che falliscono uno dopo l'altro (3
 o più righe chiuse per un errore, o rimaste «in invio», nell'ultima ora),
 email rimaste «in invio», campagna ferma in preparazione o non partita alle
-10:00, testi fermi o non pronti alla vigilia. Funziona sia con il motore
+10:00 (anche quando l'avvio viene ripreso ogni 10 minuti ma non si conclude:
+in preparazione da più di 45 minuti dalla prima riga entrata in coda, o ancora
+in preparazione alle 10:00 del giorno di partenza), testi fermi o non pronti
+alla vigilia. Funziona sia con il motore
 dell'app pubblicato fino all'11/11/2026 sia con quello nuovo.
 Le regole, e perché non danno falsi allarmi, sono in cima al file. Quando il
 problema finisce la riga torna `ok`: non si cancella. Fuori orario vale

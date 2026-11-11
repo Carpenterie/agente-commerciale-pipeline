@@ -43,7 +43,16 @@ e orario_fine_locale della configurazione, ora di Roma) e con gli invii accesi:
       NON contano le righe saltate per regola: sono 'fallita' anche quelle, e
       si riconoscono dal motivo (MOTIVI_DI_REGOLA, presi dal codice dell'app);
 - sentinella_campagne
-    * campagna 'in_preparazione' ferma da piu' di 20 minuti;
+    * campagna 'in_preparazione' ferma da piu' di 20 minuti (l'avvio non viene
+      piu' ripreso);
+    * campagna 'in_preparazione' da piu' di 45 minuti, contati da quando e'
+      entrata in coda la sua prima riga: l'avvio viene ripreso ogni 10 minuti e
+      rinnova la sua data, ma non si conclude (un blocco che fallisce sempre).
+      La regola dei 20 minuti non lo vede, perche' la data si rinnova;
+    * campagna con la data di partenza arrivata e ancora 'in_preparazione' alle
+      10:00, a meno che stia entrando in coda proprio adesso (una riga negli
+      ultimi 3 minuti): copre anche l'avvio che fallisce al primo blocco, senza
+      nessuna riga in coda;
     * campagna 'programmata' con la data di partenza arrivata e non partita
       alle 10:00;
 - sentinella_testi
@@ -122,6 +131,8 @@ MIN_IN_INVIO = 10
 # ed e' sempre l'ultima): serve a sostituirla fuori orario lasciando com'e' cio' che la precede.
 IN_INVIO_DA = re.compile(r"(?:1 email è rimasta|\d+ email sono rimaste) «in invio» da più di ")
 MIN_PREPARAZIONE = 20
+MIN_PREPARAZIONE_TOTALE = 45   # dalla prima riga entrata in coda: oltre, l'avvio si ripete senza concludersi
+MIN_AVVIO_VIVO = 3             # una riga entrata in coda da cosi' poco: l'avvio sta lavorando adesso
 ORA_PARTENZA = 10 * 60    # minuti dalla mezzanotte: alle 10:00 una campagna di oggi deve essere partita
 ORE_TESTI = 2
 MIN_TESTI_VIVI = 30       # la vigilia: testi in preparazione che avanzano non sono un problema
@@ -341,11 +352,26 @@ def valuta(dati: dict, adesso: dt.datetime) -> dict | None:
         if c.get("stato") == "in_preparazione":
             viva = max((t for t in (_quando(c.get("aggiornato_il")), _quando(c.get("avvio_blocco_il"))) if t),
                        default=None)
+            # le righe gia' in coda dicono da quando dura l'avvio: la data della campagna si rinnova a ogni ripresa
+            coda = (dati.get("code_campagne") or {}).get(c.get("id")) or {}
+            prima, ultima, righe = _quando(coda.get("prima")), _quando(coda.get("ultima")), coda.get("righe") or 0
+            in_coda = (f"in coda {'c’è 1 riga' if righe == 1 else f'ci sono {righe} righe'}, l'ultima entrata "
+                       f"{_ora(ultima, adesso)}" if ultima else "in coda non c'è nessuna sua riga")
+            lavora = eta(ultima) <= MIN_AVVIO_VIVO if ultima else (viva is not None and eta(viva) <= MIN_AVVIO_VIVO)
             if viva is None or eta(viva) > MIN_PREPARAZIONE:
                 da = f" Ultimo avanzamento {_ora(viva, adesso)}." if viva else ""
                 campagne.append(f"La campagna «{nome}» è ferma in preparazione: l'avvio non si è concluso.{da} "
                                 f"Aprire Automazioni e premere «Avvia» sulla campagna; se resta ferma, avvisare "
                                 f"chi gestisce il sistema.")
+            elif prima is not None and eta(prima) > MIN_PREPARAZIONE_TOTALE:
+                campagne.append(f"La campagna «{nome}» è in preparazione da più di {MIN_PREPARAZIONE_TOTALE} minuti e "
+                                f"non parte: l'avvio viene ripreso ma non si conclude ({in_coda}). Finché resta così "
+                                f"non manda nessuna email. Avvisare chi gestisce il sistema.")
+            elif c.get("data_partenza") and c["data_partenza"] <= oggi and minuti >= ORA_PARTENZA and not lavora:
+                quando = "oggi" if c["data_partenza"] == oggi else f"il {_giorno(c['data_partenza'])}"
+                campagne.append(f"La campagna «{nome}» doveva partire {quando} e alle 10:00 è ancora in preparazione: "
+                                f"l'avvio non si conclude ({in_coda}). Finché resta così non manda nessuna email. "
+                                f"Avvisare chi gestisce il sistema.")
         elif c.get("stato") == "programmata" and c.get("data_partenza") and c["data_partenza"] <= oggi \
                 and minuti >= ORA_PARTENZA:
             if c["data_partenza"] == oggi and c.get("testi_stato") == "da_preparare":
@@ -475,6 +501,14 @@ class Archivio:
         return [{k: v for k, v in c.items() if k != "testo"}
                 for c in self.c.table("campagne").select(colonne).execute().data]
 
+    def coda_campagna(self, campagna: str) -> dict:
+        """Le righe di una campagna gia' in coda: quante, quando e' entrata la prima e quando l'ultima."""
+        q = lambda: self.c.table("coda_invii_automatici").select("creato_il", count="exact").eq("campagna_id", campagna)  # noqa: E731
+        prima = q().order("creato_il").limit(1).execute()
+        ultima = q().order("creato_il", desc=True).limit(1).execute().data
+        return {"righe": prima.count or 0, "prima": prima.data[0]["creato_il"] if prima.data else None,
+                "ultima": ultima[0]["creato_il"] if ultima else None}
+
     def testi(self, campagna: str) -> dict:
         q = lambda: self.c.table("testi_campagna").select("aggiornato_il", count="exact").eq("campagna_id", campagna)  # noqa: E731
         ultimo = q().order("aggiornato_il", desc=True).limit(1).execute()
@@ -512,6 +546,7 @@ def leggi(arc, adesso: dt.datetime) -> dict:
                 ultimo_movimento=arc.ultimo_movimento(), in_invio=arc.in_invio(),
                 fallite=arc.fallite(adesso), ultima_toccata=arc.ultima_toccata(), ultimo_invio=arc.ultimo_invio(),
                 campagne=campagne,
+                code_campagne={c["id"]: arc.coda_campagna(c["id"]) for c in campagne if c.get("stato") == "in_preparazione"},
                 testi={c["id"]: arc.testi(c["id"]) for c in campagne if c.get("testi_stato") == "da_preparare"})
     return dati
 
@@ -745,6 +780,41 @@ def _test() -> None:
     assert valuta(foto(campagne=[{**in_prep, "aggiornato_il": fa(19)}]), mer)[CAMPAGNE][0] == OK
     # la ripresa a blocchi dell'app aggiorna avvio_blocco_il: finche' avanza non e' ferma
     assert valuta(foto(campagne=[{**in_prep, "avvio_blocco_il": fa(2)}]), mer)[CAMPAGNE][0] == OK
+    # --- l'avvio che si ripete senza concludersi: ogni 10 minuti la data si rinnova, quindi «ferma» non scatta.
+    # Da quanto dura lo dicono le righe gia' in coda (mer = 10:30 a Roma).
+    ripresa = {**in_prep, "aggiornato_il": fa(4), "avvio_blocco_il": fa(4)}                 # appena ripresa
+    coda_ = lambda prima, ultima, righe: {"c1": {"prima": prima and fa(prima), "ultima": ultima and fa(ultima), "righe": righe}}   # noqa: E731
+    v = valuta(foto(campagne=[ripresa], code_campagne=coda_(50, 42, 679)), mer)             # blocco 8 che fallisce sempre
+    assert v[CAMPAGNE][0] == ROSSO and "è in preparazione da più di 45 minuti e non parte" in v[CAMPAGNE][1], v[CAMPAGNE]
+    assert "ci sono 679 righe" in v[CAMPAGNE][1] and "alle 09:48" in v[CAMPAGNE][1] and "ferma in preparazione" not in v[CAMPAGNE][1]
+    assert valuta(foto(campagne=[ripresa], code_campagne=coda_(44, 42, 679)), mer)[CAMPAGNE][0] == OK    # non ancora 45 minuti
+    assert valuta(foto(campagne=[ripresa], code_campagne=coda_(12, 0.5, 2400)), mer)[CAMPAGNE][0] == OK  # avvio normale in corso
+    assert valuta(foto(campagne=[ripresa], code_campagne=coda_(None, None, 0)), mer)[CAMPAGNE][0] == OK  # nessuna riga, nessuna data arrivata
+    assert valuta(foto(campagne=[ripresa]), mer)[CAMPAGNE][0] == OK                                      # coda non letta
+    v = valuta(foto(campagne=[ripresa], code_campagne=coda_(3000, 2990, 1)), mer)                        # dura da giorni
+    assert v[CAMPAGNE][0] == ROSSO and "c’è 1 riga" in v[CAMPAGNE][1] and "del 09/11" in v[CAMPAGNE][1]
+    # se non viene nemmeno piu' ripresa vale il messaggio di prima, che dice che cosa premere
+    v = valuta(foto(campagne=[in_prep], code_campagne=coda_(50, 42, 679)), mer)
+    assert "ferma in preparazione" in v[CAMPAGNE][1] and "45 minuti" not in v[CAMPAGNE][1]
+    # --- data di partenza arrivata e ancora in preparazione alle 10:00
+    oggi_prep = {**ripresa, "data_partenza": "2026-11-11"}
+    v = valuta(foto(campagne=[oggi_prep], code_campagne=coda_(None, None, 0)), mer)         # fallisce al primo blocco
+    assert v[CAMPAGNE][0] == ROSSO and "doveva partire oggi e alle 10:00 è ancora in preparazione" in v[CAMPAGNE][1]
+    assert "in coda non c'è nessuna sua riga" in v[CAMPAGNE][1]
+    v = valuta(foto(campagne=[oggi_prep], code_campagne=coda_(30, 8, 300)), mer)             # partita tardi e gia' ferma
+    assert v[CAMPAGNE][0] == ROSSO and "alle 10:00 è ancora in preparazione" in v[CAMPAGNE][1] and "ci sono 300 righe" in v[CAMPAGNE][1]
+    assert valuta(foto(campagne=[oggi_prep], code_campagne=coda_(10, 1, 900)), mer)[CAMPAGNE][0] == OK   # sta entrando in coda adesso
+    appena = {**oggi_prep, "aggiornato_il": fa(1), "avvio_blocco_il": fa(1)}
+    assert valuta(foto(campagne=[appena], code_campagne=coda_(None, None, 0)), mer)[CAMPAGNE][0] == OK   # avviata un minuto fa
+    prima_delle_10 = dt.datetime(2026, 11, 11, 8, 59, tzinfo=utc)                                       # 9:59
+    assert valuta(foto(campagne=[{**oggi_prep, "aggiornato_il": fa(4, prima_delle_10), "avvio_blocco_il": None}],
+                       code_campagne={"c1": {"prima": None, "ultima": None, "righe": 0}}), prima_delle_10)[CAMPAGNE][0] == OK
+    v = valuta(foto(campagne=[{**ripresa, "data_partenza": "2026-11-09"}], code_campagne=coda_(None, None, 0)), mer)
+    assert v[CAMPAGNE][0] == ROSSO and "doveva partire il 09/11 e alle 10:00 è ancora in preparazione" in v[CAMPAGNE][1]
+    assert valuta(foto(campagne=[{**oggi_prep, "stato": "attiva"}], code_campagne=coda_(50, 42, 679)), mer)[CAMPAGNE][0] == OK
+    for cd in (coda_(50, 42, 679), coda_(None, None, 0), coda_(30, 8, 300)):                # niente identificativi nei messaggi
+        assert "c1" not in valuta(foto(campagne=[oggi_prep], code_campagne=cd), mer)[CAMPAGNE][1]
+
     oggi = {**camp, "data_partenza": "2026-11-11"}
     v = valuta(foto(campagne=[oggi]), mer)
     assert v[CAMPAGNE][0] == ROSSO and "doveva partire oggi e non è ancora partita" in v[CAMPAGNE][1]
@@ -817,6 +887,9 @@ def _test() -> None:
 
         def campagne(self):
             return self.f["campagne"]
+
+        def coda_campagna(self, cid):
+            return (self.f.get("code_campagne") or {}).get(cid, {"righe": 0, "prima": None, "ultima": None})
 
         def testi(self, cid):
             return self.f["testi"].get(cid, {})
@@ -924,6 +997,16 @@ def _test() -> None:
     assert set(leggi(Finto(), sera)) == {"cfg", "righe", "avviso_testi", "in_invio"}
     # nessun indirizzo e nessun identificativo nemmeno qui
     assert "@" not in una and all("@" not in f for f in frasi)
+    # la coda di una campagna si legge solo se e' in preparazione, e il giro porta l'allarme fino alla riga di stato
+    class Conta(Finto):
+        lette = []
+
+        def coda_campagna(self, cid):
+            Conta.lette.append(cid)
+            return {"righe": 679, "prima": fa(50), "ultima": fa(42)}
+    lunedi = Conta(campagne=[{**in_prep, "aggiornato_il": fa(4)}, {**camp, "id": "c2"}, {**camp, "id": "c3", "stato": "attiva"}])
+    assert giro(lunedi, mer, detto.append) is False and Conta.lette == ["c1"]
+    assert lunedi.righe[CAMPAGNE]["stato"] == ROSSO and "45 minuti" in lunedi.righe[CAMPAGNE]["messaggio"]
     # --secco: legge e giudica, non scrive
     asciutta = Finto(in_invio=[])
     asciutta.righe[INVII] = {"servizio": INVII, "stato": GIALLO, "messaggio": una}
