@@ -301,7 +301,10 @@ email rimaste «in invio», campagna ferma in preparazione o non partita alle
 10:00, testi fermi o non pronti alla vigilia. Funziona sia con il motore
 dell'app pubblicato fino all'11/11/2026 sia con quello nuovo.
 Le regole, e perché non danno falsi allarmi, sono in cima al file. Quando il
-problema finisce la riga torna `ok`: non si cancella. Con `HEARTBEAT_URL` nel
+problema finisce la riga torna `ok`: non si cancella. Fuori orario vale
+l'ultimo giudizio dato in orario, tranne che per le email rimaste «in invio»:
+quelle si ricontrollano a ogni giro, così un avviso risolto la sera dal
+pannello sparisce entro mezz'ora. Con `HEARTBEAT_URL` nel
 `.env` del server chiama quell'indirizzo quando è tutto a posto e lo stesso
 con `/fail` quando c'è un problema: chi lo riceve avvisa per email anche
 quando il segnale smette di arrivare, cioè a server spento.

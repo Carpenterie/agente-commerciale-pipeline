@@ -10,7 +10,9 @@ aggiornano sul posto quando il problema cambia o finisce: mai cancellate. Non
 tocca l'archivio, quindi e' esente dal lucchetto (lucchetto.ESENTI).
 
 Sempre, a ogni ora:
-- il database risponde.
+- il database risponde;
+- a invii accesi, le email rimaste 'in_invio' (vedi sotto): non dipendono
+  dall'orario.
 
 Solo in orario di invio (lunedi'-venerdi' non festivi, fra orario_inizio_locale
 e orario_fine_locale della configurazione, ora di Roma) e con gli invii accesi:
@@ -32,7 +34,8 @@ e orario_fine_locale della configurazione, ora di Roma) e con gli invii accesi:
       errore; finche' dura, "invii fermi" non si aggiunge: la causa e' questa;
     * righe rimaste 'in_invio' da piu' di 10 minuti (esito sconosciuto): giallo;
       rosso se nell'ultima ora ne sono rimaste 3 o piu' (il motore nuovo lascia
-      cosi' ogni tentativo finito con un errore non di Outlook);
+      cosi' ogni tentativo finito con un errore non di Outlook). E' l'unico
+      controllo che si fa anche fuori orario;
     * invii che falliscono: nell'ultima ora 3 o piu' righe chiuse 'fallita' per
       un errore (Outlook che rifiuta, messaggio troppo pesante, storico non
       scritto...). Il motore non si ferma da solo: dopo un errore prende la
@@ -69,8 +72,14 @@ risponde). Al massimo 10 secondi; un errore della chiamata non ferma niente e
 non cambia il codice di uscita. Senza la variabile si salta. Chi riceve il
 segnale avvisa quando smette di arrivare: copre anche il server spento.
 
-Fuori orario le tre righe non si toccano: il verdetto resta quello dell'ultimo
-controllo fatto in orario (un problema di ieri sera e' ancora un problema).
+Fuori orario il verdetto resta quello dell'ultimo controllo fatto in orario (un
+problema di ieri sera e' ancora un problema), con una eccezione: le email
+rimaste 'in_invio'. Che siano ancora li' non dipende dall'orario, quindi quella
+parte del messaggio di sentinella_invii si rigiudica a ogni giro: un avviso
+risolto la sera dal pannello sparisce al giro dopo, e una riga rimasta appesa
+alle 17:59 si vede la sera stessa. Il resto del messaggio (i problemi del
+motore) e le altre due righe non si toccano. A invii spenti niente di tutto
+questo: i controlli sono sospesi, come in orario.
 """
 
 from __future__ import annotations
@@ -109,6 +118,9 @@ MOTIVI_DI_REGOLA = ("indirizzo già previsto", "destinatario non più valido", "
                     "sequenza seguita da un'altra scheda", "scheda opera", "esclusa", "azienda esclusa",
                     "azienda non disponibile", "non più da ricontattare", "già contattata")
 MIN_IN_INVIO = 10
+# Come comincia, nel messaggio di sentinella_invii, la parte sulle email rimaste in invio (la scrive in_invio_ferme,
+# ed e' sempre l'ultima): serve a sostituirla fuori orario lasciando com'e' cio' che la precede.
+IN_INVIO_DA = re.compile(r"(?:1 email è rimasta|\d+ email sono rimaste) «in invio» da più di ")
 MIN_PREPARAZIONE = 20
 ORA_PARTENZA = 10 * 60    # minuti dalla mezzanotte: alle 10:00 una campagna di oggi deve essere partita
 ORE_TESTI = 2
@@ -210,10 +222,52 @@ def errore_di_invio(motivo: str | None) -> str | None:
 
 # --------------------------------------------------------------- verdetto ---
 
+def in_invio_ferme(in_invio: list, adesso: dt.datetime) -> tuple[list[str], bool]:
+    """Le righe rimaste 'in_invio' da piu' di 10 minuti. `in_invio` sono i loro `ultimo_tentativo`.
+    -> (le frasi per il messaggio, se e' grave). Non guarda ne' l'orario ne' il motore: vale a ogni ora."""
+    eta = lambda t: (adesso - t).total_seconds() / 60     # noqa: E731
+    ferme = sorted(t for t in (_quando(x) for x in in_invio) if t and eta(t) > MIN_IN_INVIO)
+    senza_data = sum(1 for x in in_invio if not _quando(x))
+    if not ferme and not senza_data:
+        return [], False
+    n = len(ferme) + senza_data
+    piu_vecchia = f" (la più vecchia è {_ora(ferme[0], adesso)})" if ferme else ""
+    frasi = [f"{'1 email è rimasta' if n == 1 else f'{n} email sono rimaste'} «in invio» da più di "
+             f"{MIN_IN_INVIO} minuti{piu_vecchia}: non si sa se {'è partita' if n == 1 else 'sono partite'}. "
+             f"Verificarne l'esito in Automazioni."]
+    recenti = sum(1 for t in ferme if eta(t) <= MIN_FALLITE)
+    if recenti < FALLITE_MAX:
+        return frasi, False
+    frasi.append(f"Di queste, {recenti} nell'ultima ora: gli invii stanno finendo senza esito uno dopo "
+                 f"l'altro. Spegnere gli invii automatici e avvisare chi gestisce il sistema.")
+    return frasi, True
+
+
+def valuta_fuori_orario(dati: dict, adesso: dt.datetime) -> dict:
+    """Fuori orario si rigiudica una cosa sola: le email rimaste «in invio». Nel messaggio di sentinella_invii si
+    sostituisce quella parte; cio' che la precede (i problemi del motore, giudicati in orario) resta com'e', col
+    suo colore. -> {INVII: (stato, messaggio)}, oppure {} se non c'e' niente da giudicare o da cambiare."""
+    if not dati["cfg"].get("attivo") or "in_invio" not in dati:
+        return {}                    # a invii spenti i controlli sono sospesi, come in orario
+    prima = dati["righe"].get(INVII) or {}
+    aperto = prima.get("stato") in (ROSSO, GIALLO)
+    resto = ""
+    if aperto:
+        vecchio = prima.get("messaggio") or ""
+        inizio = IN_INVIO_DA.search(vecchio)
+        resto = (vecchio[:inizio.start()] if inizio else vecchio).strip()
+    frasi, grave = in_invio_ferme(dati["in_invio"], adesso)
+    if not aperto and not frasi:
+        return {}                    # era a posto e lo e' ancora: la riga non si riscrive
+    if not resto and not frasi:
+        return {INVII: (OK, A_POSTO[INVII])}
+    return {INVII: (ROSSO if grave else (prima["stato"] if resto else GIALLO), " ".join([resto, *frasi]).strip())}
+
+
 def valuta(dati: dict, adesso: dt.datetime) -> dict | None:
     """Regole pure. `dati` e' la fotografia letta dal database (vedi `leggi`).
     -> {servizio: (stato, messaggio)} oppure None se e' fuori orario: in quel
-    caso le righe di stato_sistema non si toccano."""
+    caso si guarda solo cio' che non dipende dall'orario (valuta_fuori_orario)."""
     cfg = dati["cfg"]
     if fuori_orario(adesso, cfg):
         return None
@@ -275,20 +329,10 @@ def valuta(dati: dict, adesso: dt.datetime) -> dict | None:
                      f"per un errore ({', '.join(tipi[:3])}). Ogni tentativo consuma una riga della coda: spegnere "
                      f"gli invii automatici in Automazioni e avvisare chi gestisce il sistema.")
         grave = True
-    ferme = sorted(t for t in (_quando(x) for x in dati.get("in_invio", []))
-                   if t and eta(t) > MIN_IN_INVIO)
-    senza_data = sum(1 for x in dati.get("in_invio", []) if not _quando(x))
-    if ferme or senza_data:
-        n = len(ferme) + senza_data
-        piu_vecchia = f" (la più vecchia è {_ora(ferme[0], adesso)})" if ferme else ""
-        invii.append(f"{'1 email è rimasta' if n == 1 else f'{n} email sono rimaste'} «in invio» da più di "
-                     f"{MIN_IN_INVIO} minuti{piu_vecchia}: non si sa se {'è partita' if n == 1 else 'sono partite'}. "
-                     f"Verificarne l'esito in Automazioni.")
-        recenti = sum(1 for t in ferme if eta(t) <= MIN_FALLITE)
-        if recenti >= FALLITE_MAX:
-            invii.append(f"Di queste, {recenti} nell'ultima ora: gli invii stanno finendo senza esito uno dopo "
-                         f"l'altro. Spegnere gli invii automatici e avvisare chi gestisce il sistema.")
-            grave = True
+    # le email rimaste in invio: sempre per ultime nel messaggio (fuori orario si sostituisce solo questa parte)
+    frasi, grave_in_invio = in_invio_ferme(dati.get("in_invio", []), adesso)
+    invii += frasi
+    grave = grave or grave_in_invio
 
     # --- campagne
     campagne = []
@@ -452,12 +496,16 @@ class Archivio:
 
 
 def leggi(arc, adesso: dt.datetime) -> dict:
-    """La fotografia per `valuta`. Fuori orario o a invii spenti bastano configurazione e righe di stato."""
+    """La fotografia per `valuta`. A invii spenti bastano configurazione e righe di stato; fuori orario si
+    aggiungono solo le righe in invio."""
     cfg = arc.config()
     righe = arc.righe_stato()
     dati = {"cfg": cfg, "righe": righe,
             "avviso_testi": (righe.get("testi_campagna") or {}).get("stato") in (ROSSO, GIALLO)}
-    if fuori_orario(adesso, cfg) or not cfg.get("attivo"):
+    if not cfg.get("attivo"):
+        return dati
+    if fuori_orario(adesso, cfg):
+        dati["in_invio"] = arc.in_invio()
         return dati
     campagne = arc.campagne()
     dati.update(inviate_oggi=arc.inviate_oggi(adesso), dovuta=arc.dovuta(adesso),
@@ -487,8 +535,8 @@ def giro(arc, adesso: dt.datetime, log=print, scrivi: bool = True) -> bool:
     attuali = dati["righe"]
     verdetto = valuta(dati, adesso)
     if verdetto is None:
-        # fuori orario: vale l'ultimo controllo fatto in orario
-        return not any((attuali.get(s) or {}).get("stato") in (ROSSO, GIALLO) for s in SERVIZI)
+        # fuori orario: vale l'ultimo controllo fatto in orario, tranne che per le email rimaste in invio
+        verdetto = valuta_fuori_orario(dati, adesso)
     for servizio, (stato, messaggio) in verdetto.items():
         prima = attuali.get(servizio)
         if prima and prima.get("stato") == stato and prima.get("messaggio") == messaggio:
@@ -499,7 +547,10 @@ def giro(arc, adesso: dt.datetime, log=print, scrivi: bool = True) -> bool:
             log(f"ESITO: {servizio} {stato}: {messaggio}")
         elif prima and prima.get("stato") != OK:
             log(f"ESITO: {servizio} tornato a posto")
-    return all(stato == OK for stato, _ in verdetto.values())
+    # per cio' che adesso non si e' giudicato vale la riga che c'e'
+    stati = {s: (attuali.get(s) or {}).get("stato") for s in SERVIZI}
+    stati.update({s: stato for s, (stato, _) in verdetto.items()})
+    return not any(stato in (ROSSO, GIALLO) for stato in stati.values())
 
 
 def main() -> int:
@@ -526,8 +577,10 @@ def main() -> int:
         log(f"ESITO: database non raggiungibile o lettura fallita ({type(errore).__name__})")
     if secco:
         dati = leggi(Archivio(), adesso) if errore is None else {}
-        print("verdetto:", "a posto" if a_posto else "PROBLEMA", "|",
-              valuta(dati, adesso) if dati else "nessuna lettura")
+        giudizio = valuta(dati, adesso) if dati else "nessuna lettura"
+        if giudizio is None:
+            giudizio = f"fuori orario, solo le email in invio: {valuta_fuori_orario(dati, adesso) or 'niente da cambiare'}"
+        print("verdetto:", "a posto" if a_posto else "PROBLEMA", "|", giudizio)
         return 0
     battito(os.environ.get("HEARTBEAT_URL"), a_posto, log)
     return 0 if errore is None else 1
@@ -565,7 +618,7 @@ def _test() -> None:
 
     tutto_ok = {INVII: OK, CAMPAGNE: OK, TESTI: OK}
     assert stati(valuta(foto(), mer)) == tutto_ok
-    # fuori orario non si giudica; a invii spenti tutto a posto, e lo si dice
+    # fuori orario questo giudizio non si da' (resta solo valuta_fuori_orario); a invii spenti tutto a posto, e lo si dice
     assert valuta(foto(ultimo_movimento=fa(600)), dt.datetime(2026, 11, 11, 19, 0, tzinfo=utc)) is None
     assert valuta(foto(ultimo_movimento=fa(600)), dt.datetime(2026, 11, 14, 9, 30, tzinfo=utc)) is None
     spento = valuta({"cfg": {**cfg, "attivo": False}}, mer)
@@ -730,7 +783,7 @@ def _test() -> None:
         for _, m in valuta(f, mer).values():
             assert "@" not in m and "c1" not in m
 
-    # --- giro: scrive solo cio' che cambia, non cancella, fuori orario non tocca
+    # --- giro: scrive solo cio' che cambia, non cancella, fuori orario non tocca i problemi del motore
     class Finto:
         def __init__(self, **k):
             self.f, self.righe, self.scritte = foto(**k), {}, []
@@ -791,7 +844,90 @@ def _test() -> None:
     assert giro(arc, domani, detto.append) is True
     assert arc.scritte[-1] == (INVII, OK) and "tornato a posto" in detto[-1] and set(arc.righe) == set(SERVIZI)
     assert giro(arc, sera, detto.append) is True
+
+    # --- le email rimaste in invio non dipendono dall'orario: fuori orario si rigiudica solo quella parte
+    frasi, grave_ = in_invio_ferme([fa(11), fa(3)], mer)
+    assert len(frasi) == 1 and not grave_ and IN_INVIO_DA.match(frasi[0])
+    tre = [fa(15), fa(30), fa(50)]
+    frasi, grave_ = in_invio_ferme(tre, mer)
+    assert len(frasi) == 2 and grave_ and IN_INVIO_DA.match(frasi[0]) and not IN_INVIO_DA.search(frasi[1])
+    assert in_invio_ferme([fa(9)], mer) == ([], False) and in_invio_ferme([], mer) == ([], False)
+    # di giorno quella parte e' sempre l'ultima del messaggio, qualunque altro problema ci sia: la si ritrova
+    fermi = valuta(foto(ultimo_movimento=fa(40)), mer)[INVII][1]
+    misto = valuta(foto(in_invio=[fa(40)], ultimo_movimento=fa(40)), mer)[INVII][1]
+    assert misto[:IN_INVIO_DA.search(misto).start()].strip() == fermi and not IN_INVIO_DA.search(fermi)
+    pieno = valuta(foto(cfg=in_pausa, fallite=["Outlook [500]: x"] * 3, in_invio=tre), mer)[INVII][1]
+    assert pieno.endswith(" ".join(frasi)) and len(IN_INVIO_DA.findall(pieno)) == 1
+
+    def di_sera(stato=None, messaggio=None, quando=sera, altre=None, **k):
+        a = Finto(**k)
+        if stato:
+            a.righe[INVII] = {"servizio": INVII, "stato": stato, "messaggio": messaggio}
+        a.righe.update(altre or {})
+        return a, giro(a, quando, detto.append)
+
+    vecchia = "2026-11-09T12:00:00+00:00"
+    una = in_invio_ferme([vecchia], mer)[0][0]                 # com'e' stata scritta di giorno
+    # risolta la sera dal pannello: l'avviso sparisce al primo giro, senza aspettare le 9:30
+    a, esito = di_sera(GIALLO, una, in_invio=[])
+    assert esito is True and a.scritte == [(INVII, OK)] and a.righe[INVII]["messaggio"] == A_POSTO[INVII]
+    assert "tornato a posto" in detto[-1]
+    a, esito = di_sera(GIALLO, una, in_invio=[], quando=dt.datetime(2026, 11, 14, 9, 30, tzinfo=utc))   # di sabato
+    assert esito is True and a.scritte == [(INVII, OK)]
+    # non risolta: resta, e non si riscrive
+    a, esito = di_sera(GIALLO, una, in_invio=[vecchia])
+    assert esito is False and not a.scritte
+    # di due ne e' stata chiusa una
+    a, esito = di_sera(GIALLO, in_invio_ferme([vecchia, fa(300)], mer)[0][0], in_invio=[vecchia])
+    assert esito is False and a.scritte == [(INVII, GIALLO)] and a.righe[INVII]["messaggio"] == una
+    # una riga rimasta appesa a fine giornata si vede la sera stessa; tre di fila sono rosse
+    a, esito = di_sera(OK, A_POSTO[INVII], in_invio=[fa(11, sera), fa(5, sera)])
+    assert esito is False and a.scritte == [(INVII, GIALLO)] and "1 email è rimasta" in a.righe[INVII]["messaggio"]
+    assert "alle 19:49" in a.righe[INVII]["messaggio"]
+    a, esito = di_sera(in_invio=[fa(11, sera)])                                         # la riga non c'era ancora
+    assert esito is False and a.scritte == [(INVII, GIALLO)]
+    a, esito = di_sera(OK, A_POSTO[INVII], in_invio=[fa(15, sera), fa(30, sera), fa(50, sera)])
+    assert a.scritte == [(INVII, ROSSO)] and "3 nell'ultima ora" in a.righe[INVII]["messaggio"]
+    # ...e passata l'ora il rosso della raffica torna giallo, come di giorno
+    a, esito = di_sera(ROSSO, a.righe[INVII]["messaggio"], in_invio=[fa(75, sera), fa(90, sera), fa(110, sera)])
+    assert a.scritte == [(INVII, GIALLO)] and "nell'ultima ora" not in a.righe[INVII]["messaggio"]
+    # i problemi del motore giudicati di giorno restano com'erano, col loro rosso: cambia solo la parte in invio
+    a, esito = di_sera(ROSSO, misto, in_invio=[])
+    assert esito is False and a.scritte == [(INVII, ROSSO)] and a.righe[INVII]["messaggio"] == fermi
+    a, esito = di_sera(ROSSO, fermi, in_invio=[])
+    assert esito is False and not a.scritte
+    a, esito = di_sera(ROSSO, fermi, in_invio=[vecchia])
+    assert a.scritte == [(INVII, ROSSO)] and a.righe[INVII]["messaggio"] == f"{fermi} {una}"
+    a, esito = di_sera(ROSSO, pieno, in_invio=[])
+    assert a.scritte == [(INVII, ROSSO)] and "in pausa" in a.righe[INVII]["messaggio"]
+    assert "stanno fallendo" in a.righe[INVII]["messaggio"] and "«in invio»" not in a.righe[INVII]["messaggio"]
+    # era a posto e lo e' ancora: niente scritture (nemmeno su «controlli sospesi» scritto a invii spenti)
+    assert di_sera(OK, A_POSTO[INVII], in_invio=[fa(9, sera)])[0].scritte == []
+    assert di_sera(OK, f"Invii automatici: {SOSPESI}", in_invio=[])[0].scritte == []
+    a, esito = di_sera(in_invio=[])
+    assert esito is True and not a.scritte
+    # campagne e testi fuori orario non si toccano mai, e un loro problema resta un problema
+    rossa = {CAMPAGNE: {"servizio": CAMPAGNE, "stato": ROSSO, "messaggio": "ferma"}}
+    a, esito = di_sera(GIALLO, una, altre=rossa, in_invio=[], campagne=[in_prep])
+    assert esito is False and a.scritte == [(INVII, OK)] and a.righe[CAMPAGNE]["messaggio"] == "ferma"
+    # a invii spenti i controlli sono sospesi anche la sera: non si legge la coda e non si scrive
+    class Spento(Finto):
+        def in_invio(self):
+            raise AssertionError("a invii spenti la coda non si legge")
+    spenta = Spento(cfg={**cfg, "attivo": False})
+    spenta.righe[INVII] = {"servizio": INVII, "stato": GIALLO, "messaggio": una}
+    assert giro(spenta, sera, detto.append) is False and not spenta.scritte
+    assert valuta_fuori_orario({"cfg": spenta.f["cfg"], "righe": spenta.righe, "in_invio": []}, sera) == {}
+    assert valuta_fuori_orario({"cfg": cfg, "righe": spenta.righe, "in_invio": []}, sera) == {INVII: (OK, A_POSTO[INVII])}
+    assert valuta_fuori_orario({"cfg": cfg, "righe": {}}, sera) == {}                    # senza lettura non si giudica
+    # fuori orario si leggono solo configurazione, righe di stato e righe in invio
+    assert set(leggi(Finto(), sera)) == {"cfg", "righe", "avviso_testi", "in_invio"}
+    # nessun indirizzo e nessun identificativo nemmeno qui
+    assert "@" not in una and all("@" not in f for f in frasi)
     # --secco: legge e giudica, non scrive
+    asciutta = Finto(in_invio=[])
+    asciutta.righe[INVII] = {"servizio": INVII, "stato": GIALLO, "messaggio": una}
+    assert giro(asciutta, sera, detto.append, scrivi=False) is True and not asciutta.scritte
     secco = Finto(ultimo_movimento=fa(30))
     assert giro(secco, mer, detto.append, scrivi=False) is False and not secco.scritte
     # il job dei testi ha gia' il suo avviso: la sentinella non lo ripete
