@@ -20,6 +20,12 @@ e orario_fine_locale della configurazione, ora di Roma) e con gli invii accesi:
       coda (ne' per mandarla ne' per rinviarla). Non si giudica nei primi 20
       minuti dall'apertura ne' nei 20 minuti dopo un salvataggio della
       configurazione (invii appena riaccesi);
+    * motore che gira a vuoto (motore nuovo, terzo giro): un errore PRIMA della
+      chiamata a Microsoft rimette la riga in attesa con la stessa data, quindi
+      al giro dopo e' di nuovo la prima. Se l'errore non passa, il motore tocca
+      la coda ogni minuto e non parte niente: "invii fermi" non lo vede. Rosso
+      se l'ultima riga toccata e' tornata in attesa con «Invio non tentato» o
+      «prenotazione negata» e da 20 minuti non parte nessuna email;
     * pausa Outlook attiva (motore nuovo): dopo tre errori del servizio di fila
       il motore si ferma da solo per 30, 60, 120 o 240 minuti e lo scrive nella
       configurazione (outlook_pausa_fino). Rosso, con il codice dell'ultimo
@@ -95,6 +101,10 @@ FALLITE_MAX, MIN_FALLITE = 3, 60     # tante righe fallite per errore in tanti m
 # di cio' che e' 'fallita' e' un errore: "Outlook [401]: ...", "messaggio troppo
 # pesante", "storico non scritto: ...", "controllo esclusione non riuscito" e,
 # nel motore di prima dell'11/11, il testo di qualunque eccezione.
+# Note con cui il motore nuovo rimette in attesa, senza cambiare la data, una riga che non e' riuscito a mandare
+# (motore.server.ts e terzo-giro.ts): se si ripetono senza invii in mezzo, il motore gira a vuoto.
+NOTE_A_VUOTO = ("invio non tentato", "prenotazione negata")
+MIN_TOCCATA = 3           # "appena toccata": il passaggio e' ogni minuto
 MOTIVI_DI_REGOLA = ("indirizzo già previsto", "destinatario non più valido", "scheda non trovata",
                     "sequenza seguita da un'altra scheda", "scheda opera", "esclusa", "azienda esclusa",
                     "azienda non disponibile", "non più da ricontattare", "già contattata")
@@ -189,6 +199,8 @@ def errore_di_invio(motivo: str | None) -> str | None:
     testo = " ".join(str(motivo or "").split()).lower()
     if testo.startswith(MOTIVI_DI_REGOLA):
         return None
+    if testo.startswith("5 tentativi"):
+        return "5 tentativi non riusciti"       # chiusa dopo cinque errori del servizio (terzo giro)
     if testo.startswith("outlook"):
         # "Outlook [401]: ..." (motore fino all'11/11) e "Outlook 400: errore del singolo messaggio" (nuovo)
         codice = re.match(r"outlook \[?(\d{3})\]?", testo)
@@ -241,6 +253,20 @@ def valuta(dati: dict, adesso: dt.datetime) -> dict | None:
         invii.append(f"Invii automatici fermi: in coda ci sono email pronte a partire e il tetto di oggi non è "
                      f"raggiunto ({dati.get('inviate_oggi', 0)} su {limite}), ma {da}. Controllare in Automazioni "
                      f"il collegamento a Outlook; se è in ordine, avvisare chi gestisce il sistema.")
+        grave = True
+    # il motore gira a vuoto: l'ultima riga toccata e' tornata in attesa senza essere mandata, e non parte piu' niente
+    toccata = dati.get("ultima_toccata") or {}
+    nota = " ".join(str(toccata.get("errore_dettaglio") or "").split()).lower()
+    quando_toccata, inviata = _quando(toccata.get("ultimo_tentativo")), _quando(dati.get("ultimo_invio"))
+    if toccata.get("stato") == "in_attesa" and nota.startswith(NOTE_A_VUOTO) and quando_toccata is not None \
+            and eta(quando_toccata) <= MIN_TOCCATA and aperto_da >= MIN_FERMI and not in_pausa and not pausa_recente \
+            and dati.get("inviate_oggi", 0) < limite and (inviata is None or eta(inviata) > MIN_FERMI):
+        da = (f"l'ultima email partita è {_ora(inviata, adesso)}" if inviata and inviata >= mezzanotte_roma(adesso)
+              else "oggi non è ancora partita nessuna email")
+        invii.append(f"Invii automatici bloccati: il motore riprova a ogni giro la prima email della coda senza "
+                     f"riuscire a mandarla ({'la prenotazione viene negata' if nota.startswith('prenotazione') else 'errore prima dell’invio'}), "
+                     f"e {da}. Avvisare chi gestisce il sistema; se riguarda una sola azienda, toglierla dalla coda "
+                     f"in Automazioni.")
         grave = True
     errori = [e for e in (errore_di_invio(m) for m in dati.get("fallite", [])) if e]
     if len(errori) >= FALLITE_MAX:
@@ -385,6 +411,17 @@ class Archivio:
         return [r["errore_dettaglio"] for r in self.c.table("coda_invii_automatici").select("errore_dettaglio")
                 .eq("stato", "fallita").gte("ultimo_tentativo", da).limit(500).execute().data]
 
+    def ultima_toccata(self) -> dict | None:
+        """L'ultima riga presa dal motore: stato e nota di adesso."""
+        r = (self.c.table("coda_invii_automatici").select("stato,errore_dettaglio,ultimo_tentativo")
+             .not_.is_("ultimo_tentativo", "null").order("ultimo_tentativo", desc=True).limit(1).execute().data)
+        return r[0] if r else None
+
+    def ultimo_invio(self) -> str | None:
+        r = (self.c.table("coda_invii_automatici").select("inviato_il").not_.is_("inviato_il", "null")
+             .order("inviato_il", desc=True).limit(1).execute().data)
+        return r[0]["inviato_il"] if r else None
+
     def in_invio(self) -> list:
         return [r["ultimo_tentativo"] for r in self.c.table("coda_invii_automatici").select("ultimo_tentativo")
                 .eq("stato", "in_invio").execute().data]
@@ -425,7 +462,8 @@ def leggi(arc, adesso: dt.datetime) -> dict:
     campagne = arc.campagne()
     dati.update(inviate_oggi=arc.inviate_oggi(adesso), dovuta=arc.dovuta(adesso),
                 ultimo_movimento=arc.ultimo_movimento(), in_invio=arc.in_invio(),
-                fallite=arc.fallite(adesso), campagne=campagne,
+                fallite=arc.fallite(adesso), ultima_toccata=arc.ultima_toccata(), ultimo_invio=arc.ultimo_invio(),
+                campagne=campagne,
                 testi={c["id"]: arc.testi(c["id"]) for c in campagne if c.get("testi_stato") == "da_preparare"})
     return dati
 
@@ -519,7 +557,8 @@ def _test() -> None:
 
     def foto(**k):
         return {"cfg": cfg, "inviate_oggi": 50, "dovuta": True, "ultimo_movimento": fa(2), "in_invio": [],
-                "fallite": [], "campagne": [], "testi": {}, "avviso_testi": False, "righe": {}, **k}
+                "fallite": [], "ultima_toccata": {"stato": "inviata", "errore_dettaglio": None, "ultimo_tentativo": fa(2)},
+                "ultimo_invio": fa(2), "campagne": [], "testi": {}, "avviso_testi": False, "righe": {}, **k}
 
     def stati(v):
         return {s: v[s][0] for s in SERVIZI}
@@ -614,6 +653,29 @@ def _test() -> None:
     assert valuta(foto(cfg=scrive, ultimo_movimento=fa(30)), mer)[INVII][0] == ROSSO      # fermo da 30 minuti: allarme
     # ...ma la prenotazione di un invio e' un segno di vita, anche se in coda non si vede ancora
     assert valuta(foto(cfg={**scrive, "ultimo_avvio_automatico_il": fa(3)}, ultimo_movimento=fa(30)), mer)[INVII][0] == OK
+    # terzo giro: errore prima dell'invio -> la riga torna in attesa e in testa. Se si ripete e non parte niente: rosso.
+    giro_a_vuoto = {"stato": "in_attesa", "errore_dettaglio": "Invio non tentato: nuovo passaggio previsto", "ultimo_tentativo": fa(1)}
+    v = valuta(foto(ultima_toccata=giro_a_vuoto, ultimo_invio=fa(25), ultimo_movimento=fa(1)), mer)
+    assert v[INVII][0] == ROSSO and "bloccati" in v[INVII][1] and "alle 10:05" in v[INVII][1], v[INVII]
+    assert "fermi:" not in v[INVII][1]            # il motore tocca la coda: "invii fermi" da solo non lo vedrebbe
+    negata = {**giro_a_vuoto, "errore_dettaglio": "prenotazione negata o tempo esaurito prima dell’invio"}
+    v = valuta(foto(ultima_toccata=negata, ultimo_invio=fa(700), ultimo_movimento=fa(1)), mer)
+    assert v[INVII][0] == ROSSO and "prenotazione viene negata" in v[INVII][1] and "non è ancora partita" in v[INVII][1]
+    # un inciampo solo (l'email dopo e' partita), una riga toccata da tempo, un rinvio di regola: niente
+    assert valuta(foto(ultima_toccata=giro_a_vuoto, ultimo_invio=fa(4)), mer)[INVII][0] == OK
+    assert valuta(foto(ultima_toccata={**giro_a_vuoto, "ultimo_tentativo": fa(9)}, ultimo_invio=fa(25)), mer)[INVII][0] == OK
+    rinviata = {**giro_a_vuoto, "errore_dettaglio": "Outlook 503: errore del servizio, nuovo tentativo previsto"}
+    assert valuta(foto(ultima_toccata=rinviata, ultimo_invio=fa(25)), mer)[INVII][0] == OK
+    assert valuta(foto(ultima_toccata={**giro_a_vuoto, "stato": "fallita"}, ultimo_invio=fa(25)), mer)[INVII][0] == OK
+    assert valuta(foto(ultima_toccata=giro_a_vuoto, ultimo_invio=fa(25), inviate_oggi=300), mer)[INVII][0] == OK   # tetto
+    assert valuta(foto(cfg=in_pausa, ultima_toccata=giro_a_vuoto, ultimo_invio=fa(25)), mer)[INVII][1].count("bloccati") == 0
+    assert valuta(foto(ultima_toccata=None, ultimo_invio=None), mer)[INVII][0] == OK                 # coda mai toccata
+    # righe chiuse dopo cinque errori del servizio: contano come errori di invio, col loro nome
+    assert errore_di_invio("5 tentativi non riusciti") == "5 tentativi non riusciti"
+    v = valuta(foto(fallite=["5 tentativi non riusciti"] * 3), mer)
+    assert v[INVII][0] == ROSSO and "5 tentativi non riusciti" in v[INVII][1]
+    # le note del motore nuovo su righe rimesse in attesa non sono motivi di chiusura: non compaiono fra le fallite
+    assert errore_di_invio("non più da ricontattare (stato cambiato o nuova attività)") is None
     # tre righe finite 'in invio' nell'ultima ora: rosso; tre vecchie di giorni restano gialle
     v = valuta(foto(in_invio=[fa(15), fa(30), fa(50)]), mer)
     assert v[INVII][0] == ROSSO and "3 nell'ultima ora" in v[INVII][1], v[INVII]
@@ -693,6 +755,12 @@ def _test() -> None:
 
         def fallite(self, adesso):
             return self.f["fallite"]
+
+        def ultima_toccata(self):
+            return self.f["ultima_toccata"]
+
+        def ultimo_invio(self):
+            return self.f["ultimo_invio"]
 
         def campagne(self):
             return self.f["campagne"]
