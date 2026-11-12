@@ -32,6 +32,11 @@ e orario_fine_locale della configurazione, ora di Roma) e con gli invii accesi:
       il motore si ferma da solo per 30, 60, 120 o 240 minuti e lo scrive nella
       configurazione (outlook_pausa_fino). Rosso, con il codice dell'ultimo
       errore; finche' dura, "invii fermi" non si aggiunge: la causa e' questa;
+    * passaggi interrotti: nell'ultima ora 3 o piu' righe rimesse in coda dal
+      controllo del database (coda_rilasci_automatici, job di pg_cron
+      «rilascia_righe_prese_senza_invio»: riga presa e mai prenotata). Rosso:
+      vuol dire che i passaggi del motore si interrompono spesso. Senza il
+      registro il controllo si salta;
     * righe rimaste 'in_invio' da piu' di 10 minuti (esito sconosciuto): giallo;
       rosso se nell'ultima ora ne sono rimaste 3 o piu' (il motore nuovo lascia
       cosi' ogni tentativo finito con un errore non di Outlook). E' l'unico
@@ -127,6 +132,7 @@ MOTIVI_DI_REGOLA = ("indirizzo già previsto", "destinatario non più valido", "
                     "sequenza seguita da un'altra scheda", "scheda opera", "esclusa", "azienda esclusa",
                     "azienda non disponibile", "non più da ricontattare", "già contattata")
 MIN_IN_INVIO = 10
+RILASCI_MAX, MIN_RILASCI = 3, 60   # tante righe rimesse in coda in automatico in tanti minuti = passaggi che si interrompono
 # Come comincia, nel messaggio di sentinella_invii, la parte sulle email rimaste in invio (la scrive in_invio_ferme,
 # ed e' sempre l'ultima): serve a sostituirla fuori orario lasciando com'e' cio' che la precede.
 IN_INVIO_DA = re.compile(r"(?:1 email è rimasta|\d+ email sono rimaste) «in invio» da più di ")
@@ -340,6 +346,12 @@ def valuta(dati: dict, adesso: dt.datetime) -> dict | None:
                      f"per un errore ({', '.join(tipi[:3])}). Ogni tentativo consuma una riga della coda: spegnere "
                      f"gli invii automatici in Automazioni e avvisare chi gestisce il sistema.")
         grave = True
+    rilasci = dati.get("rilasci")
+    if rilasci is not None and rilasci >= RILASCI_MAX:
+        invii.append(f"I passaggi del motore si interrompono spesso: nell'ultima ora {rilasci} email sono state prese "
+                     f"dalla coda e mai mandate, e il controllo del database le ha rimesse in coda. Non è partito niente "
+                     f"di doppio, ma gli invii rallentano. Avvisare chi gestisce il sistema.")
+        grave = True
     # le email rimaste in invio: sempre per ultime nel messaggio (fuori orario si sostituisce solo questa parte)
     frasi, grave_in_invio = in_invio_ferme(dati.get("in_invio", []), adesso)
     invii += frasi
@@ -492,6 +504,16 @@ class Archivio:
              .order("inviato_il", desc=True).limit(1).execute().data)
         return r[0]["inviato_il"] if r else None
 
+    def rilasci(self, adesso: dt.datetime) -> int | None:
+        """Righe rimesse in coda dal controllo del database nell'ultima ora. None se il registro non c'e'."""
+        try:
+            return (self.c.table("coda_rilasci_automatici").select("id", count="exact")
+                    .gte("rilasciata_il", (adesso - dt.timedelta(minutes=MIN_RILASCI)).isoformat()).limit(1).execute().count or 0)
+        except Exception as e:  # noqa: BLE001
+            if any(x in f"{getattr(e, 'code', '')} {e}" for x in ("PGRST205", "42P01")):
+                return None
+            raise
+
     def in_invio(self) -> list:
         return [r["ultimo_tentativo"] for r in self.c.table("coda_invii_automatici").select("ultimo_tentativo")
                 .eq("stato", "in_invio").execute().data]
@@ -544,7 +566,7 @@ def leggi(arc, adesso: dt.datetime) -> dict:
     campagne = arc.campagne()
     dati.update(inviate_oggi=arc.inviate_oggi(adesso), dovuta=arc.dovuta(adesso),
                 ultimo_movimento=arc.ultimo_movimento(), in_invio=arc.in_invio(),
-                fallite=arc.fallite(adesso), ultima_toccata=arc.ultima_toccata(), ultimo_invio=arc.ultimo_invio(),
+                fallite=arc.fallite(adesso), rilasci=arc.rilasci(adesso), ultima_toccata=arc.ultima_toccata(), ultimo_invio=arc.ultimo_invio(),
                 campagne=campagne,
                 code_campagne={c["id"]: arc.coda_campagna(c["id"]) for c in campagne if c.get("stato") == "in_preparazione"},
                 testi={c["id"]: arc.testi(c["id"]) for c in campagne if c.get("testi_stato") == "da_preparare"})
@@ -770,6 +792,40 @@ def _test() -> None:
     assert valuta(foto(in_invio=[fa(15), fa(30), fa(3000)]), mer)[INVII][0] == GIALLO
     assert valuta(foto(in_invio=[fa(3000), fa(4000), fa(5000)]), mer)[INVII][0] == GIALLO
 
+    # --- passaggi interrotti: righe rimesse in coda dal controllo del database nell'ultima ora
+    assert valuta(foto(rilasci=2), mer)[INVII][0] == OK
+    assert valuta(foto(rilasci=None), mer)[INVII][0] == OK                       # registro assente
+    v = valuta(foto(rilasci=3), mer)
+    assert v[INVII][0] == ROSSO and "si interrompono spesso" in v[INVII][1] and "3 email" in v[INVII][1], v[INVII]
+    v = valuta(foto(rilasci=4, in_invio=[fa(15)]), mer)                         # la parte «in invio» resta l'ultima
+    assert v[INVII][0] == ROSSO and IN_INVIO_DA.search(v[INVII][1]) and v[INVII][1].index("interrompono") < IN_INVIO_DA.search(v[INVII][1]).start()
+    assert valuta(foto(rilasci=5), dt.datetime(2026, 11, 11, 19, 0, tzinfo=utc)) is None    # fuori orario non si giudica
+
+    class Rilasci:
+        def __init__(self, errore=None, count=0):
+            self.errore, self.count, self.filtri = errore, count, []
+        def table(self, nome):
+            assert nome == "coda_rilasci_automatici"
+            return self
+        def select(self, *a, **k): return self
+        def gte(self, campo, valore):
+            self.filtri.append((campo, valore)); return self
+        def limit(self, n): return self
+        def execute(self):
+            if self.errore: raise self.errore
+            return type("R", (), {"count": self.count, "data": []})()
+    arc_r = Archivio.__new__(Archivio)
+    arc_r.c = Rilasci(count=3)
+    assert arc_r.rilasci(mer) == 3 and arc_r.c.filtri == [("rilasciata_il", fa(60))]
+    manca = RuntimeError("Could not find the table 'public.coda_rilasci_automatici'"); manca.code = "PGRST205"
+    arc_r.c = Rilasci(errore=manca)
+    assert arc_r.rilasci(mer) is None
+    arc_r.c = Rilasci(errore=ConnectionError("giu'"))
+    try:
+        arc_r.rilasci(mer); raise AssertionError("doveva sollevare")
+    except ConnectionError:
+        pass
+
     # --- campagne
     camp = {"id": "c1", "nome": "1 · Prova", "stato": "programmata", "data_partenza": "2026-11-16",
             "testi_stato": "pronti", "modello_email": "pannello", "aggiornato_il": fa(3000)}
@@ -875,6 +931,9 @@ def _test() -> None:
 
         def in_invio(self):
             return self.f["in_invio"]
+
+        def rilasci(self, adesso):
+            return self.f.get("rilasci", 0)
 
         def fallite(self, adesso):
             return self.f["fallite"]

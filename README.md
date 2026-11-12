@@ -297,7 +297,8 @@ email pronte in coda, pausa Outlook del motore nuovo (dopo tre errori del
 servizio si ferma da solo e lo scrive nella configurazione: l'avviso riporta
 il codice e l'ora fino a cui dura), invii che falliscono uno dopo l'altro (3
 o più righe chiuse per un errore, o rimaste «in invio», nell'ultima ora),
-email rimaste «in invio», campagna ferma in preparazione o non partita alle
+email rimaste «in invio», passaggi che si interrompono (3 o più righe rimesse in
+coda dal controllo del database nell'ultima ora), campagna ferma in preparazione o non partita alle
 10:00 (anche quando l'avvio viene ripreso ogni 10 minuti ma non si conclude:
 in preparazione da più di 45 minuti dalla prima riga entrata in coda, o ancora
 in preparazione alle 10:00 del giorno di partenza), testi fermi o non pronti
